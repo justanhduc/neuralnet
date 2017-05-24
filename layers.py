@@ -119,7 +119,7 @@ class FullyConnectedLayer(object):
             output = self.do_layer.get_output(output)
         if self.dropout_gauss:
             output = self.do_gauss_layer.get_output(output)
-        return output
+        return self.activation(output)
 
     def get_output_shape(self):
         return int(self.n_out/2) if self.activation is maxout else self.n_out
@@ -228,22 +228,22 @@ class ConvolutionalLayer(object):
 class ConvolutionalTransposedLayer(object):
     layers = []
 
-    def __init__(self, filter_shape, input_shape, layer_name=None, W=None, b=None, padding='half', stride=(2, 2),
+    def __init__(self, filter_shape, output_shape, layer_name='ConvTransposed', W=None, b=None, padding='valid', stride=(2, 2),
                  activation=T.nnet.relu):
-        assert input_shape[1] == filter_shape[1]
         self.filter_shape = filter_shape
-        self.input_shape = input_shape
+        self.output_shape = output_shape
         self.padding = padding
         self.stride = stride
         self.activation = activation
         self.layer_name = layer_name
 
-        # initialize weights with random weights
-        b_values = np.zeros((filter_shape[0],), dtype=theano.config.floatX) if b is None else b
+        b_values = np.zeros((filter_shape[1],), dtype=theano.config.floatX) if b is None else b
         W_values = self.get_deconv_filter(filter_shape) if W is None else W
         self.W = theano.shared(W_values, self.layer_name + 'W', borrow=True)
         self.b = theano.shared(value=b_values, name=self.layer_name + '_b', borrow=True)
         self.params = [self.W, self.b]
+        print('  # %s (ConvTransposed-%s):' % (layer_name, padding)),
+        print('flt.(%s),' % ', '.join([str(i) for i in self.filter_shape]))
 
     def get_deconv_filter(self, f_shape):
         """
@@ -251,30 +251,46 @@ class ConvolutionalTransposedLayer(object):
         :param f_shape: self.filter_shape
         :return: an initializer for get_variable
         """
-        width = f_shape[0]
-        height = f_shape[0]
+        width = f_shape[2]
+        height = f_shape[3]
         f = math.ceil(width/2.0)
         c = (2 * f - 1 - f % 2) / (2.0 * f)
-        bilinear = np.zeros([f_shape[0], f_shape[1]])
+        bilinear = np.zeros([f_shape[2], f_shape[3]])
         for x in xrange(width):
             for y in xrange(height):
                 value = (1 - abs(x / f - c)) * (1 - abs(y / f - c))
                 bilinear[x, y] = value
         weights = np.zeros(f_shape)
-        for i in xrange(f_shape[2]):
-            weights[:, :, i, i] = bilinear
+        for j in xrange(f_shape[1]):
+            for i in xrange(f_shape[0]):
+                weights[i, j, :, :] = bilinear
         return weights.astype(theano.config.floatX)
 
-    def get_input(self, output):
-        input = theano.tensor.nnet.abstract_conv.conv2d_grad_wrt_inputs(output, self.W, self.input_shape,
-                                                                        self.filter_shape, border_mode=self.padding,
-                                                                        subsample=self.stride)
-        input = input + self.b
+    def get_output(self, output):
+        if self.padding == 'half':
+            p = (self.filter_shape[2] / 2, self.filter_shape[3] / 2)
+        elif self.padding == 'valid':
+            p = (0, 0)
+        elif self.padding == 'full':
+            p = (self.filter_shape[2] - 1, self.filter_shape[3] - 1)
+        else:
+            raise NotImplementedError
+        if None in self.output_shape:
+            in_shape = output.shape
+            h = ((in_shape[2] - 1) * self.stride[0]) + self.filter_shape[2] + \
+                T.mod(in_shape[2]+2*p[0]-self.filter_shape[2], self.stride[0]) - 2*p[0]
+            w = ((in_shape[3] - 1) * self.stride[1]) + self.filter_shape[3] + \
+                T.mod(in_shape[3]+2*p[1]-self.filter_shape[3], self.stride[1]) - 2*p[1]
+            self.input_shape = [self.output_shape[0], self.filter_shape[1], h, w]
+        else:
+            self.input_shape = [self.output_shape[0], self.output_shape[1], self.output_shape[2], self.filter_shape[2]]
+        input = theano.tensor.nnet.conv2d_transpose(output, self.W, self.input_shape, self.filter_shape,
+                                                    border_mode=self.padding, input_dilation=self.stride)
+        input = input + self.b.dimshuffle('x', 0, 'x', 'x')
         return self.activation(input)
 
     def get_output_shape(self, flatten=False):
-        return [self.input_shape[0], self.input_shape[1] * self.input_shape[2] * self.input_shape[3]] if flatten \
-            else self.input_shape
+        return self.input_shape
 
 
 class BatchNormLayer(object):
