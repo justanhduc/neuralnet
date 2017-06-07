@@ -42,11 +42,15 @@ def PearsonCorrelation(ypred, y):
     return numerator / denominator
 
 
-def BinaryCrossEntropy(p_y_given_x, y):
+def MultinoulliCrossEntropy(p_y_given_x, y):
     xdev = p_y_given_x - p_y_given_x.max(1, keepdims=True)
     lsm = xdev - T.log(T.sum(T.exp(xdev), axis=1, keepdims=True))
     cm2 = -lsm[T.arange(y.shape[0]), y]
     return cm2.mean()
+
+
+def BinaryCrossEntropy(p_y_given_x, y):
+    return T.nnet.binary_crossentropy(p_y_given_x, y).mean()
 
 
 def MeanClassificationErrors(y_pred, y):

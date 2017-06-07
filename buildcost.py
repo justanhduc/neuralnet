@@ -39,6 +39,8 @@ class Optimization(object):
             self.cost = metrics.GaussianCrossEntropy(y_pred, y)
         elif self.cost_function.lower() == 'ce_binary':
             self.cost = metrics.BinaryCrossEntropy(y_pred, y)
+        elif self.cost_function.lower() == 'ce_multinoulli':
+            self.cost = metrics.MultinoulliCrossEntropy(y_pred, y)
         else:
             raise NameError('Unknown type of cost function')
 

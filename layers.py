@@ -14,7 +14,7 @@ import math
 import time
 import warnings
 
-from utils import *
+from utils import function
 rng = np.random.RandomState(int(time.time()))
 
 
@@ -137,7 +137,7 @@ class ConvolutionalLayer(object):
     layers = []
 
     def __init__(self, input_shape, filter_shape, W=None, border_mode='half', subsample=(1, 1), layer_name=None,
-                 activation=relu, pool=False, pool_size=(2, 2), pool_mode='max', pool_stride=(2, 2), pool_pad=(0, 0),
+                 activation=function['relu'], pool=False, pool_size=(2, 2), pool_mode='max', pool_stride=(2, 2), pool_pad=(0, 0),
                  batch_norm=False, drop_out=False, p=0.5, dropout_gauss=False):
         """
         filter_shape: (number of filters, number of previous channels, filter height, filter width)
@@ -197,7 +197,8 @@ class ConvolutionalLayer(object):
             output = self.do_layer.get_output(output)
         if self.dropout_gauss:
             output = self.do_gauss_layer.get_output(output)
-        return self.activation(output)
+        return self.activation(T.clip(output, 1e-7, 1.0 - 1e-7)) if self.activation is function['sigmoid'] \
+            else self.activation(output)
 
     def get_output_shape(self, flatten=False):
         size = list(self.input_shape)
@@ -229,7 +230,7 @@ class ConvolutionalTransposedLayer(object):
     layers = []
 
     def __init__(self, filter_shape, output_shape, layer_name='ConvTransposed', W=None, b=None, padding='valid', stride=(2, 2),
-                 activation=T.nnet.relu):
+                 activation=function['relu']):
         self.filter_shape = filter_shape
         self.output_shape = output_shape
         self.padding = padding
@@ -287,7 +288,8 @@ class ConvolutionalTransposedLayer(object):
         input = theano.tensor.nnet.conv2d_transpose(output, self.W, self.input_shape, self.filter_shape,
                                                     border_mode=self.padding, input_dilation=self.stride)
         input = input + self.b.dimshuffle('x', 0, 'x', 'x')
-        return self.activation(input)
+        return self.activation(T.clip(input, 1e-7, 1.0 - 1e-7)) if self.activation is function['sigmoid'] \
+            else self.activation(input)
 
     def get_output_shape(self, flatten=False):
         return list(self.input_shape)
