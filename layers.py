@@ -14,7 +14,7 @@ import math
 import time
 import warnings
 
-from utils import function
+from utils import *
 rng = np.random.RandomState(int(time.time()))
 
 
