@@ -200,7 +200,7 @@ class ConvolutionalLayer(object):
         return self.activation(output)
 
     def get_output_shape(self, flatten=False):
-        size = self.input_shape
+        size = list(self.input_shape)
         assert len(size) == 4, "Shape must consist of 4 elements only"
 
         if self.border_mode == 'valid':
@@ -290,7 +290,7 @@ class ConvolutionalTransposedLayer(object):
         return self.activation(input)
 
     def get_output_shape(self, flatten=False):
-        return self.input_shape
+        return list(self.input_shape)
 
 
 class BatchNormLayer(object):
