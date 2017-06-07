@@ -32,7 +32,7 @@ def load_configuration(file):
 
 
 def load_weights(weight_file, model):
-    weights = np.load(weight_file).item()
+    weights = np.load(weight_file)
     keys = sorted(weights.keys())
     num_weights = len(keys)
     j = 0
@@ -40,11 +40,13 @@ def load_weights(weight_file, model):
         if j > num_weights - 1:
             break
         try:
-            # w = weights[keys[j]]
-            layer.b.set_value(weights[keys[j]][1])
-            print('@ Layer %d %s %s' % (i, keys[j], np.shape(weights[keys[j]][1])))
-            layer.W.set_value(weights[keys[j]][0])
-            print('@ Layer %d %s %s' % (i, keys[j], np.shape(weights[keys[j]][0])))
+            W = weights[keys[j]].transpose(3, 2, 0, 1) if len(weights[keys[j]].shape) == 4 else weights[keys[j]]
+            if W.shape == layer.params[0].get_value().shape:
+                layer.params[0].set_value(W)
+                print('@ Layer %d %s %s' % (i, keys[j], np.shape(weights[keys[j]])))
+            else:
+                print('No compatible parameters for layer %d %s found. '
+                      'Random initialization is used' % (i, keys[j]))
         except:
             W_converted = fully_connected_to_convolution(weights[keys[j]], layer.filter_shape) \
                 if hasattr(layer, 'filter_shape') else None
@@ -59,7 +61,18 @@ def load_weights(weight_file, model):
             else:
                 print('No compatible parameters for layer %d %s found. '
                       'Random initialization is used' % (i, keys[j]))
-        j += 1
+        try:
+            b = weights[keys[j+1]]
+            if b.shape == layer.params[1].get_value().shape:
+                layer.params[1].set_value(b)
+                print('@ Layer %d %s %s' % (i, keys[j+1], np.shape(weights[keys[j+1]])))
+            else:
+                print('No compatible parameters for layer %d %s found. '
+                      'Random initialization is used' % (i, keys[j+1]))
+        except:
+            print('No compatible parameters for layer %d %s found. '
+                  'Random initialization is used' % (i, keys[j+1]))
+        j += 2
     print('Loaded successfully!')
 
 
