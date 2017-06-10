@@ -26,7 +26,7 @@ class DropoutLayer(object):
         self.srng = RandomStreams(rng.randint(1, int(time.time())))
         self.p = p
         self.dropout_on = theano.shared(np.cast[theano.config.floatX](1.0), borrow=True)
-        print('  # %s (DO): p = %f' % (self.layer_name, p))
+        print('  # %s (DO)' % self.layer_name)
         DropoutLayer.layers.append(self)
 
     def get_output(self, input):
@@ -182,6 +182,7 @@ class ConvolutionalLayer(object):
             self.do_gauss_layer = DropoutGaussianLayer(layer_name='%s_dropout_gaussian' % self.layer_name)
 
         print('  # %s (Conv-%s):' % (layer_name, border_mode)),
+        print 'shape {}, '.format(input_shape),
         print('flt.(%s),' % ', '.join([str(i) for i in self.filter_shape])),
         print('/BN: %s /DO: %s /DO-GAUSSIAN: %s' % (self.batch_norm, self.drop_out, self.dropout_gauss))
         print('  # %s pool %s %s' % (self.layer_name, self.pool, self.pool_mode))
@@ -244,6 +245,7 @@ class ConvolutionalTransposedLayer(object):
         self.b = theano.shared(value=b_values, name=self.layer_name + '_b', borrow=True)
         self.params = [self.W, self.b]
         print('  # %s (ConvTransposed-%s):' % (layer_name, padding)),
+        print 'shape {}, '.format(output_shape),
         print('flt.(%s),' % ', '.join([str(i) for i in self.filter_shape]))
 
     def get_deconv_filter(self, f_shape):

@@ -76,16 +76,14 @@ def load_weights(weight_file, model):
     print('Loaded successfully!')
 
 
-# def load_weight2()
-
 def fully_connected_to_convolution(weight, prev_layer_shape):
     weight = np.asarray(weight, 'float32')
     shape = weight.shape
-    filter_size_square = shape[0] / prev_layer_shape[-2]
+    filter_size_square = shape[0] / prev_layer_shape[1]
     filter_size = np.sqrt(filter_size_square)
     if filter_size == int(filter_size):
         filter_size = int(filter_size)
-        return np.reshape(weight, [filter_size, filter_size, prev_layer_shape[-2], -1])
+        return np.reshape(weight, [-1, prev_layer_shape[1], filter_size, filter_size])
     else:
         return None
 
@@ -143,8 +141,8 @@ def prelu(x, alpha=0.01):
 def update_input(data, shared_vars, no_response=False, **kwargs):
     if not no_response:
         x, y = data
-        shape_y = shared_vars[1].get_value().shape if 'shape_y' not in kwargs else kwargs['shape_y']
-        shape_x = shared_vars[0].get_value().shape if 'shape_x' not in kwargs else kwargs['shape_x']
+        shape_y = kwargs.get('shape_y', shared_vars[1].get_value().shape)
+        shape_x = kwargs.get('shape_x', shared_vars[0].get_value().shape)
         try:
             x = np.reshape(np.asarray(x, dtype=theano.config.floatX), shape_x)
             y = np.reshape(np.asarray(y, dtype=shared_vars[1].dtype), shape_y)
@@ -178,6 +176,19 @@ def shared_dataset(data_xy):
     shared_x = theano.shared(np.asarray(data_x, dtype=theano.config.floatX))
     shared_y = theano.shared(np.asarray(data_y, dtype=theano.config.floatX))
     return shared_x, T.cast(shared_y, 'int32')
+
+
+def inference(input, model):
+    feed = input
+    for layer, idx in zip(model, xrange(len(model))):
+        feed = layer.get_output(feed.flatten(2))if 'fc' in layer.layer_name else layer.get_output(feed)
+    return feed
+
+
+def decrease_learning_rate(learning_rate, iter, epsilon_zero, epsilon_tau, tau):
+    eps_zero = epsilon_zero if iter <= tau else 0.
+    epsilon = (1 - float(iter)/tau) * eps_zero + float(iter)/tau * epsilon_tau
+    learning_rate.set_value(np.cast['float32'](epsilon))
 
 function = {'relu': T.nnet.relu, 'sigmoid': T.nnet.sigmoid, 'tanh': T.tanh, 'lrelu': lrelu,
             'softmax': T.nnet.softmax, 'linear': linear, 'elu': T.nnet.elu, 'ramp': ramp, 'maxout': maxout,

@@ -50,7 +50,7 @@ def MultinoulliCrossEntropy(p_y_given_x, y):
 
 
 def BinaryCrossEntropy(p_y_given_x, y):
-    return T.nnet.binary_crossentropy(p_y_given_x, y).mean()
+    return T.nnet.binary_crossentropy(p_y_given_x + 1e-7, y).mean()
 
 
 def MeanClassificationErrors(y_pred, y):

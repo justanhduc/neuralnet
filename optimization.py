@@ -12,7 +12,8 @@ import numpy as np
 
 class VanillaSGD(object):
     def __init__(self, alpha):
-        self.alpha = alpha
+        self.alpha = T.cast(T.as_tensor_variable(alpha), theano.config.floatX)
+        print('@ VANILLA GRADIENT DESCEND. ETA = %s / ALPHA = %s ' % alpha)
 
     def deltaXt(self, grad):
         return [self.alpha * grad_i for grad_i in grad]
@@ -39,7 +40,7 @@ class AdaDelta(object):
         self.prev_del = [T.zeros(p.get_value().shape, dtype=theano.config.floatX) for p in parameters]
         self.rho = T.as_tensor_variable(np.cast[theano.config.floatX](rho))
         self.epsilon = T.as_tensor_variable(np.cast[theano.config.floatX](epsilon))
-        print('  # ADADELTA used. RHO = %s / EPSILON = %s '% (self.rho, self.epsilon))
+        print('@ ADADELTA. RHO = %s / EPSILON = %s ' % (self.rho, self.epsilon))
 
     def deltaXt(self, grad):
         self.Eg2 = [self.rho*Eg2_i + (1. - self.rho)*grad_i**2 for Eg2_i, grad_i in zip(self.Eg2, grad)]
@@ -53,9 +54,9 @@ class AdaDelta(object):
 class SGDMomentum(object):
     def __init__(self, eta, alpha, parameters):
         self.prev_delta = [T.zeros(p.get_value().shape, dtype=theano.config.floatX) for p in parameters]
-        self.eta = T.as_tensor_variable(np.cast[theano.config.floatX](eta))
-        self.alpha = T.as_tensor_variable(np.cast[theano.config.floatX](alpha))
-        print('  # GRADIENT DESCEND MOMENTUM used. ETA = %s / ALPHA = %s '% (eta, alpha))
+        self.eta = T.cast(T.as_tensor_variable(eta), dtype=theano.config.floatX)
+        self.alpha = T.cast(T.as_tensor_variable(alpha), dtype=theano.config.floatX)
+        print('@ GRADIENT DESCEND MOMENTUM. ETA = %s / ALPHA = %s ' % (eta, alpha))
 
     def deltaXt(self, grad):
         delta = [self.eta * grad_i + self.alpha * prev_grad_i for grad_i, prev_grad_i in zip(grad, self.prev_delta)]
@@ -65,10 +66,10 @@ class SGDMomentum(object):
 
 class AdaGrad(object):
     def __init__(self, eta, parameters, epsilon=1e-6):
-        self.eta = T.as_tensor_variable(np.cast[theano.config.floatX](eta))
-        self.epsilon = T.as_tensor_variable(np.cast[theano.config.floatX](epsilon))
+        self.eta = T.cast(T.as_tensor_variable(eta), theano.config.floatX)
+        self.epsilon = T.cast(T.as_tensor_variable(epsilon), theano.config.floatX)
         self.G = [T.zeros(p.get_value().shape, dtype=theano.config.floatX) for p in parameters]
-        print('  # ADAGRAD used. ETA = %s ' % (eta))
+        print('# ADAGRAD. ETA = %s ' % eta)
 
     def deltaXt(self, grad):
         self.G = [g_i + grad_i**2 for g_i, grad_i in zip(self.G, grad)]
@@ -78,11 +79,11 @@ class AdaGrad(object):
 
 class RMSprop(object):
     def __init__(self, parameters, eta=1e-3, gamma=0.9, epsilon=1e-6):
-        self.eta = T.as_tensor_variable(np.cast[theano.config.floatX](eta))
-        self.gamma = T.as_tensor_variable(np.cast[theano.config.floatX](gamma))
-        self.epsilon = T.as_tensor_variable(np.cast[theano.config.floatX](epsilon))
+        self.eta = T.cast(T.as_tensor_variable(eta), theano.config.floatX)
+        self.gamma = T.cast(T.as_tensor_variable(gamma), theano.config.floatX)
+        self.epsilon = T.cast(T.as_tensor_variable(epsilon), theano.config.floatX)
         self.Eg2 = [T.zeros(p.get_value().shape, dtype=theano.config.floatX) for p in parameters]
-        print('  # RMSPROP used. ETA = %s / GAMMA = %s ' % (eta, gamma))
+        print('# RMSPROP. ETA = %s / GAMMA = %s ' % (eta, gamma))
 
     def deltaXt(self, grad):
         self.Eg2 = [self.gamma * Eg2_i + (1. - self.gamma) * grad_i**2 for Eg2_i, grad_i in zip(self.Eg2, grad)]
@@ -92,12 +93,12 @@ class RMSprop(object):
 
 class Adam(object):
     def __init__(self, parameters, alpha=1e-3, beta1=0.9, beta2=0.999):
-        self.alpha = T.as_tensor_variable(np.cast[theano.config.floatX](alpha))
-        self.beta1 = T.as_tensor_variable(np.cast[theano.config.floatX](beta1))
-        self.beta2 = T.as_tensor_variable(np.cast[theano.config.floatX](beta2))
+        self.alpha = T.cast(T.as_tensor_variable(alpha), theano.config.floatX)
+        self.beta1 = T.cast(T.as_tensor_variable(beta1), theano.config.floatX)
+        self.beta2 = T.cast(T.as_tensor_variable(beta2), theano.config.floatX)
         self.m = [T.zeros(p.get_value().shape, dtype=theano.config.floatX) for p in parameters]
         self.v = [T.zeros(p.get_value().shape, dtype=theano.config.floatX) for p in parameters]
-        print('  # ADAM used. ALPHA = %s / BETA1 = %s / BETA2 = %s' % (self.alpha, self.beta1, self.beta2))
+        print('# ADAM. ALPHA = %s / BETA1 = %s / BETA2 = %s' % (alpha, beta1, beta2))
 
     def deltaXt(self, grad, step):
         t = T.cast(step, theano.config.floatX)
@@ -112,12 +113,12 @@ class Adam(object):
 
 class AdaMax(object):
     def __init__(self, parameters, alpha=2e-3, beta1=0.9, beta2=0.999):
-        self.alpha = T.as_tensor_variable(np.cast[theano.config.floatX](alpha))
-        self.beta1 = T.as_tensor_variable(np.cast[theano.config.floatX](beta1))
-        self.beta2 = T.as_tensor_variable(np.cast[theano.config.floatX](beta2))
+        self.alpha = T.cast(T.as_tensor_variable(alpha), theano.config.floatX)
+        self.beta1 = T.cast(T.as_tensor_variable(beta1), theano.config.floatX)
+        self.beta2 = T.cast(T.as_tensor_variable(beta2), theano.config.floatX)
         self.m = [T.zeros(p.get_value().shape, dtype=theano.config.floatX) for p in parameters]
-        self.u = T.as_tensor_variable(np.cast[theano.config.floatX](0.))
-        print('  # ADAMAX used. ALPHA = %s / BETA1 = %s / BETA2 = %s' % (self.alpha, self.beta1, self.beta2))
+        self.u = T.cast(T.as_tensor_variable(0.), theano.config.floatX)
+        print('# ADAMAX. ALPHA = %s / BETA1 = %s / BETA2 = %s' % (alpha, beta1, beta2))
 
     def deltaXt(self, grad, t):
         self.m = [self.beta1 * m_i + (1 - self.beta1) * grad_i for m_i, grad_i in zip(self.m, grad)]
