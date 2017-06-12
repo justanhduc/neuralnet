@@ -180,8 +180,8 @@ def shared_dataset(data_xy):
 
 def inference(input, model):
     feed = input
-    for layer, idx in zip(model, xrange(len(model))):
-        feed = layer.get_output(feed.flatten(2))if 'fc' in layer.layer_name else layer.get_output(feed)
+    for idx, layer in enumerate(model):
+        feed = layer.get_output(feed.flatten(2)) if 'fc' in layer.layer_name.lower() else layer.get_output(feed)
     return feed
 
 

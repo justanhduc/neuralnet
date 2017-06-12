@@ -14,7 +14,7 @@ class Structure(object):
         self.config = load_configuration(config_file)
         self.layers = []
         self.index = 0
-        self.output = []
+        self.output = None
         try:
             self.structure = self.config['architecture']['structure']
             self.sharing = self.config['architecture']['sharing']
@@ -83,6 +83,19 @@ class Structure(object):
         num_prev_layer_nodes = self.nkerns[idx]
         return fc_layer, feed_shape, num_prev_layer_nodes
 
+    def build_transposed_convolutional_layer(self, idx, feed_shape, prev_layer_shape, params=(None, None), layer_name=None):
+        transconv_layer = layers.TransposedConvolutionalLayer((prev_layer_shape, self.nkerns[idx], self.kern_size[idx],
+                                                               self.kern_size[idx]), (feed_shape[0], None, None, None),
+                                                              activation=self.activation[idx], layer_name=layer_name,
+                                                              W=params[0], b=params[1])
+        if idx != self.num_layers - 1:
+            flatten = True if self.structure[idx + 1].lower() == 'fc' else False
+        else:
+            flatten = False
+        feed_shape = transconv_layer.get_output_shape(flatten)
+        num_prev_layer_nodes = self.nkerns[idx]
+        return transconv_layer, feed_shape, num_prev_layer_nodes
+
     def build_model(self, **kwargs):
         if len(self.layers) > 0: self.layers = []
         feed_shape = kwargs.get('input_size', list(self.input_size))
@@ -92,7 +105,9 @@ class Structure(object):
         layer = {'conv': lambda idx, feed_shape, prev_layer_shape, params, layer_name=None:
                  self.build_convolutional_layer(idx, feed_shape, prev_layer_shape, params, layer_name),
                  'fc': lambda idx, feed_shape, prev_layer_shape, params, layer_name=None:
-                 self.build_fully_connected_layer(idx, feed_shape, prev_layer_shape, params, layer_name)}
+                 self.build_fully_connected_layer(idx, feed_shape, prev_layer_shape, params, layer_name),
+                 'transconv': lambda idx, feed_shape, prev_layer_shape, params, layer_name=None:
+                 self.build_transposed_convolutional_layer(idx, feed_shape,prev_layer_shape, params, layer_name=None)}
         for i in xrange(self.num_layers):
             layer_name = '%s_%s%d' % (model_scope, self.structure[i].upper(), i)
             l, feed_shape, prev_channel = layer[self.structure[i].lower()](i, feed_shape, prev_channel,
@@ -101,9 +116,5 @@ class Structure(object):
 
     def inference(self, input, **kwargs):
         model = kwargs.get('model', self.layers)
-        feed = input
-        for layer in model:
-            feed = feed.flatten(2) if 'fc' in layer.layer_name.lower() else feed
-            feed = layer.get_output(feed)
-            self.output.append(feed)
+        self.output = T.reshape(inference(input, model), (-1, )) if self.nkerns[-1] == 1 else inference(input, model)
         return self.output

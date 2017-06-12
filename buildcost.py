@@ -30,7 +30,7 @@ class Optimization(object):
             self.regularization_coeff = self.config['optimization']['regularization_coeff']
             self.decrease_factor = self.config['optimization']['decrease_factor']
             self.final_learning_rate = self.config['optimization']['final_learning_rate']
-            self.epochs_check_learn_rate = self.config['optimization']['epochs_check_learn_rate']
+            self.last_iter_to_decrease = self.config['optimization']['last_iter_to_decrease']
         except ValueError:
             raise ValueError('Some config value is invalid')
 
@@ -43,11 +43,11 @@ class Optimization(object):
             self.cost = metrics.MultinoulliCrossEntropy(y_pred, y)
         else:
             raise NameError('Unknown type of cost function')
-
         if self.regularization:
             self.cost += self.build_regularization(**kwargs)
+        return self.cost
 
-    def build_optimization(self, cost, **kwargs):
+    def build_updates(self, cost, **kwargs):
         try:
             model = kwargs.get('model')
             method = kwargs.get('method', self.method)
@@ -114,14 +114,21 @@ class Optimization(object):
             raise AttributeError('Some attribute does not exist in config or kwargs')
 
         if regularization_type.lower() == 'l2':
-            print('  # L2 regularization')
+            print('@ L2 regularization')
             # L2-regularization
             L2 = sum([(model[i].W ** 2).sum() for i in range(len(model))])
             return regularization_coeff * L2
         elif regularization_type.lower() == 'l1':
-            print('  # L1 regularization')
+            print('@ L1 regularization')
             # L1-regularization
             L1 = sum([abs(model[i].W).sum() for i in range(len(model))])
             return regularization_coeff * L1
         else:
             raise NotImplementedError('Regularization should be L1 or L2 only')
+
+    def decrease_learning_rate(self, **kwargs):
+        lr = kwargs.get('learning_rate', None)
+        iter = kwargs.get('iteration', None)
+        if lr is None or iter is None:
+            raise ValueError('Learning rate Shared Variable and iteration Variable must be provided')
+        utils.decrease_learning_rate(lr, iter, self.learning_rate, self.final_learning_rate, self.last_iter_to_decrease)

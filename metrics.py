@@ -50,6 +50,8 @@ def MultinoulliCrossEntropy(p_y_given_x, y):
 
 
 def BinaryCrossEntropy(p_y_given_x, y):
+    if y.ndim != p_y_given_x.ndim:
+        raise TypeError('y should have the same shape as p_y_given_x', ('y', y.type, 'p_y_given_x', p_y_given_x.type))
     return T.nnet.binary_crossentropy(p_y_given_x + 1e-7, y).mean()
 
 

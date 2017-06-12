@@ -26,7 +26,7 @@ class DropoutLayer(object):
         self.srng = RandomStreams(rng.randint(1, int(time.time())))
         self.p = p
         self.dropout_on = theano.shared(np.cast[theano.config.floatX](1.0), borrow=True)
-        print('  # %s (DO)' % self.layer_name)
+        print '@ %s p=%.2f' % (self.layer_name, p)
         DropoutLayer.layers.append(self)
 
     def get_output(self, input):
@@ -48,7 +48,7 @@ class DropoutGaussianLayer(object):
         self.layer_name = 'Dropout_Gaussian' if layer_name is None else layer_name
         self.srng = RandomStreams(rng.randint(1, int(time.time())))
         self.dropout_on = theano.shared(np.cast[theano.config.floatX](1.0), borrow=True)
-        print('  # %s (DO-Gauss)' % self.layer_name)
+        print('@ %s (DO-Gauss)' % self.layer_name)
         DropoutGaussianLayer.layers.append(self)
 
     def get_output(self, input):
@@ -65,7 +65,7 @@ class DropoutGaussianLayer(object):
 class FullyConnectedLayer(object):
     layers = []
 
-    def __init__(self, n_in, n_out, W=None, b=None, layer_name=None, activation=relu, batch_norm=False, drop_out=False,
+    def __init__(self, n_in, n_out, W=None, b=None, layer_name='FC', activation=relu, batch_norm=False, drop_out=False,
                  p=0.5, dropout_gauss=False):
         """
         :type n_in: int
@@ -77,6 +77,7 @@ class FullyConnectedLayer(object):
         """
         assert isinstance(n_in, int), 'n_in must be an integer.'
         assert isinstance(n_out, int), 'n_in must be an integer.'
+        assert 'fc' in layer_name.lower(), 'Layer name must contain \'FC\''
         if sum([dropout_gauss, drop_out, batch_norm]) > 1:
             warnings.warn('Dropout, dropout Gaussian and batch normalization are used together', UserWarning)
 
@@ -84,7 +85,7 @@ class FullyConnectedLayer(object):
         self.n_out = n_out
         self.activation = activation
         self.batch_norm = batch_norm
-        self.layer_name = 'FC' if layer_name is None else layer_name
+        self.layer_name = layer_name
         self.drop_out = drop_out
         self.dropout_gauss = dropout_gauss
         FullyConnectedLayer.layers.append(self)
@@ -108,7 +109,7 @@ class FullyConnectedLayer(object):
         if self.dropout_gauss:
             self.do_gauss_layer = DropoutGaussianLayer(layer_name='%s_dropout_gaussian' % self.layer_name)
 
-        print('  # %s (FC): in = %d -> out = %d' % (self.layer_name, n_in, n_out)),
+        print('@ %s (FC): in = %d -> out = %d' % (self.layer_name, n_in, n_out)),
         print('/ BN: %s /DO: %s /DO-GAUSSIAN: %s' % (self.batch_norm, self.drop_out, self.dropout_gauss))
 
     def get_output(self, input):
@@ -136,7 +137,7 @@ class FullyConnectedLayer(object):
 class ConvolutionalLayer(object):
     layers = []
 
-    def __init__(self, input_shape, filter_shape, W=None, border_mode='half', subsample=(1, 1), layer_name=None,
+    def __init__(self, input_shape, filter_shape, W=None, border_mode='half', subsample=(1, 1), layer_name='CONV',
                  activation=function['relu'], pool=False, pool_size=(2, 2), pool_mode='max', pool_stride=(2, 2), pool_pad=(0, 0),
                  batch_norm=False, drop_out=False, p=0.5, dropout_gauss=False):
         """
@@ -144,6 +145,7 @@ class ConvolutionalLayer(object):
         image_shape: (batch size, num channels, image height, image width)
         """
         assert len(input_shape) == len(filter_shape) == 4, 'Filter shape and input shape must have 4 elements.'
+        assert 'conv' in layer_name.lower(), 'Layer name must contain \'CONV\''
         if sum([dropout_gauss, drop_out, batch_norm]) > 1:
             warnings.warn('Dropout, dropout Gaussian and batch normalization are used together', UserWarning)
 
@@ -181,11 +183,11 @@ class ConvolutionalLayer(object):
         if self.dropout_gauss:
             self.do_gauss_layer = DropoutGaussianLayer(layer_name='%s_dropout_gaussian' % self.layer_name)
 
-        print('  # %s (Conv-%s):' % (layer_name, border_mode)),
+        print('@ %s (Conv-%s):' % (layer_name, border_mode)),
         print 'shape {}, '.format(input_shape),
         print('flt.(%s),' % ', '.join([str(i) for i in self.filter_shape])),
         print('/BN: %s /DO: %s /DO-GAUSSIAN: %s' % (self.batch_norm, self.drop_out, self.dropout_gauss))
-        print('  # %s pool %s %s' % (self.layer_name, self.pool, self.pool_mode))
+        print('   %s pool %s %s' % (self.layer_name, self.pool, self.pool_mode))
         ConvolutionalLayer.layers.append(self)
 
     def get_output(self, input):
@@ -227,24 +229,26 @@ class ConvolutionalLayer(object):
         self.W.set_value(W_values)
 
 
-class ConvolutionalTransposedLayer(object):
+class TransposedConvolutionalLayer(object):
     layers = []
 
-    def __init__(self, filter_shape, output_shape, layer_name='ConvTransposed', W=None, b=None, padding='valid', stride=(2, 2),
+    def __init__(self, filter_shape, output_shape, layer_name='TRANSCONV', W=None, b=None, padding='valid', stride=(2, 2),
                  activation=function['relu']):
+        assert 'transconv' in layer_name, 'Layer name must contain \'TRANSCONV\''
+
         self.filter_shape = filter_shape
         self.output_shape = output_shape
         self.padding = padding
         self.stride = stride
         self.activation = activation
-        self.layer_name = layer_name
+        self.layer_name = 'TRANSCONV' if layer_name is None else layer_name
 
         b_values = np.zeros((filter_shape[1],), dtype=theano.config.floatX) if b is None else b
         W_values = self.get_deconv_filter(filter_shape) if W is None else W
         self.W = theano.shared(W_values, self.layer_name + 'W', borrow=True)
         self.b = theano.shared(value=b_values, name=self.layer_name + '_b', borrow=True)
         self.params = [self.W, self.b]
-        print('  # %s (ConvTransposed-%s):' % (layer_name, padding)),
+        print('@ %s (TransposedConv-%s):' % (layer_name, padding)),
         print 'shape {}, '.format(output_shape),
         print('flt.(%s),' % ', '.join([str(i) for i in self.filter_shape]))
 
