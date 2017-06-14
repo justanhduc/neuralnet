@@ -64,7 +64,7 @@ def build_vgg16(phase='train', **kwargs):
         validation_cost_to_plot = []
         print 'Training...'
         start_training_time = time.time()
-        while epoch < 200 and not early_stopping:
+        while epoch < model.n_epochs and not early_stopping:
             epoch += 1
             print 'Epoch %d starts...' % epoch
             print '\tlearning rate decreased to %.10f' % placeholder_lr.get_value()
@@ -73,7 +73,7 @@ def build_vgg16(phase='train', **kwargs):
             start_epoch_time = time.time()
             for idx, b in enumerate(batch):
                 buildmodel.Model.set_training_status(True)
-                iteration = epoch * num_training_batches + idx
+                iteration = (epoch - 1.) * num_training_batches + idx + 1
                 kwargs = {'learning_rate': placeholder_lr, 'iteration': iteration}
                 model.decrease_learning_rate(**kwargs)
 
@@ -95,12 +95,12 @@ def build_vgg16(phase='train', **kwargs):
                         raise ValueError('Training failed due to NaN cost')
 
                 if iteration % num_training_batches == 0:
-                    batch = generator(validation_data, model.batch_size)
+                    batch_valid = generator(validation_data, model.batch_size)
                     buildmodel.Model.set_training_status(False)
                     validation_cost = 0.
                     validation_accuracy = 0.
-                    for b in batch:
-                        utils.update_input((b[0].transpose(0, 3, 1, 2), b[1]), (placeholder_x, placeholder_y))
+                    for b_valid in batch_valid:
+                        utils.update_input((b_valid[0].transpose(0, 3, 1, 2), b_valid[1]), (placeholder_x, placeholder_y))
                         c, a = validate()
                         validation_cost += c
                         validation_accuracy += a
@@ -133,7 +133,7 @@ def build_vgg16(phase='train', **kwargs):
 
             if vote_to_terminate >= 30:
                 print 'Training terminated due to no improvement!'
-                break
+                early_stopping = True
         print 'Best validation accuracy: %.4f' % best_accuracy
 
         print 'Training the network with all available data...'
@@ -149,7 +149,7 @@ def build_vgg16(phase='train', **kwargs):
             batch = generator(data, model.batch_size)
             training_cost = 0.
             for idx, b in enumerate(batch):
-                iteration = i * num_training_batches + idx
+                iteration = i * num_training_batches + idx + 1
                 kwargs = {'learning_rate': placeholder_lr, 'iteration': iteration}
                 model.decrease_learning_rate(**kwargs)
                 x, y = b
@@ -226,4 +226,4 @@ if __name__ == '__main__':
     validation_data = pkl.load(open('validation.pkl', 'rb'))
     kwargs = {'training_data': training_data, 'validation_data': validation_data, 'config_file': 'vgg16.config',
               'testing_model': 'checkpoints/run19/model.mdl', 'testing_path': 'test', 'is_folder': True}
-    build_vgg16('test', **kwargs)
+    build_vgg16('train', **kwargs)
