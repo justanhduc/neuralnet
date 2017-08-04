@@ -62,6 +62,10 @@ class Model(Optimization, Structure):
     def decrease_learning_rate(self, **kwargs):
         super(Model, self).decrease_learning_rate(**kwargs)
 
+    def reset(self):
+        for layer in self.layers:
+            layer.reset()
+
     @staticmethod
     def set_training_status(training):
         layers.DropoutGaussianLayer.turn_dropout_on(training)

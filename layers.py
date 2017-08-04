@@ -100,7 +100,7 @@ class FullyConnectedLayer(object):
         self.params = [self.W, self.b]
 
         if self.batch_norm:
-            self.bn_layer = BatchNormLayer((n_out,), 'bn_'+self.layer_name)
+            self.bn_layer = BatchNormLayer((1, n_out), 'bn_'+self.layer_name)
             self.params.pop(-1)
             self.params += self.bn_layer.params
         if self.drop_out:
@@ -173,7 +173,7 @@ class ConvolutionalLayer(object):
         self.params = [self.W]
 
         if self.batch_norm:
-            self.bn_layer = BatchNormLayer(filter_shape, 'BN_'+self.layer_name)
+            self.bn_layer = BatchNormLayer(self.get_output_shape(), 'BN_'+self.layer_name)
             self.params += self.bn_layer.params
 
         if self.drop_out:
@@ -300,46 +300,52 @@ class TransposedConvolutionalLayer(object):
     def get_output_shape(self, flatten=False):
         return list(self.input_shape)
 
+    def reset(self):
+        b_values = np.zeros((self.filter_shape[1],), dtype=theano.config.floatX)
+        W_values = self.get_deconv_filter(self.filter_shape)
+        self.W.set_value(W_values)
+        self.b.set_value(b_values)
+
 
 class BatchNormLayer(object):
     layers = []
 
-    def __init__(self, input_shape, layer_name=None, epsilon=1e-4, running_average_factor=0.1):
+    def __init__(self, input_shape, layer_name=None, epsilon=1e-4, running_average_factor=0.1, axes=(0,)):
         self.layer_name = 'BN' if layer_name is None else layer_name
         self.input_shape = input_shape
         self.epsilon = epsilon
         self.running_average_factor = running_average_factor
         self.training = theano.shared(np.cast['int8'](1), borrow=True)
-        self.gamma = theano.shared(np.ones(input_shape[0], dtype=theano.config.floatX), name=layer_name + '_GAMMA',
+        self.axes = axes
+        shape = list(input_shape)
+        for index in axes:
+            shape.remove(shape[index])
+        self.gamma = theano.shared(np.ones(shape, dtype=theano.config.floatX), name=layer_name + '_GAMMA',
                                    borrow=True)
-        self.beta = theano.shared(np.zeros(input_shape[0], dtype=theano.config.floatX), name=layer_name + '_BETA',
+        self.beta = theano.shared(np.zeros(shape, dtype=theano.config.floatX), name=layer_name + '_BETA',
                                   borrow=True)
-        self.running_mean = T.zeros_like(self.gamma, dtype=theano.config.floatX)
-        self.running_var = T.ones_like(self.gamma, dtype=theano.config.floatX)
+        self.running_mean = 0
+        self.running_var = 0
         self.params = [self.gamma, self.beta]
         BatchNormLayer.layers.append(self)
 
     def batch_normalization_train(self, input):
-        axes = (0,) + tuple(range(2, input.ndim))
-        mean = input.mean(axes, keepdims=True)
-        var = input.var(axes, keepdims=True)
-        invstd = T.inv(T.sqrt(var + self.epsilon))
-        gamma = self.gamma.dimshuffle('x', 0, 'x', 'x') if len(self.input_shape) == 4 else self.gamma
-        beta = self.beta.dimshuffle('x', 0, 'x', 'x') if len(self.input_shape) == 4 else self.beta
-        out = (input - mean) * gamma * invstd + beta
+        out, mean, invstd = T.nnet.bn.batch_normalization_train(input, self.gamma, self.beta, epsilon=self.epsilon)
         m = T.cast(T.prod(input.shape) / T.prod(mean.shape), 'float32')
-        self.running_mean = self.running_mean * (1 - self.running_average_factor) + mean * self.running_average_factor
-        self.running_var = self.running_var * (1 - self.running_average_factor) + (m / (m - 1)) * var * self.running_average_factor
+        var = T.sqr(T.inv(invstd)) - self.epsilon
+        self.running_mean = T.switch(T.eq(self.running_mean, 0), mean, self.running_mean *
+                                     (1 - self.running_average_factor) + mean * self.running_average_factor)
+        self.running_var = T.switch(T.eq(self.running_var, 0), var, self.running_var *
+                                    (1 - self.running_average_factor) + (m / (m - 1)) * var * self.running_average_factor)
         return out
 
     def batch_normalization_test(self, input):
-        gamma = self.gamma.dimshuffle('x', 0, 'x', 'x') if len(self.input_shape) == 4 else self.gamma
-        beta = self.beta.dimshuffle('x', 0, 'x', 'x') if len(self.input_shape) == 4 else self.beta
-        out = (input - self.running_mean) * gamma / T.sqrt(self.running_var + self.epsilon) + beta
+        out = T.nnet.bn.batch_normalization_test(input, self.gamma, self.beta, self.running_mean, self.running_var,
+                                                 epsilon=self.epsilon)
         return out
 
     def get_output(self, input):
-        return T.switch(T.eq(self.training, 1), self.batch_normalization_train(input), self.batch_normalization_test(input))
+        return T.switch(T.isclose(self.training, 1), self.batch_normalization_train(input), self.batch_normalization_test(input))
 
     @staticmethod
     def set_training(training):
