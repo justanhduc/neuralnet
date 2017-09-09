@@ -1,6 +1,6 @@
 # Neuralnet
 
-A high level framework for general purpose neural networks
+A high level framework for general purpose neural networks.
 
 ## Requirements
 
@@ -13,5 +13,8 @@ A high level framework for general purpose neural networks
 [tqdm](https://pypi.python.org/pypi/tqdm)
 
 ## Usages
+To create a new model, simple make a model class and inherit from BaseModel in base_model.py
 
+## Credits
+This implementation is highly inspired by [Lasagne](http://lasagne.readthedocs.io/en/latest/user/installation.html)
 
