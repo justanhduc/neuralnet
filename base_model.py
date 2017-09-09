@@ -31,6 +31,18 @@ class BaseModel(Optimization, Training):
     def inference(self, input):
         return utils.inference(input, self.model)
 
+    def get_params(self):
+        params = []
+        for layer in self.model:
+            params += layer.params
+        return params
+
+    def get_regularizable(self):
+        params = []
+        for layer in self.model:
+            params += layer.regularizable
+        return params
+
     def save_params(self):
         numpy.savez(self.param_file, **{p.name: p.get_value() for p in self.params})
         print 'Model weights dumped to %s' % self.param_file
