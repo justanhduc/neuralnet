@@ -1,9 +1,14 @@
+from __future__ import print_function
 import json
 import numpy as np
 import threading
 import theano
 from theano import tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
+import time
+import sys
+
+import layers
 thread_lock = threading.Lock()
 
 
@@ -15,20 +20,118 @@ class Thread(threading.Thread):
         self.func = func
 
     def run(self):
-        print 'Starting ' + self.name
+        print('Starting ' + self.name)
         thread_lock.acquire()
         self.outputs = self.func()
         thread_lock.release()
 
 
-def load_configuration(file):
-    try:
-        with open(file) as f:
-            data = json.load(f)
-        print('Config file loaded successfully')
-    except:
-        raise NameError('Unable to open config file!!!')
-    return data
+class ConfigParser(object):
+    def __init__(self, config_file, **kwargs):
+        super(ConfigParser, self).__init__()
+        self.config_file = config_file
+        self.config = self.load_configuration()
+
+    def load_configuration(self):
+        try:
+            with open(self.config_file) as f:
+                data = json.load(f)
+            print('Config file loaded successfully')
+        except:
+            raise NameError('Unable to open config file!!!')
+        return data
+
+
+def generate_in_background(generator, num_cached=10):
+    """
+    Runs a generator in a background thread, caching up to `num_cached` items.
+    """
+    import Queue
+    queue = Queue.Queue(maxsize=num_cached)
+    sentinel = object()  # guaranteed unique reference
+
+    # define producer (putting items into queue)
+    def producer():
+        for item in generator:
+            queue.put(item)
+        queue.put(sentinel)
+
+    # start producer (in a background thread)
+    import threading
+    thread = threading.Thread(target=producer)
+    thread.daemon = True
+    thread.start()
+
+    # run as consumer (read items from queue, in current thread)
+    item = queue.get()
+    while item is not sentinel:
+        yield item
+        item = queue.get()
+
+
+def progress(items, desc='', total=None, min_delay=0.1):
+    """
+    Returns a generator over `items`, printing the number and percentage of
+    items processed and the estimated remaining processing time before yielding
+    the next item. `total` gives the total number of items (required if `items`
+    has no length), and `min_delay` gives the minimum time in seconds between
+    subsequent prints. `desc` gives an optional prefix text (end with a space).
+    """
+    total = total or len(items)
+    t_start = time.time()
+    t_last = 0
+    for n, item in enumerate(items):
+        t_now = time.time()
+        if t_now - t_last > min_delay:
+            print("\r%s%d/%d (%6.2f%%)" % (
+                    desc, n+1, total, n / float(total) * 100), end=" ")
+            if n > 0:
+                t_done = t_now - t_start
+                t_total = t_done / n * total
+                print("(ETA: %d:%02d)" % divmod(t_total - t_done, 60), end=" ")
+            sys.stdout.flush()
+            t_last = t_now
+        yield item
+    t_total = time.time() - t_start
+    print("\r%s%d/%d (100.00%%) (took %d:%02d)" % ((desc, total, total) + divmod(t_total, 60)))
+
+
+def augment_minibatches(minibatches, flip=0.5, trans=4):
+    """
+    Randomly augments images by horizontal flipping with a probability of
+    `flip` and random translation of up to `trans` pixels in both directions.
+    """
+    for inputs, targets in minibatches:
+        batchsize, c, h, w = inputs.shape
+        if flip:
+            coins = np.random.rand(batchsize) < flip
+            inputs = [inp[:, :, ::-1] if coin else inp
+                      for inp, coin in zip(inputs, coins)]
+            if not trans:
+                inputs = np.asarray(inputs)
+        outputs = inputs
+        if trans:
+            outputs = np.empty((batchsize, c, h, w), inputs[0].dtype)
+            shifts = np.random.randint(-trans, trans, (batchsize, 2))
+            for outp, inp, (x, y) in zip(outputs, inputs, shifts):
+                if x > 0:
+                    outp[:, :x] = 0
+                    outp = outp[:, x:]
+                    inp = inp[:, :-x]
+                elif x < 0:
+                    outp[:, x:] = 0
+                    outp = outp[:, :x]
+                    inp = inp[:, -x:]
+                if y > 0:
+                    outp[:, :, :y] = 0
+                    outp = outp[:, :, y:]
+                    inp = inp[:, :, :-y]
+                elif y < 0:
+                    outp[:, :, y:] = 0
+                    outp = outp[:, :, :y]
+                    inp = inp[:, :, -y:]
+                outp[:] = inp
+        yield outputs, targets
 
 
 def load_weights(weight_file, model):
@@ -88,26 +191,6 @@ def fully_connected_to_convolution(weight, prev_layer_shape):
         return None
 
 
-def unpool_2by2(input):
-    return input.repeat(2, axis=2).repeat(2, axis=3)
-
-
-def dropout(input, rng, dropout_on, p=0.5):
-    """
-    p: the probablity of dropping a unit
-    """
-    srng = RandomStreams(rng.randint(999999))
-
-    # p=1-p because 1's indicate keep and p is prob of dropping
-    mask = srng.binomial(n=1, p=1-p, size=input.shape)
-    # The cast is important because
-    # int * float32 = float64 which pulls things off the gpu
-    if dropout_on:
-        return input * T.cast(mask, theano.config.floatX)
-    else:
-        return input * (1.0 - p)
-
-
 def maxout(input, maxout_size=4):
     maxout_out = None
     for i in xrange(maxout_size):
@@ -132,7 +215,7 @@ def ramp(x):
     return T.switch(left > 1, 1, left)
 
 
-def prelu(x, alpha=0.01):
+def prelu(x, alpha):
     f1 = 0.5 * (1 + alpha)
     f2 = 0.5 * (1 - alpha)
     return f1 * x + f2 * abs(x)
@@ -144,7 +227,7 @@ def update_input(data, shared_vars, no_response=False, **kwargs):
         shape_y = kwargs.get('shape_y', shared_vars[1].get_value().shape)
         shape_x = kwargs.get('shape_x', shared_vars[0].get_value().shape)
         try:
-            x = np.reshape(np.asarray(x, dtype=theano.config.floatX), shape_x)
+            x = np.reshape(np.asarray(x, dtype=shared_vars[0].dtype), shape_x)
             y = np.reshape(np.asarray(y, dtype=shared_vars[1].dtype), shape_y)
         except ValueError:
             raise ValueError('Input of the shared variable must have the same shape with the shared variable')
@@ -154,20 +237,20 @@ def update_input(data, shared_vars, no_response=False, **kwargs):
         x = data
         shape_x = shared_vars.get_value().shape if 'shape_x' not in kwargs else kwargs['shape_x']
         try:
-            x = np.reshape(np.asarray(x, dtype=theano.config.floatX), shape_x)
+            x = np.reshape(np.asarray(x, dtype=shared_vars.dtype), shape_x)
         except ValueError:
             raise ValueError('Input of the shared variable must have the same shape with the shared variable')
         shared_vars.set_value(x, borrow=True)
 
 
-def generator(data, batch_size, no_response=False):
-    if not no_response:
+def generator(data, batch_size, no_target=False):
+    if not no_target:
         x, y = data
     else:
         x = data
     num_batch = np.asarray(x).shape[0] / batch_size
     for i in xrange(num_batch):
-        yield (x[i*batch_size:(i+1)*batch_size], y[i*batch_size:(i+1)*batch_size]) if not no_response \
+        yield (x[i*batch_size:(i+1)*batch_size], y[i*batch_size:(i+1)*batch_size]) if not no_target \
             else x[i*batch_size:(i+1)*batch_size]
 
 
@@ -181,7 +264,8 @@ def shared_dataset(data_xy):
 def inference(input, model):
     feed = input
     for idx, layer in enumerate(model):
-        feed = layer.get_output(feed.flatten(2)) if 'fc' in layer.layer_name.lower() else layer.get_output(feed)
+        feed = layer.get_output(feed.flatten(2)) if isinstance(layer, layers.FullyConnectedLayer) \
+            else layer.get_output(feed)
     return feed
 
 
@@ -190,6 +274,14 @@ def decrease_learning_rate(learning_rate, iter, epsilon_zero, epsilon_tau, tau):
     epsilon = (1 - float(iter)/tau) * eps_zero + float(iter)/tau * epsilon_tau
     learning_rate.set_value(np.cast['float32'](epsilon))
 
+
+def rgb2gray(img):
+    if img.ndim != 4:
+        raise RuntimeError('Input images must have four dimensions, not %d', img.ndim)
+    return (0.299 * img[:, 0] + 0.587 * img[:, 1] + 0.114 * img[:, 2]).dimshuffle((0, 'x', 1, 2))
+
 function = {'relu': T.nnet.relu, 'sigmoid': T.nnet.sigmoid, 'tanh': T.tanh, 'lrelu': lrelu,
             'softmax': T.nnet.softmax, 'linear': linear, 'elu': T.nnet.elu, 'ramp': ramp, 'maxout': maxout,
             'sin': T.sin, 'cos': T.cos}
+
+
