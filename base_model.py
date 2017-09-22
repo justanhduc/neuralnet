@@ -11,6 +11,7 @@ class BaseModel(Optimization, Training):
         super(BaseModel, self).__init__(config_file, **kwargs)
         self.model = []
         self.params = []
+        self.trainable = []
         self.regularizable = []
         self.index = 0
 
@@ -31,17 +32,17 @@ class BaseModel(Optimization, Training):
     def inference(self, input):
         return utils.inference(input, self.model)
 
-    def get_params(self):
-        params = []
+    def get_all_params(self):
         for layer in self.model:
-            params += layer.params
-        return params
+            self.params += layer.params
+
+    def get_trainable(self):
+        for layer in self.model:
+            self.trainable += layer.trainable
 
     def get_regularizable(self):
-        params = []
         for layer in self.model:
-            params += layer.regularizable
-        return params
+            self.regularizable += layer.regularizable
 
     def save_params(self):
         numpy.savez(self.param_file, **{p.name: p.get_value() for p in self.params})

@@ -46,7 +46,9 @@ def MultinoulliCrossEntropy(p_y_given_x, y):
     # xdev = p_y_given_x - p_y_given_x.max(1, keepdims=True)
     # lsm = xdev - T.log(T.sum(T.exp(xdev), axis=1, keepdims=True))
     # cm2 = -lsm[T.arange(y.shape[0]), y]
-    return T.nnet.categorical_crossentropy(p_y_given_x, y).mean()
+    # cost = cm2.mean()
+    cost = T.nnet.categorical_crossentropy(p_y_given_x, y).mean()
+    return cost
 
 
 def BinaryCrossEntropy(p_y_given_x, y):

@@ -5,7 +5,7 @@ Updates on Sep 2017: added BatchNormDNNLayer from Lasagne
 
 
 '''
-
+# from lasagne import layers
 import theano
 from theano import tensor as T
 from theano.tensor.signal.pool import pool_2d as pool
@@ -26,10 +26,8 @@ class Layer(object):
     def __init__(self):
         self.rng = np.random.RandomState(int(time.time()))
         self.params = []
+        self.trainable = []
         self.regularizable = []
-
-    def get_params(self):
-        return self.params
 
     def get_output(self, input):
         pass
@@ -92,20 +90,20 @@ class DropoutLayer(Layer):
     def __init__(self, input_shape, p=0.5, GaussianNoise=False, activation='relu', layer_name='Dropout'):
         super(DropoutLayer, self).__init__()
 
-        self.input_shape = list(input_shape)
+        self.input_shape = list(input_shape) if isinstance(input_shape, list or tuple) else input_shape
         self.GaussianNoise = GaussianNoise
         self.activation = utils.function[activation]
         self.layer_name = layer_name
         self.srng = utils.RandomStreams(rng.randint(1, int(time.time())))
-        self.p = p
+        self.keep_prob = p
         self.training_flag = False
-        print '@ %s DropoutLayer: p=%.2f activation: %s' % (self.layer_name, p, activation)
+        print '@ %s DropoutLayer: p=%.2f activation: %s' % (self.layer_name, self.keep_prob, activation)
         DropoutLayer.layers.append(self)
 
     def get_output(self, input):
-        mask = self.srng.normal(input.shape) + 1. if self.GaussianNoise else self.srng.binomial(n=1, p=self.p, size=input.shape)
+        mask = self.srng.normal(input.shape) + 1. if self.GaussianNoise else self.srng.binomial(n=1, p=self.keep_prob, size=input.shape)
         output_on = mask * input if self.GaussianNoise else input * T.cast(mask, theano.config.floatX)
-        output_off = input if self.GaussianNoise else input * self.p
+        output_off = input if self.GaussianNoise else input * self.keep_prob
         return self.activation(output_on if self.training_flag else output_off)
 
     def get_output_shape(self, flatten=False):
@@ -119,15 +117,19 @@ class DropoutLayer(Layer):
 
 
 class FullyConnectedLayer(Layer):
-    def __init__(self, n_in, n_out, He_init=False, He_init_gain='relu', W=None, b=None, no_bias=False, layer_name='fc', activation='relu', target='dev0'):
+    def __init__(self, n_in, n_out, He_init=None, He_init_gain='relu', W=None, b=None, no_bias=False, layer_name='fc',
+                 activation='relu', target='dev0'):
         '''
 
-        :param n_in: int
-        :param n_out: int
-        :param W: matrix of shape (n_in, n_out)
-        :param b: vector of shape (n_out,)
+        :param n_in:
+        :param n_out:
+        :param He_init: 'normal', 'uniform' or None (default)
+        :param He_init_gain:
+        :param W:
+        :param b:
+        :param no_bias:
         :param layer_name:
-        :param activation: string
+        :param activation:
         :param target:
         '''
         super(FullyConnectedLayer, self).__init__()
@@ -144,10 +146,6 @@ class FullyConnectedLayer(Layer):
         self.layer_name = layer_name
         self.target = target
 
-        if b is None:
-            self.b_values = np.zeros((n_out,), dtype=theano.config.floatX) if b is None else b
-        else:
-            self.b_values = b
         if W is None:
             if self.He_init:
                 self.W_values = self.init_he((n_in, n_out), self.He_init_gain, self.He_init)
@@ -159,9 +157,19 @@ class FullyConnectedLayer(Layer):
         else:
             self.W_values = W
         self.W = theano.shared(value=self.W_values, name=self.layer_name + '_W', borrow=True)#, target=self.target)
-        self.b = theano.shared(value=self.b_values, name=self.layer_name + '_b', borrow=True) if not no_bias else None#, target=self.target)
-        self.params = [self.W, self.b] if not no_bias else [self.W]
-        self.regularizable = [self.W]
+        self.trainable.append(self.W)
+        self.params.append(self.W)
+
+        if not self.no_bias:
+            if b is None:
+                self.b_values = np.zeros((n_out,), dtype=theano.config.floatX) if b is None else b
+            else:
+                self.b_values = b
+            self.b = theano.shared(value=self.b_values, name=self.layer_name + '_b', borrow=True) if not no_bias else None#, target=self.target)
+            self.trainable.append(self.b)
+            self.params.append(self.b)
+
+        self.regularizable.append(self.W)
         print '@ %s FC: shape = (%d, %d) activation: %s' % (self.layer_name, n_in, n_out, activation)
 
     def get_output(self, input):
@@ -181,18 +189,35 @@ class FullyConnectedLayer(Layer):
 class ConvolutionalLayer(Layer):
     layers = []
 
-    def __init__(self, input_shape, filter_shape, He_init=False, He_init_gain='relu', W=None, border_mode='half', subsample=(1, 1), layer_name='conv',
-                 activation='relu', pool=False, pool_size=(2, 2), pool_mode='max', pool_stride=(2, 2), pool_pad=(0, 0),
-                 target='dev0'):
-        """
-        filter_shape: (number of filters, number of previous channels, filter height, filter width)
-        image_shape: (batch size, num channels, image height, image width)
-        """
+    def __init__(self, input_shape, filter_shape, He_init=None, He_init_gain='relu', W=None, b=None, no_bias=True,
+                 border_mode='half', subsample=(1, 1), layer_name='conv', activation='relu', pool=False,
+                 pool_size=(2, 2), pool_mode='max', pool_stride=(2, 2), pool_pad=(0, 0), target='dev0'):
+        '''
+
+        :param input_shape: (B, C, H, W)
+        :param filter_shape: (num filters, num input channels, H, W)
+        :param He_init:
+        :param He_init_gain:
+        :param W:
+        :param b:
+        :param no_bias: True (default) or False
+        :param border_mode:
+        :param subsample:
+        :param layer_name:
+        :param activation:
+        :param pool:
+        :param pool_size:
+        :param pool_mode:
+        :param pool_stride:
+        :param pool_pad:
+        :param target:
+        '''
         super(ConvolutionalLayer, self).__init__()
 
         assert len(input_shape) == len(filter_shape) == 4, 'Filter shape and input shape must have 4 dimensions.'
         self.input_shape = list(input_shape)
         self.filter_shape = list(filter_shape)
+        self.no_bias = no_bias
         self.activation = utils.function[activation]
         self.He_init = He_init
         self.He_init_gain = He_init_gain
@@ -218,8 +243,19 @@ class ConvolutionalLayer(Layer):
         else:
             self.W_values = W
         self.W = theano.shared(self.W_values, name=self.layer_name + '_W', borrow=True)#, target=self.target)
-        self.params = [self.W]
-        self.regularizable = [self.W]
+        self.trainable.append(self.W)
+        self.params.append(self.W)
+
+        if not self.no_bias:
+            if b is None:
+                self.b_values = np.zeros(filter_shape[0], dtype=theano.config.floatX)
+            else:
+                self.b_values = b
+            self.b = theano.shared(self.b_values, self.layer_name + '_b', borrow=True)
+            self.trainable.append(self.b)
+            self.params.append(self.b)
+
+        self.regularizable += [self.W]
         print '@ %s ConvLayer: ' % self.layer_name, 'border mode: %s ' % border_mode,
         print 'shape: {} , '.format(input_shape),
         print 'filter shape: {} '.format(filter_shape),
@@ -229,6 +265,8 @@ class ConvolutionalLayer(Layer):
 
     def get_output(self, input):
         output = conv(input=input, filters=self.W, border_mode=self.border_mode, subsample=self.subsample)
+        if not self.no_bias:
+            output += self.b.dimshuffle(('x', 0, 'x', 'x'))
         output = output if not self.pool else pool(input=output, ws=self.pool_size, ignore_border=False,
                                                    mode=self.pool_mode, pad=self.pool_pad, stride=self.pool_stride)
         return self.activation(T.clip(output, 1e-7, 1.0 - 1e-7)) if self.activation is utils.function['sigmoid'] \
@@ -266,7 +304,7 @@ class ConvolutionalLayer(Layer):
 class TransposedConvolutionalLayer(Layer):
     layers = []
 
-    def __init__(self, filter_shape, output_shape, layer_name='TRANSCONV', W=None, b=None, padding='valid', stride=(2, 2),
+    def __init__(self, filter_shape, output_shape, layer_name='transconv', W=None, b=None, padding='valid', stride=(2, 2),
                  activation='relu', target='dev0'):
         '''
 
@@ -287,15 +325,16 @@ class TransposedConvolutionalLayer(Layer):
         self.padding = padding
         self.stride = stride
         self.activation = utils.function[activation]
-        self.layer_name = 'TRANSCONV' if layer_name is None else layer_name
+        self.layer_name = layer_name
         self.target = target
 
         self.b_values = np.zeros((filter_shape[1],), dtype=theano.config.floatX) if b is None else b
         self.W_values = self.get_deconv_filter(filter_shape) if W is None else W
         self.W = theano.shared(self.W_values, self.layer_name + '_W', borrow=True)#, target=self.target)
         self.b = theano.shared(value=self.b_values, name=self.layer_name + '_b', borrow=True)#, target=self.target)
-        self.params = [self.W, self.b]
-        self.regularizable = [self.W]
+        self.params += [self.W, self.b]
+        self.trainable += [self.W, self.b]
+        self.regularizable.append(self.W)
         print '@ %s TransposedConv: padding: %s ' % (layer_name, padding),
         print 'shape: {} '.format(output_shape),
         print 'filter shape: {} '.format(filter_shape),
@@ -407,9 +446,6 @@ class ResNetBlock(Layer):
         self.conv3_branch2_bn = BatchNormLayer(self.conv3_branch2.get_output_shape(), layer_name + '_conv3_branch2_bn',
                                                activation='linear')
         self.block.append(self.conv3_branch2_bn)
-        for layer in self.block:
-            self.params += layer.params
-            self.regularizable += layer.regularizable
 
     def get_output(self, input):
         output = self.conv1_branch1.get_output(input) + utils.inference(input, self.block) if self.branch1_conv \
@@ -455,8 +491,10 @@ class DenseBlock(Layer):
             ConvolutionalLayer(input_shape, filter_shape, He_init='normal', He_init_gain='relu', activation='linear',
                                layer_name=layer_name + '_conv')
         ]
-        self.params += [p for layer in block for p in layer.params]
-        self.regularizable += [p for layer in block for p in layer.regularizable]
+        for layer in block:
+            self.params += layer.params
+            self.trainable += layer.trainable
+            self.regularizable += layer.regularizable
         if dropout:
             block.append(DropoutLayer(block[-1].get_output_shape(), dropout, activation='linear',
                                       layer_name=layer_name + 'dropout'))
@@ -527,8 +565,9 @@ class BatchNormLayer(Layer):
                                           name=layer_name + '_running_mean', borrow=True)
         self.running_var = theano.shared(np.zeros(shape, dtype=theano.config.floatX),
                                          name=layer_name + '_running_var', borrow=True)
-        self.params = [self.gamma, self.beta]
-        self.regularizable = [self.gamma]
+        self.params += [self.gamma, self.beta, self.running_mean, self.running_var]
+        self.trainable += [self.gamma, self.beta]
+        self.regularizable.append(self.gamma)
         print '@ %s BatchNormLayer: running_average_factor = %.4f' % (layer_name, self.running_average_factor)
         BatchNormLayer.layers.append(self)
 
@@ -689,8 +728,9 @@ class BatchNormDNNLayer(Layer):
 
         self.mean = theano.shared(mean * np.ones(shape, theano.config.floatX), borrow=True, name=layer_name + '_mean')
         self.inv_std = theano.shared(inv_std * np.ones(shape, theano.config.floatX), borrow=True, name=layer_name + '_inv_std')
-        self.params = [self.beta, self.gamma]
-        self.regularizable = [self.gamma]
+        self.params += [self.gamma, self.beta, self.mean, self.inv_std]
+        self.trainable += [self.beta, self.gamma]
+        self.regularizable += [self.gamma]
         all_but_second_axis = (0,) + tuple(range(2, len(self.input_shape)))
         if self.axes not in ((0,), all_but_second_axis):
             raise ValueError("BatchNormDNNLayer only supports normalization "
@@ -819,7 +859,8 @@ class ScaleLayer(Layer):
             raise ValueError("ScaleLayer needs specified input sizes for "
                              "all axes that scales are not shared over.")
         self.scales = theano.shared(scales * np.ones(shape, theano.config.floatX), name=layer_name + 'scales', borrow=True)
-        self.params = [self.scales]
+        self.params.append(self.scales)
+        self.trainable.append(self.scales)
 
     def get_output(self, input):
         axes = iter(range(self.scales.ndim))
@@ -829,6 +870,94 @@ class ScaleLayer(Layer):
 
     def get_output_shape(self, flatten=False):
         return (self.input_shape[0], np.prod(self.input_shape[1:])) if flatten else self.input_shape
+
+
+class Gate(object):
+    def __init__(self, n_in, n_hid, use_peephole=False, W_hid=None, W_cell=False, bias_init_range=(-.5, .5),
+                 layer_name='gate'):
+        super(Gate, self).__init__()
+
+        self.n_in = n_in
+        self.n_hid = n_hid
+        self.bias_init_range = bias_init_range
+        self.layer_name = layer_name
+        self.use_peephole = use_peephole
+        if not use_peephole:
+            self.W_hid = theano.shared(self.sample_weights(n_in + n_hid, n_hid), name=layer_name + '_Whid') if W_hid is None else W_hid
+        else:
+            self.W_hid = theano.shared(self.sample_weights(n_hid, n_hid), name=layer_name + '_Whid_ph') if isinstance(W_cell, int) else W_cell
+        self.b = theano.shared(np.cast[theano.config.floatX](np.random.uniform(bias_init_range[0], bias_init_range[1],
+                                                                               size=n_hid)), name=layer_name + '_b')
+
+        self.trainable = [self.W_in, self.W_hid, self.W_cell, self.b] if W_cell else [self.W_in, self.W_hid, self.b]
+        self.regularizable = [self.W_in, self.W_hid, self.W_cell, self.b] if W_cell else [self.W_in, self.W_hid, self.b]
+
+    def sample_weights(self, sizeX, sizeY):
+        values = np.ndarray([sizeX, sizeY], dtype=theano.config.floatX)
+        for dx in xrange(sizeX):
+            vals = np.random.uniform(low=-1., high=1., size=(sizeY,))
+            # vals_norm = np.sqrt((vals**2).sum())
+            # vals = vals / vals_norm
+            values[dx, :] = vals
+        _, svs, _ = np.linalg.svd(values)
+        # svs[0] is the largest singular value
+        values = values / svs[0]
+        return values
+
+
+class LSTMcell(Layer):
+    def __init__(self, n_in, n_hid, use_peephole=False, tensordot=False, gradien_clipping=False, layer_name='lstmcell'):
+        super(LSTMcell, self).__init__()
+
+        self.n_in = n_in
+        self.n_hid = n_hid
+        self.use_peephole = False
+        self.tensordot = tensordot
+        self.gradient_clipping = gradien_clipping
+        self.layer_name = layer_name
+        self.in_gate = Gate(n_in, n_hid, W_cell=True, layer_name='in_gate')
+        self.forget_gate = Gate(n_hid, n_hid, W_cell=True, bias_init_range=(0., 1.), layer_name='forget_gate')
+        self.cell_gate = Gate(n_hid, n_hid, W_cell=False, layer_name='cell_gate')
+        self.out_gate = Gate(n_hid, n_hid, W_cell=True, layer_name='out_gate')
+        self.c0 = theano.shared(np.zeros((n_hid, ), dtype=theano.config.floatX), 'first_cell_state')
+        self.h0 = utils.function['tanh'](self.c0)
+        self.trainable += self.in_gate.trainable + self.forget_gate.trainable + self.cell_gate.trainable + self.out_gate.trainable + \
+                          [self.c0]
+        self.regularizable += self.in_gate.regularizable + self.forget_gate.regularizable + \
+                              self.cell_gate.regularizable + self.out_gate.regularizable + [self.c0]
+        print '@ %s LSTMCell: shape = (%d, %d)' % (self.layer_name, n_in, n_hid)
+
+    def get_output_onestep(self, x_t, h_tm1, c_tm1, W_i, b_i, W_f, b_f, W_c, b_c, W_o, b_o):
+        from theano import dot
+        inputs = T.concatenate((x_t, h_tm1), 1)
+        W = T.concatenate((W_i, W_f, W_c, W_o), 1)
+
+
+        def slice_w(x, n):
+            s = x[:, n*self.n_hid:(n+1)*self.n_hid]
+            if self.n_hid == 1:
+                s = T.addbroadcast(s, 1)  # Theano cannot infer this by itself
+            return s
+
+        xt_dot_W = dot(x_t, W_x)
+        htm1_dot_W = dot(h_tm1, W_htm1)
+        ctm1_dot_W = dot(c_tm1, W_ctm1)
+        i_t = utils.function['sigmoid'](_slice(xt_dot_W, 0, self.n_hid) + dot(h_tm1, W_hi) + dot(c_tm1, W_ci) + b_i)
+        f_t = utils.function['sigmoid'](dot(x_t, W_xf) + dot(h_tm1, W_hf) + dot(c_tm1, W_cf) + b_f)
+        c_t = f_t * c_tm1 + i_t * utils.function['tanh'](dot(x_t, W_xc) + dot(h_tm1, W_hc) + b_c)
+        o_t = utils.function['sigmoid'](dot(x_t, W_xo) + dot(h_tm1, W_ho) + dot(c_t, W_co) + b_o)
+        h_t = o_t * utils.function['tanh'](c_t)
+        return h_t, c_t
+
+    def get_output(self, input):
+        non_sequences = list(self.trainable)
+        non_sequences.pop()
+        [h_vals, _], _ = theano.scan(LSTMcell.get_output_onestep, sequences=dict(input=input, taps=[0]),
+                                     outputs_info=[self.h0, self.c0], non_sequences=non_sequences)
+        return h_vals
+
+    def get_output_shape(self):
+        return None, self.n_in
 
 
 def reset_training():

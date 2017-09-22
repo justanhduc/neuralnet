@@ -12,6 +12,8 @@ class Training(ConfigParser):
         self.continue_training = self.config['training']['continue']
         self.continue_checkpoint = self.config['training']['checkpoint']
         self.batch_size = self.config['training']['batch_size']
+        self.validation_frequency = self.config['training']['validation_frequency']
+        self.validation_batch_size = self.config['training']['validation_batch_size']
         self.batch_size_testing = self.config['testing']['batch_size']
         self.save_model = self.config['load_existing']['save_model']
         self.checkpoint = self.config['load_existing']['checkpoint']

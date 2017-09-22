@@ -221,24 +221,19 @@ def prelu(x, alpha):
     return f1 * x + f2 * abs(x)
 
 
-def update_input(data, shared_vars, no_response=False, **kwargs):
+def update_input(data, shared_vars, no_response=False):
     if not no_response:
         x, y = data
-        shape_y = kwargs.get('shape_y', shared_vars[1].get_value().shape)
-        shape_x = kwargs.get('shape_x', shared_vars[0].get_value().shape)
-        try:
-            x = np.reshape(np.asarray(x, dtype=shared_vars[0].dtype), shape_x)
-            y = np.reshape(np.asarray(y, dtype=shared_vars[1].dtype), shape_y)
-        except ValueError:
+        shape_y = shared_vars[1].get_value().shape
+        shape_x = shared_vars[0].get_value().shape
+        if x.shape != shape_x or y.shape != shape_y:
             raise ValueError('Input of the shared variable must have the same shape with the shared variable')
         shared_vars[0].set_value(x, borrow=True)
         shared_vars[1].set_value(y, borrow=True)
     else:
         x = data
-        shape_x = shared_vars.get_value().shape if 'shape_x' not in kwargs else kwargs['shape_x']
-        try:
-            x = np.reshape(np.asarray(x, dtype=shared_vars.dtype), shape_x)
-        except ValueError:
+        shape_x = shared_vars.get_value().shape
+        if x.shape != shape_x:
             raise ValueError('Input of the shared variable must have the same shape with the shared variable')
         shared_vars.set_value(x, borrow=True)
 
