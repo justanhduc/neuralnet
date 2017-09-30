@@ -49,13 +49,16 @@ class BaseModel(Optimization, Training):
         print 'Model weights dumped to %s' % self.param_file
 
     def load_params(self):
-        print 'Loading model weights from %s' % self.param_file
         weights = numpy.load(self.param_file)
         for p in self.params:
             try:
                 p.set_value(weights[p.name])
             except:
                 NameError('There is no saved weight for %s' % p.name)
+        print 'Model weights loaded from %s' % self.param_file
+
+    def reset(self):
+        layers.reset_training()
 
     @staticmethod
     def set_training_status(training):

@@ -42,96 +42,167 @@ class ConfigParser(object):
         return data
 
 
-def generate_in_background(generator, num_cached=10):
-    """
-    Runs a generator in a background thread, caching up to `num_cached` items.
-    """
-    import Queue
-    queue = Queue.Queue(maxsize=num_cached)
-    sentinel = object()  # guaranteed unique reference
+class DataManager(object):
+    '''
+    Manage dataset
+    '''
+    def __init__(self, dataset, batch_size, placeholders, shuffle=False, no_target=False, augmentation=False, flip_prob=0.5, translation=4, num_cached=10):
+        '''
 
-    # define producer (putting items into queue)
-    def producer():
-        for item in generator:
-            queue.put(item)
-        queue.put(sentinel)
+        :param dataset: (features, targets) or features. Features and targets must be numpy arrays
+        '''
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.placeholders = placeholders
+        self.shuffle = shuffle
+        self.no_target = no_target
+        self.augmentation = augmentation
+        self.flip_prob = flip_prob
+        self.translation = translation
+        self.num_cached = num_cached
+        self.num_batches = (dataset.shape[0] / self.batch_size) if no_target else dataset[0].shape[0] / self.batch_size
 
-    # start producer (in a background thread)
-    import threading
-    thread = threading.Thread(target=producer)
-    thread.daemon = True
-    thread.start()
+    def get_batches(self, epoch=None, num_epochs=None):
+        batches = self.generator()
+        if self.augmentation:
+            batches = self.augment_minibatches(batches, self.flip_prob, self.translation)
+            batches = self.generate_in_background(batches)
+        if epoch is not None and num_epochs is not None:
+            batches = self.progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=self.num_batches)
+        return batches
 
-    # run as consumer (read items from queue, in current thread)
-    item = queue.get()
-    while item is not sentinel:
-        yield item
+    def generate_in_background(self, generator):
+        """
+        Runs a generator in a background thread, caching up to `num_cached` items.
+        """
+        import Queue
+        queue = Queue.Queue(maxsize=self.num_cached)
+        sentinel = object()  # guaranteed unique reference
+
+        # define producer (putting items into queue)
+        def producer():
+            for item in generator:
+                queue.put(item)
+            queue.put(sentinel)
+
+        # start producer (in a background thread)
+        import threading
+        thread = threading.Thread(target=producer)
+        thread.daemon = True
+        thread.start()
+
+        # run as consumer (read items from queue, in current thread)
         item = queue.get()
+        while item is not sentinel:
+            yield item
+            item = queue.get()
 
+    @staticmethod
+    def progress(items, desc='', total=None, min_delay=0.1):
+        """
+        Returns a generator over `items`, printing the number and percentage of
+        items processed and the estimated remaining processing time before yielding
+        the next item. `total` gives the total number of items (required if `items`
+        has no length), and `min_delay` gives the minimum time in seconds between
+        subsequent prints. `desc` gives an optional prefix text (end with a space).
+        """
+        total = total or len(items)
+        t_start = time.time()
+        t_last = 0
+        for n, item in enumerate(items):
+            t_now = time.time()
+            if t_now - t_last > min_delay:
+                print("\r%s%d/%d (%6.2f%%)" % (
+                        desc, n+1, total, n / float(total) * 100), end=" ")
+                if n > 0:
+                    t_done = t_now - t_start
+                    t_total = t_done / n * total
+                    print("(ETA: %d:%02d)" % divmod(t_total - t_done, 60), end=" ")
+                sys.stdout.flush()
+                t_last = t_now
+            yield item
+        t_total = time.time() - t_start
+        print("\r%s%d/%d (100.00%%) (took %d:%02d)" % ((desc, total, total) + divmod(t_total, 60)))
 
-def progress(items, desc='', total=None, min_delay=0.1):
-    """
-    Returns a generator over `items`, printing the number and percentage of
-    items processed and the estimated remaining processing time before yielding
-    the next item. `total` gives the total number of items (required if `items`
-    has no length), and `min_delay` gives the minimum time in seconds between
-    subsequent prints. `desc` gives an optional prefix text (end with a space).
-    """
-    total = total or len(items)
-    t_start = time.time()
-    t_last = 0
-    for n, item in enumerate(items):
-        t_now = time.time()
-        if t_now - t_last > min_delay:
-            print("\r%s%d/%d (%6.2f%%)" % (
-                    desc, n+1, total, n / float(total) * 100), end=" ")
-            if n > 0:
-                t_done = t_now - t_start
-                t_total = t_done / n * total
-                print("(ETA: %d:%02d)" % divmod(t_total - t_done, 60), end=" ")
-            sys.stdout.flush()
-            t_last = t_now
-        yield item
-    t_total = time.time() - t_start
-    print("\r%s%d/%d (100.00%%) (took %d:%02d)" % ((desc, total, total) + divmod(t_total, 60)))
+    def augment_minibatches(self, minibatches, flip=0.5, trans=4):
+        """
+        Randomly augments images by horizontal flipping with a probability of
+        `flip` and random translation of up to `trans` pixels in both directions.
+        """
+        for batch in minibatches:
+            if self.no_target:
+                inputs = batch
+            else:
+                inputs, targets = batch
+            batchsize, c, h, w = inputs.shape
+            if flip:
+                coins = np.random.rand(batchsize) < flip
+                inputs = [inp[:, :, ::-1] if coin else inp
+                          for inp, coin in zip(inputs, coins)]
+                if not trans:
+                    inputs = np.asarray(inputs)
+            outputs = inputs
+            if trans:
+                outputs = np.empty((batchsize, c, h, w), inputs[0].dtype)
+                shifts = np.random.randint(-trans, trans, (batchsize, 2))
+                for outp, inp, (x, y) in zip(outputs, inputs, shifts):
+                    if x > 0:
+                        outp[:, :x] = 0
+                        outp = outp[:, x:]
+                        inp = inp[:, :-x]
+                    elif x < 0:
+                        outp[:, x:] = 0
+                        outp = outp[:, :x]
+                        inp = inp[:, -x:]
+                    if y > 0:
+                        outp[:, :, :y] = 0
+                        outp = outp[:, :, y:]
+                        inp = inp[:, :, :-y]
+                    elif y < 0:
+                        outp[:, :, y:] = 0
+                        outp = outp[:, :, :y]
+                        inp = inp[:, :, -y:]
+                    outp[:] = inp
+            yield outputs, targets if not self.no_target else outputs
 
+    def update_input(self, data):
+        if not self.no_target:
+            x, y = data
+            shape_y = self.placeholders[1].get_value().shape
+            shape_x = self.placeholders[0].get_value().shape
+            if x.shape != shape_x or y.shape != shape_y:
+                raise ValueError('Input of the shared variable must have the same shape with the shared variable')
+            self.placeholders[0].set_value(x, borrow=True)
+            self.placeholders[1].set_value(y, borrow=True)
+        else:
+            x = data
+            shape_x = self.placeholders.get_value().shape
+            if x.shape != shape_x:
+                raise ValueError('Input of the shared variable must have the same shape with the shared variable')
+            self.placeholders.set_value(x, borrow=True)
 
-def augment_minibatches(minibatches, flip=0.5, trans=4):
-    """
-    Randomly augments images by horizontal flipping with a probability of
-    `flip` and random translation of up to `trans` pixels in both directions.
-    """
-    for inputs, targets in minibatches:
-        batchsize, c, h, w = inputs.shape
-        if flip:
-            coins = np.random.rand(batchsize) < flip
-            inputs = [inp[:, :, ::-1] if coin else inp
-                      for inp, coin in zip(inputs, coins)]
-            if not trans:
-                inputs = np.asarray(inputs)
-        outputs = inputs
-        if trans:
-            outputs = np.empty((batchsize, c, h, w), inputs[0].dtype)
-            shifts = np.random.randint(-trans, trans, (batchsize, 2))
-            for outp, inp, (x, y) in zip(outputs, inputs, shifts):
-                if x > 0:
-                    outp[:, :x] = 0
-                    outp = outp[:, x:]
-                    inp = inp[:, :-x]
-                elif x < 0:
-                    outp[:, x:] = 0
-                    outp = outp[:, :x]
-                    inp = inp[:, -x:]
-                if y > 0:
-                    outp[:, :, :y] = 0
-                    outp = outp[:, :, y:]
-                    inp = inp[:, :, :-y]
-                elif y < 0:
-                    outp[:, :, y:] = 0
-                    outp = outp[:, :, :y]
-                    inp = inp[:, :, -y:]
-                outp[:] = inp
-        yield outputs, targets
+    def generator(self):
+        if not self.no_target:
+            x, y = self.dataset
+            y = np.asarray(y)
+        else:
+            x = self.dataset
+        x = np.asarray(x, dtype=theano.config.floatX)
+        if self.shuffle:
+            index = np.arange(0, np.asarray(x).shape[0])
+            np.random.shuffle(index)
+            x = x[index]
+            if not self.no_target:
+                y = y[index]
+        for i in xrange(self.num_batches):
+            yield (x[i * self.batch_size:(i + 1) * self.batch_size], y[i * self.batch_size:(i + 1) * self.batch_size]) \
+                if not self.no_target else x[i * self.batch_size:(i + 1) * self.batch_size]
+
+    def shared_dataset(self, data_xy):
+        data_x, data_y = data_xy
+        shared_x = theano.shared(np.asarray(data_x, dtype=theano.config.floatX))
+        shared_y = theano.shared(np.asarray(data_y, dtype=theano.config.floatX))
+        return shared_x, T.cast(shared_y, 'int32')
 
 
 def load_weights(weight_file, model):
@@ -221,44 +292,9 @@ def prelu(x, alpha):
     return f1 * x + f2 * abs(x)
 
 
-def update_input(data, shared_vars, no_response=False):
-    if not no_response:
-        x, y = data
-        shape_y = shared_vars[1].get_value().shape
-        shape_x = shared_vars[0].get_value().shape
-        if x.shape != shape_x or y.shape != shape_y:
-            raise ValueError('Input of the shared variable must have the same shape with the shared variable')
-        shared_vars[0].set_value(x, borrow=True)
-        shared_vars[1].set_value(y, borrow=True)
-    else:
-        x = data
-        shape_x = shared_vars.get_value().shape
-        if x.shape != shape_x:
-            raise ValueError('Input of the shared variable must have the same shape with the shared variable')
-        shared_vars.set_value(x, borrow=True)
-
-
-def generator(data, batch_size, no_target=False):
-    if not no_target:
-        x, y = data
-    else:
-        x = data
-    num_batch = np.asarray(x).shape[0] / batch_size
-    for i in xrange(num_batch):
-        yield (x[i*batch_size:(i+1)*batch_size], y[i*batch_size:(i+1)*batch_size]) if not no_target \
-            else x[i*batch_size:(i+1)*batch_size]
-
-
-def shared_dataset(data_xy):
-    data_x, data_y = data_xy
-    shared_x = theano.shared(np.asarray(data_x, dtype=theano.config.floatX))
-    shared_y = theano.shared(np.asarray(data_y, dtype=theano.config.floatX))
-    return shared_x, T.cast(shared_y, 'int32')
-
-
 def inference(input, model):
     feed = input
-    for idx, layer in enumerate(model):
+    for layer in model:
         feed = layer.get_output(feed.flatten(2)) if isinstance(layer, layers.FullyConnectedLayer) \
             else layer.get_output(feed)
     return feed
