@@ -1,7 +1,7 @@
-from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-from theano import tensor as T
-import theano
 import numpy as np
+import theano
+from theano import tensor as T
+from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 
 def ManhattanDistance(y_pred, y):
@@ -206,7 +206,7 @@ def MS_SSIM(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k
     downsample_filter = np.ones((1, 1, 2, 2), dtype=theano.config.floatX) / 4.0
     mssim = []
     mcs = []
-    for idx, _ in enumerate(xrange(levels)):
+    for idx, _ in enumerate(range(levels)):
         ssim, cs = SSIM(img1, img2, max_val=max_val, filter_size=filter_size, filter_sigma=filter_sigma, k1=k1, k2=k2, cs_map=True)
         mssim.append(ssim)
         mcs.append(cs ** weights[idx])
@@ -220,7 +220,8 @@ if __name__ == '__main__':
     im1 = T.tensor4('im1', 'float32')
     im2 = T.tensor4('im2', 'float32')
 
-    import utils
+    from neuralnet import utils
+
     im1_ = utils.rgb2gray(im1)
     im2_ = utils.rgb2gray(im2)
     ssim = theano.function([im1, im2], SSIM(im1_, im2_, max_val=1.))
@@ -230,4 +231,4 @@ if __name__ == '__main__':
                                        (2, 0, 1)), 0).astype('float32') / 255.
     img2 = np.expand_dims(np.transpose(misc.imread('E:/Users/Duc/saliency_detection/ieee/ori/cyc/1_1.bmp'),
                                        (2, 0, 1)), 0).astype('float32') / 255.
-    print ssim(img1, img2)
+    print(ssim(img1, img2))

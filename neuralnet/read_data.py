@@ -2,7 +2,7 @@
 read some common datasets
 '''
 
-import cPickle as pkl
+import pickle as pkl
 import os
 import numpy as np
 import tqdm
@@ -10,36 +10,36 @@ import sys
 
 
 def read_cifar10(cifar_folder, new_size=(32, 32), validation=0.2, shuffle=False):
-    print 'PREPARING CIFAR10 DATA...'
-    print 'Data shall be resized to', new_size
-    print 'Percentage of validation data: %.2f%%' % (validation * 100)
-    print 'Shuffle data:', shuffle
+    print('PREPARING CIFAR10 DATA...')
+    print('Data shall be resized to', new_size)
+    print('Percentage of validation data: %.2f%%' % (validation * 100))
+    print('Shuffle data:', shuffle)
     file_list = os.listdir(cifar_folder)
     train_data, train_label, = [], []
     for file in file_list:
         if 'data_batch' in file:
             with open('%s/%s' % (cifar_folder, file), 'rb') as fo:
                 dict = pkl.load(fo)
-                train_data.append(dict.values()[0])
-                train_label.append(np.array(dict.values()[1], 'int8'))
+                train_data.append(list(dict.values())[0])
+                train_label.append(np.array(list(dict.values())[1], 'int8'))
         elif 'test_batch' in file:
             with open('%s/%s' % (cifar_folder, file), 'rb') as fo:
                 dict = pkl.load(fo)
-                test_data = dict.values()[0]
-                test_label = np.array(dict.values()[1], 'int8')
+                test_data = list(dict.values())[0]
+                test_label = np.array(list(dict.values())[1], 'int8')
         else:
             continue
-    print 'Processing training data...'
+    print('Processing training data...')
     train_data = reshape_cifar(np.concatenate(train_data, 0), new_size) / 255.
     train_label = np.concatenate(train_label, 0)
-    print 'Processing test data...'
+    print('Processing test data...')
     test_data = reshape_cifar(test_data, new_size) / 255.
     if shuffle:
-        index = np.array(range(0, train_data.shape[0]))
+        index = np.array(list(range(0, train_data.shape[0])))
         np.random.shuffle(index)
         train_data = train_data[index]
         train_label = train_label[index]
-    print 'DATA PREPARED!'
+    print('DATA PREPARED!')
     return (train_data[:int((1 - validation) * train_data.shape[0])], train_label[:int((1 - validation) * train_data.shape[0])]), \
            (train_data[int((1 - validation) * train_data.shape[0]):], train_label[int((1 - validation) * train_data.shape[0]):]), \
            (test_data, test_label)
@@ -48,7 +48,7 @@ def read_cifar10(cifar_folder, new_size=(32, 32), validation=0.2, shuffle=False)
 def reshape_cifar(cifar_numpy_array, new_size=(32, 32)):
     from scipy import misc
     data = []
-    for i in tqdm.tqdm(xrange(cifar_numpy_array.shape[0]), unit='images'):
+    for i in tqdm.tqdm(range(cifar_numpy_array.shape[0]), unit='images'):
         r = misc.imresize(np.reshape(cifar_numpy_array[i, :1024], (32, 32)), new_size)
         g = misc.imresize(np.reshape(cifar_numpy_array[i, 1024: 2048], (32, 32)), new_size)
         b = misc.imresize(np.reshape(cifar_numpy_array[i, 2048:], (32, 32)), new_size)
@@ -68,9 +68,9 @@ def download_dataset(path, source='https://www.cs.toronto.edu/~kriz/'
     else:
         return  # dataset is already complete
 
-    print("Downloading and extracting %s into %s..." % (source, path))
+    print(("Downloading and extracting %s into %s..." % (source, path)))
     if sys.version_info[0] == 2:
-        from urllib import urlopen
+        from urllib.request import urlopen
     else:
         from urllib.request import urlopen
     import tarfile
@@ -86,13 +86,13 @@ def load_dataset(path, new_shape=None):
     download_dataset(path)
 
     # training data
-    data = [np.load(os.path.join(path, 'cifar-10-batches-py',
-                                 'data_batch_%d' % (i + 1))) for i in range(5)]
+    data = [pkl.load(open(os.path.join(path, 'cifar-10-batches-py',
+                             'data_batch_%d' % (i + 1)), 'rb'), encoding='latin-1') for i in range(5)]
     X_train = np.vstack([d['data'] for d in data])
     y_train = np.hstack([np.asarray(d['labels'], np.int8) for d in data])
 
     # test data
-    data = np.load(os.path.join(path, 'cifar-10-batches-py', 'test_batch'))
+    data = pkl.load(open(os.path.join(path, 'cifar-10-batches-py', 'test_batch'), 'rb'), encoding='latin-1')
     X_test = data['data']
     y_test = np.asarray(data['labels'], np.int8)
 
@@ -145,5 +145,5 @@ def load_mnist(gzip_file):
 
 
 if __name__ == '__main__':
-    dataset = load_mnist('C:\Users\just.anhduc\PycharmProjects\ml_assignment/mnist.pkl.gz')
+    dataset = load_mnist('C:\\Users\just.anhduc\PycharmProjects\ml_assignment/mnist.pkl.gz')
     pass

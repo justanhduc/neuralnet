@@ -1,14 +1,14 @@
+from neuralnet import layers
 import numpy
+from neuralnet import utils
+from neuralnet import Training
 
-import utils
-from build_optimization import Optimization
-from build_training import Training
-import layers
+from neuralnet import Optimization
 
 
-class BaseModel(Optimization, Training):
+class Model(Optimization, Training):
     def __init__(self, config_file, **kwargs):
-        super(BaseModel, self).__init__(config_file, **kwargs)
+        super(Model, self).__init__(config_file, **kwargs)
         self.model = []
         self.params = []
         self.trainable = []
@@ -18,7 +18,7 @@ class BaseModel(Optimization, Training):
     def __iter__(self):
         return self
 
-    def next(self):
+    def __next__(self):
         if len(self.model) == 0 or self.index == len(self.model):
             self.index = 0
             raise StopIteration
@@ -46,7 +46,7 @@ class BaseModel(Optimization, Training):
 
     def save_params(self):
         numpy.savez(self.param_file, **{p.name: p.get_value() for p in self.params})
-        print 'Model weights dumped to %s' % self.param_file
+        print('Model weights dumped to %s' % self.param_file)
 
     def load_params(self):
         weights = numpy.load(self.param_file)
@@ -55,7 +55,7 @@ class BaseModel(Optimization, Training):
                 p.set_value(weights[p.name])
             except:
                 NameError('There is no saved weight for %s' % p.name)
-        print 'Model weights loaded from %s' % self.param_file
+        print('Model weights loaded from %s' % self.param_file)
 
     def reset(self):
         layers.reset_training()

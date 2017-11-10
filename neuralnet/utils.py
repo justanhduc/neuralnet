@@ -1,14 +1,13 @@
-from __future__ import print_function
 import json
-import numpy as np
+import sys
 import threading
+import time
+import numpy as np
 import theano
 from theano import tensor as T
-from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-import time
-import sys
 
-import layers
+from neuralnet import layers
+
 thread_lock = threading.Lock()
 
 
@@ -43,9 +42,9 @@ class ConfigParser(object):
 
 
 class DataManager(object):
+    '''Manage dataset
     '''
-    Manage dataset
-    '''
+
     def __init__(self, dataset, batch_size, placeholders, shuffle=False, no_target=False, augmentation=False, flip_prob=0.5, translation=4, num_cached=10):
         '''
 
@@ -60,7 +59,7 @@ class DataManager(object):
         self.flip_prob = flip_prob
         self.translation = translation
         self.num_cached = num_cached
-        self.num_batches = (dataset.shape[0] / self.batch_size) if no_target else dataset[0].shape[0] / self.batch_size
+        self.num_batches = (dataset.shape[0] // self.batch_size) if no_target else dataset[0].shape[0] // self.batch_size
 
     def get_batches(self, epoch=None, num_epochs=None):
         batches = self.generator()
@@ -75,9 +74,9 @@ class DataManager(object):
         """
         Runs a generator in a background thread, caching up to `num_cached` items.
         """
-        import Queue
-        queue = Queue.Queue(maxsize=self.num_cached)
-        sentinel = object()  # guaranteed unique reference
+        import queue
+        queue = queue.Queue(maxsize=self.num_cached)
+        sentinel = 'end'
 
         # define producer (putting items into queue)
         def producer():
@@ -93,7 +92,7 @@ class DataManager(object):
 
         # run as consumer (read items from queue, in current thread)
         item = queue.get()
-        while item is not sentinel:
+        while item is not 'end':
             yield item
             item = queue.get()
 
@@ -194,7 +193,7 @@ class DataManager(object):
             x = x[index]
             if not self.no_target:
                 y = y[index]
-        for i in xrange(self.num_batches):
+        for i in range(self.num_batches):
             yield (x[i * self.batch_size:(i + 1) * self.batch_size], y[i * self.batch_size:(i + 1) * self.batch_size]) \
                 if not self.no_target else x[i * self.batch_size:(i + 1) * self.batch_size]
 
@@ -264,7 +263,7 @@ def fully_connected_to_convolution(weight, prev_layer_shape):
 
 def maxout(input, maxout_size=4):
     maxout_out = None
-    for i in xrange(maxout_size):
+    for i in range(maxout_size):
         t = input[:, i::maxout_size]
         if maxout_out is None:
             maxout_out = t
@@ -295,8 +294,7 @@ def prelu(x, alpha):
 def inference(input, model):
     feed = input
     for layer in model:
-        feed = layer.get_output(feed.flatten(2)) if isinstance(layer, layers.FullyConnectedLayer) \
-            else layer.get_output(feed)
+        feed = layer(feed)
     return feed
 
 
