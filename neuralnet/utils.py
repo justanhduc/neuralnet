@@ -6,8 +6,6 @@ import numpy as np
 import theano
 from theano import tensor as T
 
-from neuralnet import layers
-
 thread_lock = threading.Lock()
 
 
@@ -45,7 +43,8 @@ class DataManager(object):
     '''Manage dataset
     '''
 
-    def __init__(self, dataset, batch_size, placeholders, shuffle=False, no_target=False, augmentation=False, flip_prob=0.5, translation=4, num_cached=10):
+    def __init__(self, dataset, batch_size, placeholders, shuffle=False, no_target=False, augmentation=False,
+                 num_cached=10):
         '''
 
         :param dataset: (features, targets) or features. Features and targets must be numpy arrays
@@ -56,15 +55,13 @@ class DataManager(object):
         self.shuffle = shuffle
         self.no_target = no_target
         self.augmentation = augmentation
-        self.flip_prob = flip_prob
-        self.translation = translation
         self.num_cached = num_cached
         self.num_batches = (dataset.shape[0] // self.batch_size) if no_target else dataset[0].shape[0] // self.batch_size
 
-    def get_batches(self, epoch=None, num_epochs=None):
+    def get_batches(self, epoch=None, num_epochs=None, *args):
         batches = self.generator()
         if self.augmentation:
-            batches = self.augment_minibatches(batches, self.flip_prob, self.translation)
+            batches = self.augment_minibatches(batches, *args)
             batches = self.generate_in_background(batches)
         if epoch is not None and num_epochs is not None:
             batches = self.progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=self.num_batches)
@@ -74,8 +71,8 @@ class DataManager(object):
         """
         Runs a generator in a background thread, caching up to `num_cached` items.
         """
-        import queue
-        queue = queue.Queue(maxsize=self.num_cached)
+        from queue import Queue
+        queue = Queue(maxsize=self.num_cached)
         sentinel = 'end'
 
         # define producer (putting items into queue)
@@ -123,46 +120,8 @@ class DataManager(object):
         t_total = time.time() - t_start
         print("\r%s%d/%d (100.00%%) (took %d:%02d)" % ((desc, total, total) + divmod(t_total, 60)))
 
-    def augment_minibatches(self, minibatches, flip=0.5, trans=4):
-        """
-        Randomly augments images by horizontal flipping with a probability of
-        `flip` and random translation of up to `trans` pixels in both directions.
-        """
-        for batch in minibatches:
-            if self.no_target:
-                inputs = batch
-            else:
-                inputs, targets = batch
-            batchsize, c, h, w = inputs.shape
-            if flip:
-                coins = np.random.rand(batchsize) < flip
-                inputs = [inp[:, :, ::-1] if coin else inp
-                          for inp, coin in zip(inputs, coins)]
-                if not trans:
-                    inputs = np.asarray(inputs)
-            outputs = inputs
-            if trans:
-                outputs = np.empty((batchsize, c, h, w), inputs[0].dtype)
-                shifts = np.random.randint(-trans, trans, (batchsize, 2))
-                for outp, inp, (x, y) in zip(outputs, inputs, shifts):
-                    if x > 0:
-                        outp[:, :x] = 0
-                        outp = outp[:, x:]
-                        inp = inp[:, :-x]
-                    elif x < 0:
-                        outp[:, x:] = 0
-                        outp = outp[:, :x]
-                        inp = inp[:, -x:]
-                    if y > 0:
-                        outp[:, :, :y] = 0
-                        outp = outp[:, :, y:]
-                        inp = inp[:, :, :-y]
-                    elif y < 0:
-                        outp[:, :, y:] = 0
-                        outp = outp[:, :, :y]
-                        inp = inp[:, :, -y:]
-                    outp[:] = inp
-            yield outputs, targets if not self.no_target else outputs
+    def augment_minibatches(self, minibatches, *args):
+        raise NotImplementedError
 
     def update_input(self, data):
         if not self.no_target:

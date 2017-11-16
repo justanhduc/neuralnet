@@ -29,6 +29,9 @@ class Model(Optimization, Training):
     def __len__(self):
         return len(self.model)
 
+    def load_pretrained_params(self, file):
+        raise NotImplementedError
+
     def inference(self, input):
         return utils.inference(input, self.model)
 

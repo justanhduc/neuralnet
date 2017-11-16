@@ -203,7 +203,8 @@ class FullyConnectedLayer(Layer):
     def reset():
         for layer in FullyConnectedLayer.layers:
             layer.W.set_value(layer.W_values)
-            layer.b.set_value(layer.b_values)
+            if not layer.no_bias:
+                layer.b.set_value(layer.b_values)
 
 
 class ConvolutionalLayer(Layer):
@@ -325,7 +326,8 @@ class ConvolutionalLayer(Layer):
     def reset():
         for layer in ConvolutionalLayer.layers:
             layer.W.set_value(layer.W_values)
-            layer.b.set_value(layer.b_values)
+            if not layer.no_bias:
+                layer.b.set_value(layer.b_values)
 
 
 class TransposedConvolutionalLayer(Layer):
@@ -648,7 +650,7 @@ class DenseBlockBRN(Layer):
 class BatchNormLayer(Layer):
     layers = []
 
-    def __init__(self, input_shape, layer_name='BN', epsilon=1e-4, running_average_factor=1e-3, axes='spatial',
+    def __init__(self, input_shape, layer_name='BN', epsilon=1e-4, running_average_factor=1e-1, axes='spatial',
                  activation='relu'):
         '''
 
@@ -668,8 +670,13 @@ class BatchNormLayer(Layer):
         self.training_flag = False
         self.axes = (0,) + tuple(range(2, len(input_shape))) if axes == 'spatial' else (0,)
         shape = (self.input_shape[1],) if axes == 'spatial' else self.input_shape[1:]
-        self.gamma = theano.shared(np.ones(shape, dtype=theano.config.floatX), name=layer_name + '_gamma', borrow=True)
-        self.beta = theano.shared(np.zeros(shape, dtype=theano.config.floatX), name=layer_name + '_beta', borrow=True)
+
+        self.gamma_values = np.ones(shape, dtype=theano.config.floatX)
+        self.gamma = theano.shared(self.gamma_values, name=layer_name + '_gamma', borrow=True)
+
+        self.beta_values = np.zeros(shape, dtype=theano.config.floatX)
+        self.beta = theano.shared(self.beta_values, name=layer_name + '_beta', borrow=True)
+
         self.running_mean = theano.shared(np.zeros(shape, dtype=theano.config.floatX),
                                           name=layer_name + '_running_mean', borrow=True)
         self.running_var = theano.shared(np.zeros(shape, dtype=theano.config.floatX),
@@ -745,6 +752,7 @@ class BatchRenormLayer(Layer):
         self.d_max = theano.shared(np.float32(d_max), name=layer_name + 'dmax')
         self.axes = (0,) + tuple(range(2, len(input_shape))) if axes == 'spatial' else (0,)
         shape = (self.input_shape[1],) if axes == 'spatial' else self.input_shape[1:]
+
         self.gamma_values = np.ones(shape, dtype=theano.config.floatX)
         self.beta_values = np.zeros(shape, dtype=theano.config.floatX)
         self.gamma = theano.shared(self.gamma_values, name=layer_name + '_gamma', borrow=True)
