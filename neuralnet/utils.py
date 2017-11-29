@@ -43,28 +43,36 @@ class DataManager(object):
     '''Manage dataset
     '''
 
-    def __init__(self, dataset, batch_size, placeholders, shuffle=False, no_target=False, augmentation=False,
+    def __init__(self, batch_size, placeholders, shuffle=False, no_target=False, augmentation=False,
                  num_cached=10):
         '''
 
         :param dataset: (features, targets) or features. Features and targets must be numpy arrays
         '''
-        self.dataset = dataset
+        self.training_set = None
+        self.testing_set = None
+        self.train_data_shape = None
+        self.test_data_shape = None
+        self.load_data()
         self.batch_size = batch_size
         self.placeholders = placeholders
         self.shuffle = shuffle
         self.no_target = no_target
         self.augmentation = augmentation
         self.num_cached = num_cached
-        self.num_batches = (dataset.shape[0] // self.batch_size) if no_target else dataset[0].shape[0] // self.batch_size
 
-    def get_batches(self, epoch=None, num_epochs=None, *args):
-        batches = self.generator()
+    def load_data(self):
+        raise NotImplementedError
+
+    def get_batches(self, stage='train', epoch=None, num_epochs=None, *args):
+        batches = self.generator(stage)
         if self.augmentation:
             batches = self.augment_minibatches(batches, *args)
-            batches = self.generate_in_background(batches)
+        batches = self.generate_in_background(batches)
         if epoch is not None and num_epochs is not None:
-            batches = self.progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=self.num_batches)
+            shape = self.train_data_shape if stage == 'train' else self.test_data_shape
+            num_batches = shape[0] // self.batch_size
+            batches = self.progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=num_batches)
         return batches
 
     def generate_in_background(self, generator):
@@ -123,8 +131,9 @@ class DataManager(object):
     def augment_minibatches(self, minibatches, *args):
         raise NotImplementedError
 
-    def update_input(self, data):
-        if not self.no_target:
+    def update_input(self, data, *args):
+        no_target = args[0] if args else self.no_target
+        if not no_target:
             x, y = data
             shape_y = self.placeholders[1].get_value().shape
             shape_x = self.placeholders[0].get_value().shape
@@ -139,20 +148,24 @@ class DataManager(object):
                 raise ValueError('Input of the shared variable must have the same shape with the shared variable')
             self.placeholders.set_value(x, borrow=True)
 
-    def generator(self):
+    def generator(self, stage='train'):
+        dataset = self.training_set if stage == 'train' else self.testing_set
+        shape = self.train_data_shape if stage == 'train' else self.test_data_shape
+        shuffle = self.shuffle if stage == 'train' else False
+        num_batches = shape[0] // self.batch_size
         if not self.no_target:
-            x, y = self.dataset
+            x, y = dataset
             y = np.asarray(y)
         else:
-            x = self.dataset
+            x = dataset
         x = np.asarray(x, dtype=theano.config.floatX)
-        if self.shuffle:
+        if shuffle:
             index = np.arange(0, np.asarray(x).shape[0])
             np.random.shuffle(index)
             x = x[index]
             if not self.no_target:
                 y = y[index]
-        for i in range(self.num_batches):
+        for i in range(num_batches):
             yield (x[i * self.batch_size:(i + 1) * self.batch_size], y[i * self.batch_size:(i + 1) * self.batch_size]) \
                 if not self.no_target else x[i * self.batch_size:(i + 1) * self.batch_size]
 
@@ -267,6 +280,7 @@ def rgb2gray(img):
     if img.ndim != 4:
         raise RuntimeError('Input images must have four dimensions, not %d', img.ndim)
     return (0.299 * img[:, 0] + 0.587 * img[:, 1] + 0.114 * img[:, 2]).dimshuffle((0, 'x', 1, 2))
+
 
 function = {'relu': T.nnet.relu, 'sigmoid': T.nnet.sigmoid, 'tanh': T.tanh, 'lrelu': lrelu,
             'softmax': T.nnet.softmax, 'linear': linear, 'elu': T.nnet.elu, 'ramp': ramp, 'maxout': maxout,
