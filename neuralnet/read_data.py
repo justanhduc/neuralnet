@@ -82,7 +82,7 @@ def download_dataset(path, source='https://www.cs.toronto.edu/~kriz/'
     u.close()
 
 
-def load_dataset(path, new_shape=None):
+def load_dataset(path, normalize=False, new_shape=None):
     download_dataset(path)
 
     # training data
@@ -104,18 +104,19 @@ def load_dataset(path, new_shape=None):
         X_train = reshape_cifar(X_train)
         X_test = reshape_cifar(X_test)
 
-    # normalize
-    try:
-        mean_std = np.load(os.path.join(path, 'cifar-10-mean_std.npz'))
-        mean = mean_std['mean']
-        std = mean_std['std']
-    except IOError:
-        mean = X_train.mean(axis=(0, 2, 3), keepdims=True).astype(np.float32)
-        std = X_train.std(axis=(0, 2, 3), keepdims=True).astype(np.float32)
-        np.savez(os.path.join(path, 'cifar-10-mean_std.npz'),
-                 mean=mean, std=std)
-    X_train = (X_train - mean) / std
-    X_test = (X_test - mean) / std
+    if normalize:
+        # normalize
+        try:
+            mean_std = np.load(os.path.join(path, 'cifar-10-mean_std.npz'))
+            mean = mean_std['mean']
+            std = mean_std['std']
+        except IOError:
+            mean = X_train.mean(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+            std = X_train.std(axis=(0, 2, 3), keepdims=True).astype(np.float32)
+            np.savez(os.path.join(path, 'cifar-10-mean_std.npz'),
+                     mean=mean, std=std)
+        X_train = (X_train - mean) / std
+        X_test = (X_test - mean) / std
 
     return X_train, y_train, X_test, y_test
 

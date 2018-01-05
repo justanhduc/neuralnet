@@ -5,6 +5,7 @@ import time
 import numpy as np
 import theano
 from theano import tensor as T
+from scipy import misc
 
 thread_lock = threading.Lock()
 
@@ -39,39 +40,42 @@ class ConfigParser(object):
         return data
 
 
-class DataManager(object):
+class DataManager(ConfigParser):
     '''Manage dataset
     '''
 
-    def __init__(self, batch_size, placeholders, shuffle=False, no_target=False, augmentation=False,
-                 num_cached=10):
+    def __init__(self, config_file, placeholders):
         '''
 
         :param dataset: (features, targets) or features. Features and targets must be numpy arrays
         '''
+        super(DataManager, self).__init__(config_file)
+        self.path = self.config['data']['path']
         self.training_set = None
         self.testing_set = None
-        self.train_data_shape = None
-        self.test_data_shape = None
-        self.load_data()
-        self.batch_size = batch_size
+        self.num_train_data = None
+        self.num_test_data = None
+        self.batch_size = self.config['training']['batch_size']
+        self.test_batch_size = self.config['training']['validation_batch_size']
         self.placeholders = placeholders
-        self.shuffle = shuffle
-        self.no_target = no_target
-        self.augmentation = augmentation
-        self.num_cached = num_cached
+        self.shuffle = self.config['data']['shuffle']
+        self.no_target = self.config['data']['no_target']
+        self.augmentation = self.config['data']['augmentation']
+        self.num_cached = self.config['data']['num_cached']
+        self.load_data()
 
     def load_data(self):
         raise NotImplementedError
 
-    def get_batches(self, stage='train', epoch=None, num_epochs=None, *args):
+    def get_batches(self, epoch=None, num_epochs=None, stage='train', *args):
         batches = self.generator(stage)
-        if self.augmentation:
+        if stage == 'train' and self.augmentation:
             batches = self.augment_minibatches(batches, *args)
         batches = self.generate_in_background(batches)
         if epoch is not None and num_epochs is not None:
-            shape = self.train_data_shape if stage == 'train' else self.test_data_shape
-            num_batches = shape[0] // self.batch_size
+            shape = self.num_train_data if stage == 'train' else self.num_test_data
+            batch_size = self.batch_size if stage == 'train' else self.test_batch_size
+            num_batches = shape // batch_size
             batches = self.progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=num_batches)
         return batches
 
@@ -137,28 +141,28 @@ class DataManager(object):
             x, y = data
             shape_y = self.placeholders[1].get_value().shape
             shape_x = self.placeholders[0].get_value().shape
-            if x.shape != shape_x or y.shape != shape_y:
-                raise ValueError('Input of the shared variable must have the same shape with the shared variable')
+            # if x.shape != shape_x or y.shape != shape_y:
+            #     raise ValueError('Input of the shared variable must have the same shape with the shared variable')
             self.placeholders[0].set_value(x, borrow=True)
             self.placeholders[1].set_value(y, borrow=True)
         else:
             x = data
             shape_x = self.placeholders.get_value().shape
-            if x.shape != shape_x:
-                raise ValueError('Input of the shared variable must have the same shape with the shared variable')
+            # if x.shape != shape_x:
+            #     raise ValueError('Input of the shared variable must have the same shape with the shared variable')
             self.placeholders.set_value(x, borrow=True)
 
     def generator(self, stage='train'):
         dataset = self.training_set if stage == 'train' else self.testing_set
-        shape = self.train_data_shape if stage == 'train' else self.test_data_shape
+        shape = self.num_train_data if stage == 'train' else self.num_test_data
         shuffle = self.shuffle if stage == 'train' else False
-        num_batches = shape[0] // self.batch_size
+        num_batches = shape // self.batch_size
         if not self.no_target:
             x, y = dataset
             y = np.asarray(y)
         else:
             x = dataset
-        x = np.asarray(x, dtype=theano.config.floatX)
+
         if shuffle:
             index = np.arange(0, np.asarray(x).shape[0])
             np.random.shuffle(index)
@@ -174,6 +178,22 @@ class DataManager(object):
         shared_x = theano.shared(np.asarray(data_x, dtype=theano.config.floatX))
         shared_y = theano.shared(np.asarray(data_y, dtype=theano.config.floatX))
         return shared_x, T.cast(shared_y, 'int32')
+
+
+def crop_center(image, resize=256, crop=(224, 224)):
+    h, w = image.shape[:2]
+    scale = resize * 1.0 / min(h, w)
+    if h < w:
+        newh, neww = resize, int(scale * w + 0.5)
+    else:
+        newh, neww = int(scale * h + 0.5), resize
+    image = misc.imresize(image, (newh, neww))
+
+    orig_shape = image.shape
+    h0 = int((orig_shape[0] - crop[0]) * 0.5)
+    w0 = int((orig_shape[1] - crop[1]) * 0.5)
+    image = image[h0:h0 + crop[0], w0:w0 + crop[1]]
+    return image.astype('uint8')
 
 
 def load_weights(weight_file, model):
@@ -244,7 +264,7 @@ def maxout(input, maxout_size=4):
     return maxout_out
 
 
-def lrelu(x, alpha=1e-2):
+def lrelu(x, alpha=0.2):
     return T.nnet.relu(x, alpha=alpha)
 
 

@@ -15,7 +15,7 @@ from collections import OrderedDict
 class VanillaSGD(object):
     def __init__(self, alpha):
         self.alpha = T.cast(T.as_tensor_variable(alpha), theano.config.floatX)
-        print(('@ VANILLA GRADIENT DESCEND. ETA = %s ALPHA = %s ' % alpha))
+        print(('@ VANILLA GRADIENT DESCEND. ALPHA = %s ' % alpha))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()

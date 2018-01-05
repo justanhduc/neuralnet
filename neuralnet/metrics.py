@@ -22,6 +22,21 @@ def RootMeanSquaredError(y_pred, y):
     return T.sqrt(T.mean(T.sqr(y_pred - y)))
 
 
+def FirstDerivativeError(y_pred, y, metric='L2'):
+    if y_pred.ndim != 4 and y.ndim != 4:
+        raise TypeError('y and y_pred should have four dimensions')
+    kern = np.array([[1, 0, -1], [0, 0, 0], [-1, 0, 0]], dtype='float32')
+    kern = T.tile(kern, (y.shape[1], y.shape[1], 1, 1))
+    y_pred_grad = T.nnet.conv2d(y_pred, kern, border_mode='half')
+    y_grad = T.nnet.conv2d(y, kern, border_mode='half')
+    if metric.lower() == 'l2':
+        return MeanSquaredError(y_pred_grad, y_grad)
+    elif metric.lower() == 'l1':
+        return ManhattanDistance(y_pred_grad, y_grad)
+    else:
+        raise NotImplementedError
+
+
 def SpearmanRho(ypred, y, eps=1e-8):
     rng = RandomStreams()
     error = eps * rng.normal(size=[y.shape[0]], dtype=theano.config.floatX)
@@ -94,7 +109,7 @@ def gaussian2(size, sigma):
     return g
 
 
-def fspecial_gauss(size, sigma):
+def _fspecial_gauss(size, sigma):
     """Function to mimic the 'fspecial' gaussian MATLAB function
     """
     x, y = T.mgrid[-size // 2 + 1:size // 2 + 1, -size // 2 + 1:size // 2 + 1]
@@ -136,10 +151,10 @@ def SSIM(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0
     size = T.min((filter_size, height, width))
 
     # Scale down sigma if a smaller filter size is used.
-    sigma = T.cast(size * filter_sigma / filter_size if filter_size else 0., theano.config.floatX)
+    sigma = (size * filter_sigma / filter_size) if filter_size else T.as_tensor_variable(np.float32(1))
 
     if filter_size:
-        window = T.cast(T.reshape(fspecial_gauss(size, sigma), (1, 1, size, size)), theano.config.floatX)
+        window = T.cast(T.reshape(_fspecial_gauss(size, sigma), (1, 1, size, size)), theano.config.floatX)
         mu1 = T.nnet.conv2d(img1, window, border_mode='valid')
         mu2 = T.nnet.conv2d(img2, window, border_mode='valid')
         sigma11 = T.nnet.conv2d(img1 * img1, window, border_mode='valid')
@@ -195,13 +210,13 @@ def MS_SSIM(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k
     MS-SSIM score between `img1` and `img2`.
     Raises:
     RuntimeError: If input images don't have the same shape or don't have four
-      dimensions: [batch_size, height, width, depth].
+      dimensions: [batch_size, depth, height, width].
     """
     if img1.ndim != 4:
         raise RuntimeError('Input images must have four dimensions, not %d', img1.ndim)
 
     # Note: default weights don't sum to 1.0 but do match the paper / matlab code.
-    weights = np.array(weights if weights else [0.0448, 0.2856, 0.3001, 0.2363, 0.1333])
+    weights = np.array(weights if weights else [0.0448, 0.2856, 0.3001, 0.2363, 0.1333], dtype='float32')
     levels = weights.size
     downsample_filter = np.ones((1, 1, 2, 2), dtype=theano.config.floatX) / 4.0
     mssim = []
@@ -215,6 +230,11 @@ def MS_SSIM(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k
     mssim = T.as_tensor_variable(mssim)
     mcs = T.as_tensor_variable(mcs)
     return T.prod(mcs) * (mssim[levels-1] ** weights[levels-1])
+
+
+def psnr(y_true, y_pred):
+    return -10. * T.log(T.mean(T.square(y_pred - y_true))) / T.log(10.)
+
 
 if __name__ == '__main__':
     im1 = T.tensor4('im1', 'float32')
