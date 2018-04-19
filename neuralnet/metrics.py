@@ -5,7 +5,7 @@ from theano import tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 
-def ManhattanDistance(y_pred, y):
+def manhattan_distance(y_pred, y):
     print('Using Manhattan distance loss')
     warnings.warn('This function will be removed soon. Please use NormError instead.', DeprecationWarning)
     if y.ndim != y_pred.ndim:
@@ -13,7 +13,7 @@ def ManhattanDistance(y_pred, y):
     return T.mean(T.abs_(y_pred - y))
 
 
-def MeanSquaredError(y_pred, y):
+def mean_squared_error(y_pred, y):
     print('Using Euclidean distance loss')
     warnings.warn('This function will be removed soon. Please use NormError instead.', DeprecationWarning)
     if y.ndim != y_pred.ndim:
@@ -21,21 +21,21 @@ def MeanSquaredError(y_pred, y):
     return T.mean(T.square(y_pred - y))
 
 
-def NormError(x, y, p=2):
+def norm_error(x, y, p=2):
     print('Using L%d norm loss' % p)
     if y.ndim != x.ndim:
         raise TypeError('y should have the same shape as y_pred', ('y', y.type, 'y_pred', x.type))
     return T.mean(T.abs_(x - y) ** p)
 
 
-def RootMeanSquaredError(x, y):
+def root_mean_squared_error(x, y):
     print('Using Root Mean Square loss')
     if y.ndim != x.ndim:
         raise TypeError('y should have the same shape as y_pred', ('y', y.type, 'y_pred', x.type))
     return T.sqrt(T.mean(T.sqr(x - y)))
 
 
-def HuberLoss(x, y, thres=1.):
+def huberloss(x, y, thres=1.):
     print('Using Huber loss')
     if y.ndim != x.ndim:
         raise TypeError('y should have the same shape as y_pred', ('y', y.type, 'y_pred', x.type))
@@ -46,7 +46,7 @@ def HuberLoss(x, y, thres=1.):
     return T.sum(mask * larger_than_equal_to + (1. - mask) * less_than)
 
 
-def FirstDerivativeError(x, y, p=2):
+def first_derivative_error(x, y, p=2):
     print('Using First derivative loss '),
     if x.ndim != 4 and y.ndim != 4:
         raise TypeError('y and y_pred should have four dimensions')
@@ -63,10 +63,10 @@ def FirstDerivativeError(x, y, p=2):
     y_grad_x = T.nnet.conv2d(y, kern_x, border_mode='half')
     y_grad_y = T.nnet.conv2d(y, kern_y, border_mode='half')
     y_grad = T.sqrt(T.sqr(y_grad_x) + T.sqr(y_grad_y) + 1e-10)
-    return NormError(x_grad, y_grad, p)
+    return norm_error(x_grad, y_grad, p)
 
 
-def GradientDifference(x, y, p):
+def gradient_difference(x, y, p):
     print('Using gradient difference loss')
     if y.ndim != x.ndim:
         raise TypeError('y should have the same shape as y_pred', ('y', y.type, 'y_pred', x.type))
@@ -75,7 +75,7 @@ def GradientDifference(x, y, p):
     return T.mean(diff_h + diff_v)
 
 
-def TotalVariation(x, type='aniso'):
+def total_variation(x, type='aniso'):
     print('Using Total variation regularizer')
     assert x.ndim == 4, 'Input must be a tensor image'
     if type == 'aniso':
@@ -88,12 +88,12 @@ def TotalVariation(x, type='aniso'):
         return T.sum(T.sqrt(del_v + del_h))
 
 
-def KLD(y, y_pred):
+def kld(y, y_pred):
     y = T.clip(y, 1e-8, )
+    raise NotImplementedError
 
 
-
-def SpearmanRho(ypred, y, eps=1e-8):
+def spearman(ypred, y, eps=1e-8):
     print('Using SROCC metric')
     rng = RandomStreams()
     error = eps * rng.normal(size=[y.shape[0]], dtype=theano.config.floatX)
@@ -106,7 +106,7 @@ def SpearmanRho(ypred, y, eps=1e-8):
     return 1. - numerator / denominator
 
 
-def PearsonCorrelation(x, y):
+def pearson_correlation(x, y):
     print('Using PLCC metric')
     muy_ypred = T.mean(x)
     muy_y = T.mean(y)
@@ -115,7 +115,7 @@ def PearsonCorrelation(x, y):
     return numerator / denominator
 
 
-def MultinoulliCrossEntropy(p_y_given_x, y):
+def multinoulli_cross_entropy(p_y_given_x, y):
     print('Using multinoulli cross entropy')
     # xdev = p_y_given_x - p_y_given_x.max(1, keepdims=True)
     # lsm = xdev - T.log(T.sum(T.exp(xdev), axis=1, keepdims=True))
@@ -125,29 +125,16 @@ def MultinoulliCrossEntropy(p_y_given_x, y):
     return cost
 
 
-def BinaryCrossEntropy(p_y_given_x, y):
+def binary_cross_entropy(p_y_given_x, y):
     print('Using binary cross entropy')
     if y.ndim != p_y_given_x.ndim:
         raise TypeError('y should have the same shape as p_y_given_x', ('y', y.type, 'p_y_given_x', p_y_given_x.type))
     return T.nnet.binary_crossentropy(p_y_given_x + 1e-7, y).mean()
 
 
-def MeanClassificationErrors(p_y_given_x, y, binary_threshold=0.5):
-    """Return a float representing the number of errors in the minibatch
-    over the total number of examples of the minibatch ; zero one
-    loss over the size of the minibatch
-    :type y: theano.tensor.TensorType
-    :param y: corresponds to a vector that gives for each example the
-              correct label
-    """
-    # check if y has same dimension of y_pred
-    # if y.ndim != p_y_given_x.ndim:
-    #     raise TypeError('y should have the same shape as self.y_pred', ('y', y.type, 'y_pred', p_y_given_x.type))
-    # check if y is of the correct datatype
+def mean_classification_error(p_y_given_x, y, binary_threshold=0.5):
     print('Using classification error rate metric')
     if y.dtype.startswith('int'):
-        # the T.neq operator returns a vector of 0s and 1s, where 1
-        # represents a mistake in prediction
         y_pred = T.cast(p_y_given_x >= binary_threshold if p_y_given_x.ndim == 1 else T.argmax(p_y_given_x, 1), y.dtype)
         return T.mean(T.cast(T.neq(y_pred, y), theano.config.floatX))
     else:
@@ -178,7 +165,7 @@ def _fspecial_gauss(size, sigma):
     return g / T.sum(g)
 
 
-def SSIM(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03, cs_map=False):
+def ssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03, cs_map=False):
     """Return the Structural Similarity Map between `img1` and `img2`.
     This function attempts to match the functionality of ssim_index_new.m by
     Zhou Wang: http://www.cns.nyu.edu/~lcv/ssim/msssim.zip
@@ -246,7 +233,7 @@ def SSIM(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0
     return output
 
 
-def MS_SSIM(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03, weights=None):
+def msssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03, weights=None):
     """Return the MS-SSIM score between `img1` and `img2`.
     This function implements Multi-Scale Structural Similarity (MS-SSIM) Image
     Quality Assessment according to Zhou Wang's paper, "Multi-scale structural
@@ -285,8 +272,8 @@ def MS_SSIM(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k
     mssim = []
     mcs = []
     for idx in range(levels):
-        ssim, cs = SSIM(img1, img2, max_val=max_val, filter_size=filter_size, filter_sigma=filter_sigma, k1=k1, k2=k2, cs_map=True)
-        mssim.append(ssim)
+        _ssim, cs = ssim(img1, img2, max_val=max_val, filter_size=filter_size, filter_sigma=filter_sigma, k1=k1, k2=k2, cs_map=True)
+        mssim.append(_ssim)
         mcs.append(cs ** weights[idx])
         filtered = [T.nnet.conv2d(im, downsample_filter, border_mode='half') for im in (img1, img2)]
         img1, img2 = [x[:, :, ::2, ::2] for x in filtered]
@@ -295,13 +282,13 @@ def MS_SSIM(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k
     return T.prod(mcs) * (mssim[levels-1] ** weights[levels-1])
 
 
-def PSNR(x, y):
+def psnr(x, y):
     """PSNR for [0,1] images"""
     print('Using PSNR metric for [0, 1] images')
     return -10 * T.log(T.mean(T.square(y - x))) / T.log(10.)
 
 
-def PSNR255(x, y):
+def psnr255(x, y):
     print('Using PSNR metric for [0, 255] images')
     x = T.round(x)
     y = T.round(y)

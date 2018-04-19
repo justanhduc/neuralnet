@@ -36,11 +36,11 @@ class Optimization(utils.ConfigParser):
 
     def build_cost(self, y_pred, y, **kwargs):
         if self.cost_function.lower() == 'mse':
-            cost = metrics.MeanSquaredError(y_pred, y)
+            cost = metrics.mean_squared_error(y_pred, y)
         elif self.cost_function.lower() == 'sigmoid_ce':
-            cost = metrics.BinaryCrossEntropy(y_pred, y)
+            cost = metrics.binary_cross_entropy(y_pred, y)
         elif self.cost_function.lower() == 'softmax_ce':
-            cost = metrics.MultinoulliCrossEntropy(y_pred, y)
+            cost = metrics.multinoulli_cross_entropy(y_pred, y)
         else:
             raise NameError('Unknown type of cost function')
         if self.regularization:
