@@ -32,7 +32,7 @@ setup(
         'Programming Language :: Python :: 3.5'
     ],
     packages=find_packages(exclude=['contrib', 'docs', 'tests']),
-    install_requires=['theano==0.9.0'],
+    install_requires=['theano==0.9.0', 'matplotlib', 'scipy', 'numpy'],
     project_urls={
         'Bug Reports': 'https://github.com/justanhduc/neuralnet/issues',
         'Source': 'https://github.com/justanhduc/neuralnet/',
