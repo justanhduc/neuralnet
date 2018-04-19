@@ -9,6 +9,7 @@ from neuralnet import utils
 from neuralnet import optimization
 
 from theano import tensor as T
+import numpy as np
 
 
 class Optimization(utils.ConfigParser):
@@ -21,6 +22,7 @@ class Optimization(utils.ConfigParser):
         self.learning_rate = self.config['optimization']['learning_rate']
         self.momentum = self.config['optimization']['momentum']
         self.epsilon = self.config['optimization']['epsilon']
+        self.gamma = self.config['optimization']['gamma']
         self.rho = self.config['optimization']['rho']
         self.beta1 = self.config['optimization']['beta1']
         self.beta2 = self.config['optimization']['beta2']
@@ -28,7 +30,7 @@ class Optimization(utils.ConfigParser):
         self.regularization = self.config['optimization']['regularization']
         self.regularization_type = self.config['optimization']['regularization_type']
         self.regularization_coeff = self.config['optimization']['regularization_coeff']
-        self.decrease_factor = self.config['optimization']['decrease_factor']
+        self.decrease_factor = np.float32(self.config['optimization']['decrease_factor'])
         self.final_learning_rate = self.config['optimization']['final_learning_rate']
         self.last_iter_to_decrease = self.config['optimization']['last_iter_to_decrease']
 
@@ -64,41 +66,29 @@ class Optimization(utils.ConfigParser):
         if method.lower() == 'adadelta':
             opt = optimization.AdaDelta(rho, epsilon)
             updates = opt.get_updates(params, grads)
-            # updates = [(param_i, param_i - deltaXt_i) for param_i, deltaXt_i in zip(params, outputs)]
         elif method.lower() == 'rmsprop':
-            opt = optimization.RMSprop(learning_rate)
+            opt = optimization.RMSprop(learning_rate, self.gamma, self.epsilon)
             updates = opt.get_updates(params, grads)
-            # updates = [(param_i, param_i - deltaXt_i) for param_i, deltaXt_i in zip(params, outputs)]
         elif method.lower() == 'sgdmomentum':
             opt = optimization.SGDMomentum(learning_rate, momentum, nesterov)
             updates = opt.get_updates(params, grads)
-            # updates = [(param_i, param_i - deltaXt_i) for param_i, deltaXt_i in zip(params, output)]
         elif method.lower() == 'adagrad':
             opt = optimization.AdaGrad(learning_rate, epsilon)
             updates = opt.get_updates(params, grads)
-            # updates = [(param_i, param_i - deltaXt_i) for param_i, deltaXt_i in zip(params, outputs)]
         elif method.lower() == 'adam':
-            # if step is None:
-            #     raise ValueError('Step must be provided for ADAM optimizer')
             opt = optimization.Adam(learning_rate, beta1, beta2)
             updates = opt.get_updates(params, grads)
-            # updates = [(param_i, param_i - deltaXt_i) for param_i, deltaXt_i in zip(params, outputs)]
         elif method.lower() == 'adamax':
-            # if step is None:
-            #     raise ValueError('Step must be provided for ADAMAX optimizer')
             opt = optimization.AdaMax(learning_rate, beta1, beta2)
             updates = opt.get_updates(params, grads)
-            # updates = [(param_i, param_i - deltaXt_i) for param_i, deltaXt_i in zip(params, outputs)]
         elif method.lower() == 'sgd':
             print('Vanilla SGD used')
             opt = optimization.VanillaSGD(learning_rate)
             updates = opt.get_updates(params, grads)
-            # updates = [(param_i, param_i - deltaXt_i) for param_i, deltaXt_i in zip(params, opt.deltaXt(grads))]
         else:
             print('No valid optimization method chosen. Use Vanilla SGD instead')
             opt = optimization.VanillaSGD(learning_rate)
             updates = opt.get_updates(params, grads)
-            # updates = [(param_i, param_i - deltaXt_i) for param_i, deltaXt_i in zip(params, opt.deltaXt(grads))]
         return updates
 
     def build_regularization(self, params, **kwargs):

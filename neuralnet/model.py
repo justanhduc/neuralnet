@@ -1,12 +1,12 @@
-from neuralnet import layers
 import numpy
-from neuralnet import utils
-from neuralnet import Training
+import abc
 
+from neuralnet import layers
+from neuralnet import Training
 from neuralnet import Optimization
 
 
-class Model(Optimization, Training):
+class Model(Optimization, Training, metaclass=abc.ABCMeta):
     def __init__(self, config_file, **kwargs):
         super(Model, self).__init__(config_file, **kwargs)
         self.model = []
@@ -29,11 +29,16 @@ class Model(Optimization, Training):
     def __len__(self):
         return len(self.model)
 
-    def load_pretrained_params(self, file):
-        raise NotImplementedError
+    def add(self, layer):
+        assert isinstance(layer, layers.Layer), 'Expect \'layer\' to belong to {}, got {}'.format(type(layers.Layer), type(layer))
+        self.model.append(layer)
 
+    def load_pretrained_params(self):
+        return
+
+    @abc.abstractclassmethod
     def inference(self, input):
-        return utils.inference(input, self.model)
+        return
 
     def get_all_params(self):
         for layer in self.model:

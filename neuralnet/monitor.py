@@ -11,8 +11,9 @@ import collections
 import pickle as pickle
 from scipy.misc import imsave
 import os
+from shutil import copyfile
 
-from neuralnet import utils
+from neuralnet import utils, model
 
 
 class Monitor(utils.ConfigParser):
@@ -37,6 +38,13 @@ class Monitor(utils.ConfigParser):
             self.current_folder = self.path + '/run%d' % (len(subfolders) + 1 + idx)
             idx += 1
         os.mkdir(self.current_folder)
+        copyfile(config_file, '%s/network_config.config' % self.current_folder)
+        print('Result folder: %s' % self.current_folder)
+
+    def dump_model(self, network):
+        assert isinstance(network, model.Model), 'network must be an instance of Model, got {}'.format(type(network))
+        with open('%s/network.txt' % self.current_folder, 'w') as outfile:
+            outfile.write("\n".join(str(x) for x in network))
 
     def tick(self):
         self._iter[0] += 1
@@ -44,13 +52,8 @@ class Monitor(utils.ConfigParser):
     def plot(self, name, value):
         self._num_since_last_flush[name][self._iter[0]] = value
 
-    def save_image(self, name, tensor_img):
-        '''
-
-        :param tensor_img: (int, int, int, int)
-        :return:
-        '''
-        self._img_since_last_flush[name][self._iter[0]] = tensor_img
+    def save_image(self, name, tensor_img, callback=None):
+        self._img_since_last_flush[name][self._iter[0]] = tensor_img if callback is None else callback(tensor_img)
 
     def flush(self):
         prints = []
@@ -71,12 +74,12 @@ class Monitor(utils.ConfigParser):
 
         for name, vals in list(self._img_since_last_flush.items()):
             for val in vals.values():
-                if val.dtype == 'float32':
+                if val.dtype != 'uint8':
                     val = (255.99 * val).astype('uint8')
                 if len(val.shape) == 4:
                     for num in range(val.shape[0]):
                         img = val[num]
-                        img = np.transpose(img, (1, 2, 0))
+                        img = np.squeeze(np.transpose(img, (1, 2, 0)))
                         imsave(self.current_folder + '/' + name + '_%d.jpg' % num, img)
                 elif len(val.shape) == 3:
                     imsave(name + '.jpg', val)

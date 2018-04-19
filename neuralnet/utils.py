@@ -62,7 +62,6 @@ class DataManager(ConfigParser):
         self.no_target = self.config['data']['no_target']
         self.augmentation = self.config['data']['augmentation']
         self.num_cached = self.config['data']['num_cached']
-        self.load_data()
 
     def load_data(self):
         raise NotImplementedError
@@ -76,7 +75,7 @@ class DataManager(ConfigParser):
             shape = self.num_train_data if stage == 'train' else self.num_test_data
             batch_size = self.batch_size if stage == 'train' else self.test_batch_size
             num_batches = shape // batch_size
-            batches = self.progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=num_batches)
+            batches = self._progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=num_batches)
         return batches
 
     def generate_in_background(self, generator):
@@ -106,7 +105,7 @@ class DataManager(ConfigParser):
             item = queue.get()
 
     @staticmethod
-    def progress(items, desc='', total=None, min_delay=0.1):
+    def _progress(items, desc='', total=None, min_delay=0.1):
         """
         Returns a generator over `items`, printing the number and percentage of
         items processed and the estimated remaining processing time before yielding
@@ -137,20 +136,19 @@ class DataManager(ConfigParser):
 
     def update_input(self, data, *args):
         no_target = args[0] if args else self.no_target
-        if not no_target:
-            x, y = data
-            shape_y = self.placeholders[1].get_value().shape
-            shape_x = self.placeholders[0].get_value().shape
-            # if x.shape != shape_x or y.shape != shape_y:
-            #     raise ValueError('Input of the shared variable must have the same shape with the shared variable')
-            self.placeholders[0].set_value(x, borrow=True)
-            self.placeholders[1].set_value(y, borrow=True)
-        else:
+        if isinstance(self.placeholders, (list, tuple)):
+            assert len(self.placeholders) == len(data), 'Data has length %d but placeholders has length %d.' % \
+                                                        (len(data), len(self.placeholders))
+            for d, p in zip(data, self.placeholders):
+                p.set_value(d, borrow=True)
+        elif isinstance(self.placeholders, theano.gpuarray.type.GpuArraySharedVariable):
             x = data
             shape_x = self.placeholders.get_value().shape
             # if x.shape != shape_x:
             #     raise ValueError('Input of the shared variable must have the same shape with the shared variable')
             self.placeholders.set_value(x, borrow=True)
+        else:
+            raise TypeError('Expected theano shared or list/tuple type, got {}'.format(type(self.placeholders)))
 
     def generator(self, stage='train'):
         dataset = self.training_set if stage == 'train' else self.testing_set
@@ -253,10 +251,11 @@ def fully_connected_to_convolution(weight, prev_layer_shape):
         return None
 
 
-def maxout(input, maxout_size=4):
+def maxout(input, **kwargs):
+    size = kwargs.get('size', 4)
     maxout_out = None
-    for i in range(maxout_size):
-        t = input[:, i::maxout_size]
+    for i in range(size):
+        t = input[:, i::size]
         if maxout_out is None:
             maxout_out = t
         else:
@@ -264,15 +263,16 @@ def maxout(input, maxout_size=4):
     return maxout_out
 
 
-def lrelu(x, alpha=0.2):
+def lrelu(x, **kwargs):
+    alpha = kwargs.get('alpha', 0.2)
     return T.nnet.relu(x, alpha=alpha)
 
 
-def linear(x):
+def linear(x, **kwargs):
     return x
 
 
-def ramp(x):
+def ramp(x, **kwargs):
     left = T.switch(x < 0, 0, x)
     return T.switch(left > 1, 1, left)
 
@@ -281,6 +281,16 @@ def prelu(x, alpha):
     f1 = 0.5 * (1 + alpha)
     f2 = 0.5 * (1 - alpha)
     return f1 * x + f2 * abs(x)
+
+
+def swish(x, **kwargs):
+    return x * T.nnet.sigmoid(x)
+
+
+def selu(x, **kwargs):
+    lamb = kwargs.get('lambda', 1.0507)
+    alpha = kwargs.get('alpha', 1.6733)
+    return lamb * T.nnet.elu(x, alpha)
 
 
 def inference(input, model):
@@ -298,12 +308,44 @@ def decrease_learning_rate(learning_rate, iter, epsilon_zero, epsilon_tau, tau):
 
 def rgb2gray(img):
     if img.ndim != 4:
-        raise RuntimeError('Input images must have four dimensions, not %d', img.ndim)
+        raise ValueError('Input images must have four dimensions, not %d' % img.ndim)
     return (0.299 * img[:, 0] + 0.587 * img[:, 1] + 0.114 * img[:, 2]).dimshuffle((0, 'x', 1, 2))
 
 
-function = {'relu': T.nnet.relu, 'sigmoid': T.nnet.sigmoid, 'tanh': T.tanh, 'lrelu': lrelu,
-            'softmax': T.nnet.softmax, 'linear': linear, 'elu': T.nnet.elu, 'ramp': ramp, 'maxout': maxout,
-            'sin': T.sin, 'cos': T.cos}
+def rgb2ycbcr(img):
+    if img.ndim != 4:
+        raise ValueError('Input images must have four dimensions, not %d' % img.ndim)
+    Y = 0. + .299 * img[:, 0] + .587 * img[:, 1] + .114 * img[:, 2]
+    Cb = 128. - .169 * img[:, 0] - .331 * img[:, 1] + .5 * img[:, 2]
+    Cr = 128. + .5 * img[:, 0] - .419 * img[:, 1] - .081 * img[:, 2]
+    return T.concatenate((Y.dimshuffle((0, 'x', 1, 2)), Cb.dimshuffle((0, 'x', 1, 2)), Cr.dimshuffle((0, 'x', 1, 2))), 1)
 
 
+def ycbcr2rgb(img):
+    if img.ndim != 4:
+        raise ValueError('Input images must have four dimensions, not %d' % img.ndim)
+    R = img[:, 0] + 1.4 * (img[:, 2] - 128.)
+    G = img[:, 0] - .343 * (img[:, 1] - 128.) - .711 * (img[:, 2] - 128.)
+    B = img[:, 0] + 1.765 * (img[:, 1] - 128.)
+    return T.concatenate((R.dimshuffle((0, 'x', 1, 2)), G.dimshuffle((0, 'x', 1, 2)), B.dimshuffle((0, 'x', 1, 2))), 1)
+
+
+function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
+            'tanh': lambda x, **kwargs: T.tanh(x), 'lrelu': lrelu, 'softmax': lambda x, **kwargs: T.nnet.softmax(x),
+            'linear': linear, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,
+            'sin': lambda x, **kwargs: T.sin(x), 'cos': lambda x, **kwargs: T.cos(x), 'swish': swish, 'selu': selu}
+
+
+if __name__ == '__main__':
+    a = T.tensor4()
+    b = ycbcr2rgb(rgb2ycbcr(a))
+    f = theano.function([a], b)
+    img = misc.imread('E:/Users/Duc/frame_interpolation/utils/v_ApplyEyeMakeup_g04_c05/1.jpg')
+    img = np.transpose(img, (2, 0, 1))
+    img = img[None]
+    from matplotlib import pyplot as plt
+    plt.figure()
+    plt.imshow(np.uint8(np.transpose(f(img)[0], (1, 2, 0))))
+    plt.figure()
+    plt.imshow(np.transpose(img[0], (1, 2, 0)))
+    plt.show()
