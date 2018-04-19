@@ -9,7 +9,7 @@ A high level framework for general purpose neural networks written in Theano.
 [Scipy](https://www.scipy.org/install.html), [Numpy+mkl](http://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy), [Matplotlib](https://matplotlib.org/)
 
 
-## Install
+## Installation
 ```
 pip install --upgrade neuralnet
 ```
