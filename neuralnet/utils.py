@@ -1,6 +1,7 @@
 import json
 import sys
 import threading
+from queue import Queue
 import time
 import numpy as np
 import theano
@@ -66,7 +67,7 @@ class DataManager(ConfigParser):
     def load_data(self):
         raise NotImplementedError
 
-    def get_batches(self, epoch=None, num_epochs=None, stage='train', *args):
+    def get_batches(self, epoch=None, num_epochs=None, stage='train', show_progress=True, *args):
         batches = self.generator(stage)
         if stage == 'train' and self.augmentation:
             batches = self.augment_minibatches(batches, *args)
@@ -75,14 +76,14 @@ class DataManager(ConfigParser):
             shape = self.num_train_data if stage == 'train' else self.num_test_data
             batch_size = self.batch_size if stage == 'train' else self.test_batch_size
             num_batches = shape // batch_size
-            batches = self._progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=num_batches)
+            if show_progress:
+                batches = self._progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=num_batches)
         return batches
 
     def generate_in_background(self, generator):
         """
         Runs a generator in a background thread, caching up to `num_cached` items.
         """
-        from queue import Queue
         queue = Queue(maxsize=self.num_cached)
         sentinel = 'end'
 

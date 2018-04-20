@@ -8,7 +8,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='neuralnet',
-    version='0.0.3a',
+    version='0.0.3',
     description='A high-level library on top of Theano.',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -23,8 +23,9 @@ setup(
         'Programming Language :: Python :: 3 :: Only',
         'Programming Language :: Python :: 3.5'
     ],
+    platforms=['Windows', 'Linux'],
     packages=find_packages(exclude=['examples']),
-    install_requires=['theano==0.9.0', 'matplotlib', 'scipy', 'numpy'],
+    install_requires=['theano', 'matplotlib', 'scipy', 'numpy'],
     project_urls={
         'Bug Reports': 'https://github.com/justanhduc/neuralnet/issues',
         'Source': 'https://github.com/justanhduc/neuralnet/',

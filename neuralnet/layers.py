@@ -178,7 +178,7 @@ class DropoutLayer(Layer):
         self.GaussianNoise = GaussianNoise
         self.activation = utils.function[activation]
         self.layer_name = layer_name
-        self.srng = T.shared_randomstreams.RandomStreams(self.rng.randint(1, int(time.time())))
+        self.srng = theano.sandbox.rng_mrg.MRG_RandomStreams(self.rng.randint(1, int(time.time())))
         self.keep_prob = T.as_tensor_variable(np.float32(1. - drop_prob))
         self.training_flag = False
         self.kwargs = kwargs
@@ -1866,7 +1866,9 @@ class IdentityLayer(Layer):
 class ResizingLayer(Layer):
     def __init__(self, input_shape, ratio=None, frac_ratio=None, layer_name='Upsampling'):
         super(ResizingLayer, self).__init__()
-        if ratio / 2 != ratio // 2:
+        if ratio != int(ratio):
+            raise NotImplementedError
+        if ratio and frac_ratio:
             raise NotImplementedError
         self.input_shape = tuple(input_shape)
         self.ratio = ratio
@@ -1876,8 +1878,8 @@ class ResizingLayer(Layer):
         print('@ {} x{} Resizing Layer {} -> {}'.format(layer_name, self.ratio, self.input_shape, self.output_shape))
 
     def get_output(self, input):
-        return T.nnet.abstract_conv.bilinear_upsampling(input, ratio=self.ratio) #if self.frac_ratio is None \
-            # else T.nnet.abstract_conv.bilinear_upsampling(input, frac_ratio=self.frac_ratio)
+        return T.nnet.abstract_conv.bilinear_upsampling(input, ratio=self.ratio) if self.frac_ratio is None \
+            else T.nnet.abstract_conv.bilinear_upsampling(input, frac_ratio=self.frac_ratio)
 
     @property
     @validate
