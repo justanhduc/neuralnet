@@ -93,7 +93,6 @@ class DataManager(ConfigParser):
             queue.put(sentinel)
 
         # start producer (in a background thread)
-        import threading
         thread = threading.Thread(target=producer)
         thread.daemon = True
         thread.start()
