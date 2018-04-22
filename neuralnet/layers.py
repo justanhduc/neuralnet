@@ -101,6 +101,10 @@ class Sequential(Layer):
     def __len__(self):
         return len(self.block)
 
+    def __getitem__(self, item):
+        assert isinstance(item, int), 'index should be int, got %s.' % type(item)
+        return self.block[item]
+
     def get_output(self, input):
         out = input
         for layer in self.block:
