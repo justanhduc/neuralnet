@@ -11,11 +11,11 @@ VERSION = '%d.%d.%s' % (MAJOR, MINOR, MICRO)
 
 def write_version_py(filename='neuralnet/version.py'):
     cnt = """
-    #THIS FILE IS GENRERATED FROM SETUP.PY
-    
-    version = '%(version)s'
-    author = '%(author)s'
-    """
+#THIS FILE IS GENRERATED FROM SETUP.PY
+
+version = '%(version)s'
+author = '%(author)s'
+"""
     a = open(filename, 'w')
     try:
         a.write(cnt % {'version': VERSION,
