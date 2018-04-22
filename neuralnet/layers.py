@@ -138,7 +138,7 @@ class Sequential(Layer):
     def __str__(self):
         descriptions = ''
         for idx, layer in enumerate(self.block):
-            descriptions += layer.descriptions if idx == len(self.block - 1) else layer.descriptions + '\n'
+            descriptions += layer.descriptions if idx == len(self.block) - 1 else layer.descriptions + '\n'
         return descriptions
 
     def reset(self):
