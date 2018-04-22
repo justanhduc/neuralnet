@@ -84,8 +84,11 @@ class Sequential(Layer):
         super(Sequential, self).__init__()
         assert isinstance(layer_list, (list, tuple, Sequential)), 'layer_list must be a list or tuple, got %s.' % type(layer_list)
         self.block = list(layer_list) if isinstance(layer_list, (list, tuple)) else list(layer_list.block)
+        self.params = [p for layer in layer_list for p in layer.params] if isinstance(layer_list, (list, tuple)) else layer_list.params
+        self.trainable = [p for layer in layer_list for p in layer.trainable] if isinstance(layer_list, (list, tuple)) else layer_list.trainable
+        self.regularizable = [p for layer in layer_list for p in layer.regularizable] if isinstance(layer_list, (list, tuple)) else layer_list.regularizable
         self._idx = 0
-        self._max = 0
+        self._max = len(self.block) - 1
 
     def __iter__(self):
         self._idx = 0
@@ -117,6 +120,20 @@ class Sequential(Layer):
 
     def append(self, layer):
         self.block.append(layer)
+        self.params += layer.params
+        self.trainable += layer.trainable
+        self.regularizable += layer.regularizable
+
+    def __add__(self, other):
+        assert isinstance(other, Sequential), 'Cannot concatenate a Sequential object with a %s object.' % type(other)
+        res = Sequential()
+        res.block = self.block + other.block
+        res.params = self.params + other.params
+        res.trainable = self.trainable + other.trainable
+        res.regularizable = self.regularizable + other.regularizable
+        res._idx = 0
+        res._max = len(res.block)
+        return res
 
     def __str__(self):
         descriptions = ''
