@@ -9,7 +9,7 @@ from neuralnet import Optimization
 class Model(Optimization, Training, metaclass=abc.ABCMeta):
     def __init__(self, config_file, **kwargs):
         super(Model, self).__init__(config_file, **kwargs)
-        self.model = []
+        self.model = layers.Sequential()
         self.params = []
         self.trainable = []
         self.regularizable = []
@@ -61,8 +61,8 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
         for p in self.params:
             try:
                 p.set_value(weights[p.name])
-            except:
-                NameError('There is no saved weight for %s' % p.name)
+            except KeyError:
+                KeyError('There is no saved weight for %s' % p.name)
         print('Model weights loaded from %s' % self.param_file)
 
     def reset(self):

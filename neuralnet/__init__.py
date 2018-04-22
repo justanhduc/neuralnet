@@ -1,4 +1,6 @@
 from __future__ import print_function
+from .version import version as __version__
+from .version import author as __author__
 from . import layers
 from . import metrics
 from . import optimization

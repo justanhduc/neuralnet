@@ -87,19 +87,19 @@ class Sequential(Layer):
         self.params = [p for layer in layer_list for p in layer.params] if isinstance(layer_list, (list, tuple)) else layer_list.params
         self.trainable = [p for layer in layer_list for p in layer.trainable] if isinstance(layer_list, (list, tuple)) else layer_list.trainable
         self.regularizable = [p for layer in layer_list for p in layer.regularizable] if isinstance(layer_list, (list, tuple)) else layer_list.regularizable
-        self._idx = 0
-        self._max = len(self.block) - 1
+        self.__idx = 0
+        self.__max = len(self.block) - 1
 
     def __iter__(self):
-        self._idx = 0
-        self._max = len(self.block) - 1
+        self.__idx = 0
+        self.__max = len(self.block) - 1
         return self
 
     def __next__(self):
-        if self._idx > self._max:
+        if self.__idx > self.__max:
             raise StopIteration
-        self._idx += 1
-        return self.block[self._idx - 1]
+        self.__idx += 1
+        return self.block[self.__idx - 1]
 
     def __len__(self):
         return len(self.block)
@@ -111,7 +111,7 @@ class Sequential(Layer):
     def get_output(self, input):
         out = input
         for layer in self.block:
-            out = layer(input)
+            out = layer(out)
         return out
 
     @property
@@ -131,8 +131,8 @@ class Sequential(Layer):
         res.params = self.params + other.params
         res.trainable = self.trainable + other.trainable
         res.regularizable = self.regularizable + other.regularizable
-        res._idx = 0
-        res._max = len(res.block)
+        res.__idx = 0
+        res.__max = len(res.block)
         return res
 
     def __str__(self):
@@ -1357,8 +1357,9 @@ class ResNetBlock(Layer):
         for layer in self.block:
             layer.reset()
 
-        for layer in self.shortcut:
-            layer.reset()
+        if self.left_branch:
+            for layer in self.shortcut:
+                layer.reset()
 
 
 class ResNetBlock2(Layer):
@@ -1919,8 +1920,8 @@ class ConcatLayer(Layer):
         self.input_shapes = tuple(input_shapes)
         self.axis = axis
         self.layer_name = layer_name
-        self.descriptions = '%s Concat Layer: axis %d' % (layer_name, axis), ' '.join([str(x) for x in input_shapes]), \
-                            '-> {}'.format(self.output_shape)
+        self.descriptions = ''.join(('%s Concat Layer: axis %d' % (layer_name, axis), ' '.join([str(x) for x in input_shapes]),
+                                     '-> {}'.format(self.output_shape)))
 
     def get_output(self, input):
         return T.concatenate(input, self.axis)
