@@ -82,8 +82,8 @@ class Sequential(Layer):
     """
     def __init__(self, layer_list=[]):
         super(Sequential, self).__init__()
-        assert isinstance(layer_list, (list, tuple)), 'layer_list must be a list or tuple, got %s.' % type(layer_list)
-        self.block = list(layer_list)
+        assert isinstance(layer_list, (list, tuple, Sequential)), 'layer_list must be a list or tuple, got %s.' % type(layer_list)
+        self.block = list(layer_list) if isinstance(layer_list, (list, tuple)) else list(layer_list.block)
         self._idx = 0
         self._max = 0
 
