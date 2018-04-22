@@ -36,7 +36,7 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
     def load_pretrained_params(self):
         return
 
-    @abc.abstractclassmethod
+    @abc.abstractmethod
     def inference(self, input):
         return
 
@@ -67,6 +67,10 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
 
     def reset(self):
         layers.reset_training()
+
+    def show(self):
+        for layer in self.model:
+            print(layer)
 
     @staticmethod
     def set_training_status(training):

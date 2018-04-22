@@ -43,7 +43,7 @@ def huberloss(x, y, thres=1.):
     larger_than_equal_to = .5 * thres ** 2 + thres * (e - thres)
     less_than = .5 * e**2
     mask = T.cast(e >= thres, 'float32')
-    return T.sum(mask * larger_than_equal_to + (1. - mask) * less_than)
+    return T.mean(mask * larger_than_equal_to + (1. - mask) * less_than)
 
 
 def first_derivative_error(x, y, p=2):
