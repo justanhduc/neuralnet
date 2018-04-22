@@ -4,7 +4,7 @@ A high level framework for general purpose neural networks written in Theano.
 
 ## Requirements
 
-[Theano](http://deeplearning.net/software/theano/) 1.0.1
+[Theano](http://deeplearning.net/software/theano/)
 
 [Scipy](https://www.scipy.org/install.html) 
 
@@ -18,7 +18,7 @@ A high level framework for general purpose neural networks written in Theano.
 pip install --upgrade neuralnet
 ```
 
-The version in this repo tends to be newer since I am lazy to make a new version available on Pypi when the change is tiny. TO install the version in this repo execute
+The version in this repo tends to be newer since I am lazy to make a new version available on Pypi when the change is tiny. To install the version in this repo execute
 
 ```
 pip install git+git://github.com/justanhduc/neuralnet.git@master
