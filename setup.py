@@ -8,7 +8,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='neuralnet',
-    version='0.0.4a',
+    version='0.0.4b',
     description='A high-level library on top of Theano.',
     long_description=long_description,
     long_description_content_type='text/markdown',

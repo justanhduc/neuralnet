@@ -69,10 +69,64 @@ class Layer(metaclass=abc.ABCMeta):
         else:
             raise NotImplementedError
 
-    @staticmethod
-    @abc.abstractmethod
-    def reset():
-        return
+    def set_training_status(self, training=True):
+        pass
+
+    def reset(self):
+        pass
+
+
+class Sequential(Layer):
+    """
+    Mimicking Pytorch Sequential class
+    """
+    def __init__(self, layer_list=[]):
+        super(Sequential, self).__init__()
+        assert isinstance(layer_list, (list, tuple)), 'layer_list must be a list or tuple, got %s.' % type(layer_list)
+        self.block = list(layer_list)
+        self._idx = 0
+        self._max = 0
+
+    def __iter__(self):
+        self._idx = 0
+        self._max = len(self.block) - 1
+        return self
+
+    def __next__(self):
+        if self._idx > self._max:
+            raise StopIteration
+        self._idx += 1
+        return self.block[self._idx - 1]
+
+    def __len__(self):
+        return len(self.block)
+
+    def get_output(self, input):
+        out = input
+        for layer in self.block:
+            out = layer(input)
+        return out
+
+    @property
+    def output_shape(self):
+        return self.block[-1].output_shape
+
+    def append(self, layer):
+        self.block.append(layer)
+
+    def __str__(self):
+        descriptions = ''
+        for idx, layer in enumerate(self.block):
+            descriptions += layer.descriptions if idx == len(self.block - 1) else layer.descriptions + '\n'
+        return descriptions
+
+    def reset(self):
+        for layer in self.block:
+            layer.reset()
+
+    def set_training_status(self, training=True):
+        for layer in self.block:
+            layer.set_training_status(training)
 
 
 class ActivationLayer(Layer):
@@ -89,10 +143,6 @@ class ActivationLayer(Layer):
     @property
     def output_shape(self):
         return tuple(self.input_shape)
-
-    @staticmethod
-    def reset():
-        return
 
 
 class PoolingLayer(Layer):
@@ -153,14 +203,8 @@ class PoolingLayer(Layer):
             size[3] = int(np.ceil((size[3] + 2 * self.pad[1] - self.ws[1]) / self.stride[1]))
         return tuple(size)
 
-    @staticmethod
-    def reset():
-        pass
-
 
 class DropoutLayer(Layer):
-    layers = []
-
     def __init__(self, input_shape, drop_prob=0.5, GaussianNoise=False, activation='relu', layer_name='Dropout', **kwargs):
         assert isinstance(input_shape, list) or isinstance(input_shape, tuple), \
             'input_shape must be list or tuple. Received %s' % type(input_shape)
@@ -177,7 +221,6 @@ class DropoutLayer(Layer):
         self.training_flag = False
         self.kwargs = kwargs
         self.descriptions = '{} Dropout Layer: p={:.2f} activation: {}'.format(layer_name, 1. - drop_prob, activation)
-        DropoutLayer.layers.append(self)
 
     def get_output(self, input):
         mask = self.srng.normal(input.shape) + 1. if self.GaussianNoise else self.srng.binomial(n=1, p=self.keep_prob, size=input.shape)
@@ -190,34 +233,25 @@ class DropoutLayer(Layer):
     def output_shape(self):
         return tuple(self.input_shape)
 
-    @staticmethod
-    def set_training(training):
-        for layer in DropoutLayer.layers:
-            layer.training_flag = training
-
-    @staticmethod
-    def reset():
-        pass
+    def set_training_status(self, training=True):
+        self.training_flag = training
 
 
 class FullyConnectedLayer(Layer):
-    layers = []
-
     def __init__(self, input_shape, num_nodes, He_init=None, He_init_gain=None, no_bias=False, layer_name='fc',
-                 activation='relu', maxout_size=4, target='dev0'):
-        '''
+                 activation='relu', target='dev0', **kwargs):
+        """
 
-        :param n_in:
+        :param input_shape:
         :param num_nodes:
-        :param He_init: 'normal', 'uniform' or None (default)
+        :param He_init:
         :param He_init_gain:
-        :param W:
-        :param b:
         :param no_bias:
         :param layer_name:
         :param activation:
         :param target:
-        '''
+        :param kwargs:
+        """
         assert isinstance(input_shape, list) or isinstance(input_shape, tuple), \
             'input_shape must be list or tuple. Received %s' % type(input_shape)
         assert len(input_shape) == 2 or len(input_shape) == 4, \
@@ -229,10 +263,10 @@ class FullyConnectedLayer(Layer):
         self.He_init = He_init
         self.He_init_gain = He_init_gain if He_init_gain is not None else activation
         self.activation = utils.function[activation]
-        self.maxout_size = maxout_size
         self.no_bias = no_bias
         self.layer_name = layer_name
         self.target = target
+        self.kwargs = kwargs
 
         if self.He_init:
             self.W_values = self.init_he((self.input_shape[1], num_nodes), self.He_init_gain, self.He_init)
@@ -255,49 +289,41 @@ class FullyConnectedLayer(Layer):
         self.regularizable.append(self.W)
         self.descriptions = '{} FC: in_shape = {} weight shape = {} -> {} activation: {}'\
             .format(self.layer_name, self.input_shape, (self.input_shape[1], num_nodes), self.output_shape, activation)
-        FullyConnectedLayer.layers.append(self)
 
     def get_output(self, input):
         output = T.dot(input.flatten(2), self.W) + self.b if not self.no_bias else T.dot(input.flatten(2), self.W)
-        return self.activation(output) if self.activation != utils.maxout else self.activation(output, self.maxout_size)
+        return self.activation(output, **self.kwargs)
 
     @property
     @validate
     def output_shape(self):
-        return (self.input_shape[0], self.num_nodes//self.maxout_size) if self.activation is 'maxout' \
+        return (self.input_shape[0], self.num_nodes // self.kwargs.get('maxout_size', 4)) if self.activation is 'maxout' \
             else (self.input_shape[0], self.num_nodes)
 
-    @staticmethod
-    def reset():
-        for layer in FullyConnectedLayer.layers:
-            layer.W.set_value(layer.W_values)
-            if not layer.no_bias:
-                layer.b.set_value(layer.b_values)
+    def reset(self):
+        self.W.set_value(self.W_values)
+        if not self.no_bias:
+            self.b.set_value(self.b_values)
 
 
 class ConvolutionalLayer(Layer):
-    layers = []
-
     def __init__(self, input_shape, num_filters, filter_size, He_init=None, He_init_gain=None, no_bias=True, border_mode='half',
                  stride=(1, 1), dilation=(1, 1), layer_name='conv', activation='relu', target='dev0', **kwargs):
         """
 
-        :param input_shape: list or tuple
-        :param num_filters: int
-        :param filter_size: int or list or tuple
+        :param input_shape:
+        :param num_filters:
+        :param filter_size:
         :param He_init:
         :param He_init_gain:
-        :param W:
-        :param b:
         :param no_bias:
         :param border_mode:
         :param stride:
         :param dilation:
         :param layer_name:
         :param activation:
-        :param maxout_size:
-        :param show:
         :param target:
+        :param kwargs:
         """
         assert isinstance(input_shape, list) or isinstance(input_shape, tuple), \
             'input_shape must be list or tuple. Received %s' % type(input_shape)
@@ -346,7 +372,6 @@ class ConvolutionalLayer(Layer):
                                      'subsampling: {} dilation {}'.format(stride, dilation), 'shape: {} x '.format(input_shape),
                                      'filter shape: {} '.format(self.filter_shape), '-> {} '.format(self.output_shape),
                                      'activation: {} '.format(activation)))
-        ConvolutionalLayer.layers.append(self)
 
     def get_output(self, input):
         output = conv(input=input, filters=self.W, border_mode=self.border_mode, subsample=self.subsample)
@@ -382,20 +407,16 @@ class ConvolutionalLayer(Layer):
         size[2] = (size[2] - k1 + 2*p[0]) // self.subsample[0] + 1
         size[3] = (size[3] - k2 + 2*p[1]) // self.subsample[1] + 1
 
-        size[1] = self.filter_shape[0] // self.maxout_size if self.activation == utils.maxout else self.filter_shape[0]
+        size[1] = self.filter_shape[0] // self.kwargs.get('maxout_size', 4) if self.activation == utils.maxout else self.filter_shape[0]
         return tuple(size)
 
-    @staticmethod
-    def reset():
-        for layer in ConvolutionalLayer.layers:
-            layer.W.set_value(layer.W_values)
-            if not layer.no_bias:
-                layer.b.set_value(layer.b_values)
+    def reset(self):
+        self.W.set_value(self.W_values)
+        if not self.no_bias:
+            self.b.set_value(self.b_values)
 
 
 class StackingConv(Layer):
-    layers = []
-
     def __init__(self, input_shape, num_layers, num_filters, filter_size=3, batch_norm=False, layer_name='StackingConv', He_init=None,
                  He_init_gain=None, no_bias=True, border_mode='half', stride=1, dilation=(1, 1),
                  activation='relu', **kwargs):
@@ -425,7 +446,6 @@ class StackingConv(Layer):
         self.params += self.block[-1].params
         self.trainable += self.block[-1].trainable
         self.regularizable += self.block[-1].regularizable
-        StackingConv.layers.append(self)
 
     def get_output(self, input):
         output = input
@@ -437,15 +457,12 @@ class StackingConv(Layer):
     def output_shape(self):
         return self.block[-1].output_shape
 
-    @staticmethod
-    def reset():
-        for layer in StackingConv.layers:
+    def reset(self):
+        for layer in self.block:
             layer.reset()
 
 
 class StackingDeconv(Layer):
-    layers = []
-
     def __init__(self, input_shape, num_layers, num_filters, stride_first=True, output_shape=None, He_init=None,
                  layer_name='transconv', padding='half', stride=(2, 2), activation='relu'):
         super(StackingDeconv, self).__init__()
@@ -484,7 +501,6 @@ class StackingDeconv(Layer):
             self.params += self.block[-1].params
             self.trainable += self.block[-1].trainable
             self.regularizable += self.block[-1].regularizable
-        StackingDeconv.layers.append(self)
 
     def get_output(self, input):
         output = input
@@ -496,9 +512,8 @@ class StackingDeconv(Layer):
     def output_shape(self):
         return self.block[-1].output_shape
 
-    @staticmethod
-    def reset():
-        for layer in StackingDeconv.layers:
+    def reset(self):
+        for layer in self.layers:
             layer.reset()
 
 
@@ -534,10 +549,11 @@ class DilatedConvModule(Layer):
     def output_shape(self):
         shape = self.module[0][-1].output_shape
         return (self.input_shape[0], self.num_filters*self.dilation_scale, shape[2], shape[3])
-    
-    @staticmethod
-    def reset():
-        reset_training()
+
+    def reset(self):
+        for block in self.module:
+            for layer in block:
+                layer.reset()
         
 
 class InceptionModule1(Layer):
@@ -592,9 +608,10 @@ class InceptionModule1(Layer):
             depth += block[-1].output_shape[1]
         return (self.module[0][-1].output_shape[0], depth, self.module[0][-1].output_shape[2], self.module[0][-1].output_shape[3])
 
-    @staticmethod
-    def reset():
-        reset_training()
+    def reset(self):
+        for block in self.module:
+            for layer in block:
+                layer.reset()
 
 
 class InceptionModule2(Layer):
@@ -659,9 +676,10 @@ class InceptionModule2(Layer):
             depth += block[-1].output_shape[1]
         return (self.module[0][-1].output_shape[0], depth, self.module[0][-1].output_shape[2], self.module[0][-1].output_shape[3])
 
-    @staticmethod
-    def reset():
-        reset_training()
+    def reset(self):
+        for block in self.module:
+            for layer in block:
+                layer.reset()
 
 
 class InceptionModule3(Layer):
@@ -747,14 +765,17 @@ class InceptionModule3(Layer):
                     depth += l[0].output_shape[1]
         return (self.module[3][-1].output_shape[0], depth, self.module[3][-1].output_shape[2], self.module[3][-1].output_shape[3])
 
-    @staticmethod
-    def reset():
-        reset_training()
+    def reset(self):
+        for block in self.module:
+            for layer in block:
+                if isinstance(layer, list):
+                    for l in layer:
+                        l.reset()
+                else:
+                    layer.reset()
 
 
 class ConvBNAct(Layer):
-    layers = []
-
     def __init__(self, input_shape, num_filters, filter_size, He_init=None, He_init_gain=None, no_bias=True,
                  border_mode='half', stride=(1, 1), layer_name='convbnact', activation='relu', dilation=(1, 1), epsilon=1e-4,
                  running_average_factor=1e-1, axes='spatial', no_scale=False, target='dev0', **kwargs):
@@ -792,7 +813,6 @@ class ConvBNAct(Layer):
         self.trainable += self.Conv.trainable + self.BN.trainable
         self.regularizable += self.Conv.regularizable + self.BN.regularizable
         self.params += self.Conv.params + self.BN.params
-        ConvBNAct.layers.append(self)
         self.descriptions = '{} Conv BN Act: {} -> {}'.format(layer_name, input_shape, self.output_shape)
 
     def get_output(self, input):
@@ -804,14 +824,12 @@ class ConvBNAct(Layer):
     def output_shape(self):
         return self.block[-1].output_shape
 
-    @staticmethod
-    def reset():
-        pass
+    def reset(self):
+        for layer in self.block:
+            layer.reset()
 
 
 class ConvolutionalZeroPhaseLayer(Layer):
-    layers = []
-
     def __init__(self, input_shape, filter_shape, He_init=None, He_init_gain='relu', W1=None, W2=None, b=None, no_bias=True,
                  border_mode='half', stride=(1, 1), layer_name='conv', activation='relu', pool=False,
                  pool_size=(2, 2), pool_mode='max', pool_stride=(2, 2), pool_pad=(0, 0), target='dev0'):
@@ -963,10 +981,8 @@ class ConvolutionalZeroPhaseLayer(Layer):
 
 
 class TransposedConvolutionalLayer(Layer):
-    layers = []
-
     def __init__(self, input_shape, num_filters, filter_size, output_shape=None, He_init=None, layer_name='transconv',
-                 padding='half', stride=(2, 2), activation='relu', target='dev0'):
+                 padding='half', stride=(2, 2), activation='relu', target='dev0', **kwargs):
         """
 
         :param input_shape:
@@ -994,6 +1010,7 @@ class TransposedConvolutionalLayer(Layer):
         self.activation = utils.function[activation]
         self.layer_name = layer_name
         self.target = target
+        self.kwargs = kwargs
 
         self.b_values = np.zeros((self.filter_shape[1],), dtype=theano.config.floatX)
         if He_init:
@@ -1014,7 +1031,6 @@ class TransposedConvolutionalLayer(Layer):
                             'shape: {} '.format(input_shape), 'filter shape: {} '.format(self.filter_shape), \
                             '-> {} '.format(self.output_shape), 'padding: {}'.format(self.padding), \
                             'stride: {}'.format(self.stride), 'activation: {}'.format(activation)
-        TransposedConvolutionalLayer.layers.append(self)
 
     def _get_deconv_filter(self):
         """
@@ -1058,23 +1074,21 @@ class TransposedConvolutionalLayer(Layer):
                                                             subsample=self.stride, border_mode=self.padding)
         input = op(self.W, output, self.output_shape_tmp[-2:])
         input = input + self.b.dimshuffle('x', 0, 'x', 'x')
-        return self.activation(input)
+        return self.activation(input, **self.kwargs)
 
     @property
     @validate
     def output_shape(self):
         return tuple(self.output_shape_tmp)
 
-    @staticmethod
-    def reset():
-        for layer in TransposedConvolutionalLayer.layers:
-            layer.W.set_value(layer.W_values)
-            layer.b.set_value(layer.b_values)
+    def reset(self):
+        self.W.set_value(self.W_values)
+        self.b.set_value(self.b_values)
 
 
 class PixelShuffleLayer(Layer):
     def __init__(self, input_shape, num_filters, filter_size, rate=(2, 2), activation='relu', he_init=True,
-                 biases=True, layer_name='Upsample Conv'):
+                 biases=True, layer_name='Upsample Conv', **kwargs):
         super(PixelShuffleLayer, self).__init__()
         self.input_shape = tuple(input_shape)
         self.num_filters = num_filters
@@ -1087,7 +1101,7 @@ class PixelShuffleLayer(Layer):
 
         self.shape = (self.input_shape[0], self.input_shape[1], self.input_shape[2]*rate[0], self.input_shape[3]*rate[1])
         self.conv = ConvolutionalLayer(self.shape, num_filters, filter_size, 'uniform' if self.he_init else None, activation=self.activation,
-                                       layer_name=self.layer_name, no_bias=not self.biases)
+                                       layer_name=self.layer_name, no_bias=not self.biases, **kwargs)
         self.params += self.conv.params
         self.trainable += self.conv.trainable
         self.regularizable += self.conv.regularizable
@@ -1105,13 +1119,12 @@ class PixelShuffleLayer(Layer):
     def output_shape(self):
         return (self.shape[0], self.num_filters, self.shape[2], self.shape[3])
 
-    @staticmethod
-    def reset():
-        reset_training()
+    def reset(self):
+        self.conv.reset()
 
 
 class MeanPoolConvLayer(Layer):
-    def __init__(self, input_shape, num_filters, filter_size, activation='relu', he_init=True, biases=True, layer_name='Mean Pool Conv'):
+    def __init__(self, input_shape, num_filters, filter_size, activation='relu', he_init=True, biases=True, layer_name='Mean Pool Conv', **kwargs):
         assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[3] // 2, 'Input must have even shape.'
         super(MeanPoolConvLayer, self).__init__()
         self.input_shape = tuple(input_shape)
@@ -1124,7 +1137,7 @@ class MeanPoolConvLayer(Layer):
 
         self.shape = (self.input_shape[0], self.input_shape[1], self.input_shape[2]//2, self.input_shape[3]//2)
         self.conv = ConvolutionalLayer(self.shape, num_filters, filter_size, 'uniform' if self.he_init else None,
-                                       activation=self.activation, layer_name=self.layer_name, no_bias=not self.biases)
+                                       activation=self.activation, layer_name=self.layer_name, no_bias=not self.biases, **kwargs)
         self.params += self.conv.params
         self.trainable += self.conv.trainable
         self.regularizable += self.conv.regularizable
@@ -1139,13 +1152,12 @@ class MeanPoolConvLayer(Layer):
     def output_shape(self):
         return (self.shape[0], self.num_filters, self.shape[2], self.shape[3])
 
-    @staticmethod
-    def reset():
-        reset_training()
+    def reset(self):
+        self.conv.reset()
 
 
 class ConvMeanPoolLayer(Layer):
-    def __init__(self, input_shape, num_filters, filter_size, activation='relu', he_init=True, biases=True, layer_name='Mean Pool Conv'):
+    def __init__(self, input_shape, num_filters, filter_size, activation='relu', he_init=True, biases=True, layer_name='Mean Pool Conv', **kwargs):
         assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[3] // 2, 'Input must have even shape.'
         super(ConvMeanPoolLayer, self).__init__()
         self.input_shape = tuple(input_shape)
@@ -1157,7 +1169,7 @@ class ConvMeanPoolLayer(Layer):
         self.layer_name = layer_name
 
         self.conv = ConvolutionalLayer(self.input_shape, num_filters, filter_size, 'uniform' if self.he_init else None,
-                                       activation=self.activation, layer_name=self.layer_name, no_bias=not self.biases)
+                                       activation=self.activation, layer_name=self.layer_name, no_bias=not self.biases, **kwargs)
         self.params += self.conv.params
         self.trainable += self.conv.trainable
         self.regularizable += self.conv.regularizable
@@ -1172,9 +1184,8 @@ class ConvMeanPoolLayer(Layer):
     def output_shape(self):
         return (self.input_shape[0], self.num_filters, self.input_shape[2]//2, self.input_shape[3]//2)
 
-    @staticmethod
-    def reset():
-        reset_training()
+    def reset(self):
+        self.conv.reset()
 
 
 class ResNetBlockWGAN(Layer):
@@ -1252,8 +1263,6 @@ class ResNetBlockWGAN(Layer):
 
 
 class ResNetBlock(Layer):
-    layers = []
-
     def __init__(self, input_shape, num_filters, stride=(1, 1), dilation=(1, 1), activation='relu', left_branch=False,
                  layer_name='ResBlock', **kwargs):
         '''
@@ -1281,33 +1290,31 @@ class ResNetBlock(Layer):
         self.descriptions = '{} ResNet Block 1 {} filters stride {} dilation {} left branch {} {} {}'.\
             format(layer_name, num_filters, stride, dilation, left_branch, activation, ' '.join([' '.join((k, str(v))) for k, v in kwargs.items()]))
 
-        self.block = []
-        self.proj = []
-
-        self.block += self._build_simple_block(block_name=layer_name + '_1', no_bias=True)
+        self.block = list(self._build_simple_block(block_name=layer_name + '_1', no_bias=True))
         self.params += [p for layer in self.block for p in layer.params]
         self.trainable += [p for layer in self.block for p in layer.trainable]
         self.regularizable += [p for layer in self.block for p in layer.regularizable]
 
         if self.left_branch:
-            self.proj.append(ConvolutionalLayer(self.input_shape, num_filters, 3, 'normal',
-                                                stride=stride, layer_name=layer_name+'_2', activation='linear'))
-            self.proj.append(BatchNormLayer(self.proj[-1].output_shape, layer_name=layer_name+'_2_bn', activation='linear'))
-            self.params += [p for layer in self.proj for p in layer.params]
-            self.trainable += [p for layer in self.proj for p in layer.trainable]
-            self.regularizable += [p for layer in self.proj for p in layer.regularizable]
-        ResNetBlock.layers.append(self)
+            self.shortcut = []
+            self.shortcut.append(ConvolutionalLayer(self.input_shape, num_filters, 3, 'normal',
+                                                    stride=stride, layer_name=layer_name+'_2', activation='linear'))
+            self.shortcut.append(BatchNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '_2_bn', activation='linear'))
+            self.params += [p for layer in self.shortcut for p in layer.params]
+            self.trainable += [p for layer in self.shortcut for p in layer.trainable]
+            self.regularizable += [p for layer in self.shortcut for p in layer.regularizable]
 
     def _build_simple_block(self, block_name, no_bias):
-        layers = [ConvolutionalLayer(self.input_shape, self.num_filters, 3, border_mode='half', stride=self.stride,
-                                     dilation=self.dilation, layer_name=block_name + '_conv1', no_bias=no_bias, activation='linear')]
-        layers.append(BatchNormLayer(layers[-1].output_shape, activation=self.activation,
+        block = []
+        block.append(ConvolutionalLayer(self.input_shape, self.num_filters, 3, border_mode='half', stride=self.stride,
+                                     dilation=self.dilation, layer_name=block_name + '_conv1', no_bias=no_bias, activation='linear'))
+        block.append(BatchNormLayer(block[-1].output_shape, activation=self.activation,
                                      layer_name=block_name + '_conv1_bn', **self.kwargs))
 
-        layers.append(ConvolutionalLayer(layers[-1].output_shape, self.num_filters, 3, border_mode='half', dilation=self.dilation,
+        block.append(ConvolutionalLayer(block[-1].output_shape, self.num_filters, 3, border_mode='half', dilation=self.dilation,
                                          layer_name=block_name + '_conv2', no_bias=no_bias, activation='linear'))
-        layers.append(BatchNormLayer(layers[-1].output_shape, layer_name=block_name + '_conv2_bn', activation='linear'))
-        return layers
+        block.append(BatchNormLayer(block[-1].output_shape, layer_name=block_name + '_conv2_bn', activation='linear'))
+        return block
 
     def get_output(self, input):
         output = input
@@ -1316,7 +1323,7 @@ class ResNetBlock(Layer):
 
         res = input
         if self.left_branch:
-            for layer in self.proj:
+            for layer in self.shortcut:
                 res = layer(res)
         return utils.function[self.activation](output + res, **self.kwargs)
 
@@ -1325,9 +1332,12 @@ class ResNetBlock(Layer):
     def output_shape(self):
         return self.block[-1].output_shape
 
-    @staticmethod
-    def reset():
-        reset_training()
+    def reset(self):
+        for layer in self.block:
+            layer.reset()
+
+        for layer in self.shortcut:
+            layer.reset()
 
 
 class ResNetBlock2(Layer):
@@ -1359,21 +1369,18 @@ class ResNetBlock2(Layer):
         self.descriptions = 'ResNet Block 2 ratio {} stride {} upscale {} dilation {} left branch {} {}'.\
             format(ratio_n_filter, stride, upscale_factor, dilation, left_branch, activation)
 
-        self.block = []
-        self.proj = []
-
-        self.block += self._build_simple_block(block_name=layer_name + '_1', no_bias=True)
+        self.block = list(self._build_simple_block(block_name=layer_name + '_1', no_bias=True))
         self.params += [p for layer in self.block for p in layer.params]
         self.trainable += [p for layer in self.block for p in layer.trainable]
         self.regularizable += [p for layer in self.block for p in layer.regularizable]
 
         if self.left_branch:
-            self.proj.append(ConvBNAct(self.input_shape, int(input_shape[1]*4*ratio_n_filter), 1, 'normal',
-                                       stride=stride, layer_name=layer_name+'_2', activation='linear'))
-            self.params += [p for layer in self.proj for p in layer.params]
-            self.trainable += [p for layer in self.proj for p in layer.trainable]
-            self.regularizable += [p for layer in self.proj for p in layer.regularizable]
-        ResNetBlock.layers.append(self)
+            self.shortcut = []
+            self.shortcut.append(ConvBNAct(self.input_shape, int(input_shape[1] * 4 * ratio_n_filter), 1, 'normal',
+                                           stride=stride, layer_name=layer_name+'_2', activation='linear'))
+            self.params += [p for layer in self.shortcut for p in layer.params]
+            self.trainable += [p for layer in self.shortcut for p in layer.trainable]
+            self.regularizable += [p for layer in self.shortcut for p in layer.regularizable]
 
     def _build_simple_block(self, block_name, no_bias):
         layers = []
@@ -1394,7 +1401,7 @@ class ResNetBlock2(Layer):
 
         res = input
         if self.left_branch:
-            for layer in self.proj:
+            for layer in self.shortcut:
                 res = layer(res)
         return utils.function[self.activation](output + res)
 
@@ -1403,27 +1410,30 @@ class ResNetBlock2(Layer):
     def output_shape(self):
         return self.block[-1].output_shape
 
-    @staticmethod
-    def reset():
-        reset_training()
+    def reset(self):
+        for layer in self.block:
+            layer.reset()
+
+        for layer in self.shortcut:
+            layer.reset()
 
 
 class DenseBlock(Layer):
-    layers = []
-
     def __init__(self, input_shape, transit=False, num_conv_layer=6, growth_rate=32, dropout=False, activation='relu',
                  layer_name='DenseBlock', pool_transition=True, target='dev0', **kwargs):
-        '''
+        """
 
-        :param input_shape: (int, int, int, int)
+        :param input_shape:
         :param transit:
         :param num_conv_layer:
         :param growth_rate:
-        :param activation:
         :param dropout:
-        :param layer_name: str
+        :param activation:
+        :param layer_name:
+        :param pool_transition:
         :param target:
-        '''
+        :param kwargs:
+        """
         super(DenseBlock, self).__init__()
 
         self.input_shape = tuple(input_shape)
@@ -1446,7 +1456,6 @@ class DenseBlock(Layer):
         else:
             self.block = self._transition(self.input_shape, self.dropout, self.activation,
                                           self.layer_name + '_transition')
-        DenseBlock.layers.append(self)
 
     def _bn_act_conv(self, input_shape, num_filters, filter_size, dropout, activation, stride=1, layer_name='bn_re_conv'):
         block = [
@@ -1501,9 +1510,9 @@ class DenseBlock(Layer):
             shape = self.block[-1].output_shape
         return tuple(shape)
 
-    @staticmethod
-    def reset():
-        pass
+    def reset(self):
+        for layer in self.block:
+            layer.reset()
 
 
 class DenseBlockBRN(Layer):
@@ -1587,8 +1596,6 @@ class DenseBlockBRN(Layer):
 
 
 class BatchNormLayer(Layer):
-    layers = []
-
     def __init__(self, input_shape, layer_name='BN', epsilon=1e-4, running_average_factor=1e-1, axes='spatial',
                  activation='relu', no_scale=False, **kwargs):
         '''
@@ -1629,7 +1636,6 @@ class BatchNormLayer(Layer):
 
         self.descriptions = '{} BatchNorm Layer: shape: {} -> {} running_average_factor = {:.4f} activation: {}'\
             .format(layer_name, self.input_shape, self.output_shape, self.running_average_factor, activation)
-        BatchNormLayer.layers.append(self)
 
     def batch_normalization_train(self, input):
         out, _, _, mean_, var_ = T.nnet.bn.batch_normalization_train(input, self.gamma, self.beta, self.axes,
@@ -1660,21 +1666,15 @@ class BatchNormLayer(Layer):
     def output_shape(self):
         return tuple(self.input_shape)
 
-    @staticmethod
-    def set_training(training):
-        for layer in BatchNormLayer.layers:
-            layer.training_flag = training
+    def set_training_status(self, training=True):
+        self.training_flag = training
 
-    @staticmethod
-    def reset():
-        for layer in BatchNormLayer.layers:
-            layer.gamma.set_value(layer.gamma_values)
-            layer.beta.set_value(layer.beta_values)
+    def reset(self):
+        self.gamma.set_value(self.gamma_values)
+        self.beta.set_value(self.beta_values)
 
 
 class LayerNormLayer(Layer):
-    layers = []
-
     def __init__(self, input_shape, layer_name='LN', epsilon=1e-4, axes='all-nodes', activation='relu'):
         super(LayerNormLayer, self).__init__()
         self.layer_name = layer_name
@@ -1696,7 +1696,6 @@ class LayerNormLayer(Layer):
         self.regularizable += [self.gamma]
         self.descriptions = '{} LayerNorm Layer: shape: {} -> {} activation: {}'\
             .format(layer_name, self.input_shape, self.output_shape, activation)
-        LayerNormLayer.layers.append(self)
 
     def get_output(self, input):
         mean = T.mean(input, self.axes).dimshuffle((0, 'x', 'x', 'x'))
@@ -1710,16 +1709,12 @@ class LayerNormLayer(Layer):
     def output_shape(self):
         return tuple(self.input_shape)
 
-    @staticmethod
-    def reset():
-        for layer in LayerNormLayer.layers:
-            layer.gamma.set_value(layer.gamma_values)
-            layer.beta.set_value(layer.beta_values)
+    def reset(self):
+        self.gamma.set_value(self.gamma_values)
+        self.beta.set_value(self.beta_values)
 
 
 class BatchRenormLayer(Layer):
-    layers = []
-
     def __init__(self, input_shape, layer_name='BRN', epsilon=1e-4, r_max=1, d_max=0, running_average_factor=0.1,
                  axes='spatial', activation='relu'):
         '''
@@ -1755,7 +1750,6 @@ class BatchRenormLayer(Layer):
         self.trainable += [self.gamma, self.beta]
         self.regularizable.append(self.gamma)
         self.descriptions = '{} Batch Renorm Layer: running_average_factor = {:.4f}'.format(layer_name, self.running_average_factor)
-        BatchNormLayer.layers.append(self)
 
     def get_output(self, input):
         batch_mean = T.mean(input, axis=self.axes)
@@ -1782,16 +1776,12 @@ class BatchRenormLayer(Layer):
     def output_shape(self):
         return tuple(self.input_shape)
 
-    @staticmethod
-    def set_training(training):
-        for layer in BatchRenormLayer.layers:
-            layer.training_flag = training
+    def set_training_status(self, training=True):
+        self.training_flag = training
 
-    @staticmethod
-    def reset():
-        for layer in BatchRenormLayer.layers:
-            layer.gamma.set_value(layer.gamma_values)
-            layer.beta.set_value(layer.beta_values)
+    def reset(self):
+        self.gamma.set_value(self.gamma_values)
+        self.beta.set_value(self.beta_values)
 
 
 class IdentityLayer(Layer):
@@ -1807,10 +1797,6 @@ class IdentityLayer(Layer):
 
     def get_output(self, input):
         return input
-
-    @staticmethod
-    def reset():
-        return
 
 
 class ResizingLayer(Layer):
@@ -1834,10 +1820,6 @@ class ResizingLayer(Layer):
     @validate
     def output_shape(self):
         return (self.input_shape[0], self.input_shape[1], self.input_shape[2] * self.ratio, self.input_shape[3] * self.ratio)
-
-    @staticmethod
-    def reset():
-        pass
 
 
 class ReshapingLayer(Layer):
@@ -1863,10 +1845,6 @@ class ReshapingLayer(Layer):
             prod_new_shape = np.prod(self.new_shape) * -1
             shape = [x if x != -1 else prod_shape // prod_new_shape for x in self.input_shape]
             return tuple(shape)
-
-    @staticmethod
-    def reset():
-        pass
 
 
 class SlicingLayer(Layer):
@@ -1913,10 +1891,6 @@ class SlicingLayer(Layer):
             shape[axis] = self.to_idx[idx] - self.from_idx[idx]
         return shape
 
-    @staticmethod
-    def reset():
-        pass
-
 
 class ConcatLayer(Layer):
     def __init__(self, input_shapes, axis=1, layer_name='ConcatLayer'):
@@ -1936,10 +1910,6 @@ class ConcatLayer(Layer):
         depth = np.sum(shape[:, 1])
         return (self.input_shapes[0][0], depth, self.input_shapes[0][2], self.input_shapes[0][3])
 
-    @staticmethod
-    def reset():
-        pass
-
 
 class SumLayer(Layer):
     def __init__(self, input_shapes, weight=1., layer_name='SumLayer'):
@@ -1956,10 +1926,6 @@ class SumLayer(Layer):
     @property
     def output_shape(self):
         return tuple(self.input_shapes[0])
-
-    @staticmethod
-    def reset():
-        pass
 
 
 class ScalingLayer(Layer):
@@ -2029,10 +1995,6 @@ class ScalingLayer(Layer):
     @validate
     def output_shape(self):
         return tuple(self.input_shape)
-
-    @staticmethod
-    def reset():
-        pass
 
 
 class Gate(object):
@@ -2121,18 +2083,3 @@ class LSTMcell(Layer):
 
     def output_shape(self):
         return None, self.n_in
-
-
-def reset_training():
-    FullyConnectedLayer.reset()
-    ConvolutionalLayer.reset()
-    TransposedConvolutionalLayer.reset()
-    BatchNormLayer.reset()
-    BatchRenormLayer.reset()
-    LayerNormLayer.reset()
-
-
-def set_training_status(training):
-    DropoutLayer.set_training(training)
-    BatchNormLayer.set_training(training)
-    BatchRenormLayer.set_training(training)

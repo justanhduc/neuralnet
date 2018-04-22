@@ -13,18 +13,18 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
         self.params = []
         self.trainable = []
         self.regularizable = []
-        self.index = 0
+        self.idx = 0
 
     def __iter__(self):
+        self.idx = 0
         return self
 
     def __next__(self):
-        if len(self.model) == 0 or self.index == len(self.model):
-            self.index = 0
+        if len(self.model) == 0 or self.idx == len(self.model):
             raise StopIteration
         else:
-            self.index += 1
-            return self.model[self.index - 1]
+            self.idx += 1
+            return self.model[self.idx - 1]
 
     def __len__(self):
         return len(self.model)
@@ -66,12 +66,13 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
         print('Model weights loaded from %s' % self.param_file)
 
     def reset(self):
-        layers.reset_training()
+        for layer in self.model:
+            layer.reset()
 
     def show(self):
         for layer in self.model:
             print(layer)
 
-    @staticmethod
-    def set_training_status(training):
-        layers.set_training_status(training)
+    def set_training_status(self, training):
+        for layer in self.model:
+            layer.set_training_status(training)

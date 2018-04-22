@@ -252,7 +252,7 @@ def fully_connected_to_convolution(weight, prev_layer_shape):
 
 
 def maxout(input, **kwargs):
-    size = kwargs.get('size', 4)
+    size = kwargs.get('maxout_size', 4)
     maxout_out = None
     for i in range(size):
         t = input[:, i::size]
