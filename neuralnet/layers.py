@@ -199,8 +199,8 @@ class PoolingLayer(Layer):
                 raise NotImplementedError
         else:
             raise TypeError
-        self.descriptions = '{} {} PoolingLayer: size: {}'.format(layer_name, mode, ws),\
-                            ' stride: {}'.format(stride), ' {} -> {}'.format(input_shape, self.output_shape)
+        self.descriptions = ''.join(('{} {} PoolingLayer: size: {}'.format(layer_name, mode, ws),
+                                     ' stride: {}'.format(stride), ' {} -> {}'.format(input_shape, self.output_shape)))
 
     def get_output(self, input):
         return pool(input, self.ws, self.ignore_border, self.stride, self.pad, self.mode)
@@ -1345,8 +1345,8 @@ class DenseBlock(Layer):
         self.layer_name = layer_name
         self.target = target
         self.kwargs = kwargs
-        self.descriptions = 'Dense Block {} conv layers growth rate {} transit {} dropout {} {}'.\
-            format(num_conv_layer, growth_rate, transit, dropout, activation)
+        self.descriptions = '{} Dense Block {} conv layers growth rate {} transit {} dropout {} {}'.\
+            format(layer_name, num_conv_layer, growth_rate, transit, dropout, activation)
 
         if not self.transit:
             self.block = self._dense_block(self.input_shape, self.num_conv_layer, self.growth_rate, self.dropout,
