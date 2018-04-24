@@ -73,6 +73,6 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
         for layer in self.model:
             print(layer)
 
-    def set_training_status(self, training):
-        for layer in self.model:
-            layer.set_training_status(training)
+    @staticmethod
+    def set_training_status(training):
+        layers.set_training_status(training)
