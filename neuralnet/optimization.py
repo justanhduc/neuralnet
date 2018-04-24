@@ -15,7 +15,7 @@ from collections import OrderedDict
 class VanillaSGD(object):
     def __init__(self, alpha):
         self.alpha = T.cast(alpha, theano.config.floatX)
-        print(('@ VANILLA GRADIENT DESCEND. ALPHA = %s ' % alpha))
+        print(('USING VANILLA GRADIENT DESCEND. ALPHA = %s ' % alpha))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -38,7 +38,7 @@ class AdaDelta(object):
     def __init__(self, rho, epsilon):
         self.rho = T.as_tensor_variable(np.cast[theano.config.floatX](rho))
         self.epsilon = T.as_tensor_variable(np.cast[theano.config.floatX](epsilon))
-        print(('@ ADADELTA. RHO = %s EPSILON = %s ' % (self.rho, self.epsilon)))
+        print(('USING ADADELTA. RHO = %s EPSILON = %s ' % (self.rho, self.epsilon)))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -62,7 +62,7 @@ class SGDMomentum(object):
         self.eta = T.cast(lr, dtype=theano.config.floatX)
         self.alpha = T.cast(mom, dtype=theano.config.floatX)
         self.nesterov = nesterov
-        print(('@ STOCHASTIC GRADIENT DESCENT MOMENTUM. LEARNING RATE = %s MOMENTUM = %s NESTEROV = %s'
+        print(('USING STOCHASTIC GRADIENT DESCENT MOMENTUM. LEARNING RATE = %s MOMENTUM = %s NESTEROV = %s'
               % (lr, mom, nesterov)))
 
     def get_updates(self, params, grads):
@@ -176,7 +176,7 @@ class AdaGrad(object):
     def __init__(self, eta, epsilon=1e-6):
         self.eta = T.cast(eta, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        print(('@ ADAGRAD. ETA = %s ' % eta))
+        print(('USING ADAGRAD. ETA = %s ' % eta))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -193,7 +193,7 @@ class RMSprop(object):
         self.eta = T.cast(eta, theano.config.floatX)
         self.gamma = T.cast(gamma, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        print(('@ RMSPROP. ETA = %s GAMMA = %s ' % (eta, gamma)))
+        print(('USING RMSPROP. ETA = %s GAMMA = %s ' % (eta, gamma)))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -211,7 +211,7 @@ class Adam(object):
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = epsilon
-        print(('@ ADAM. ALPHA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
+        print(('USING ADAM. ALPHA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
 
     def get_updates(self, params, grads):
         t_prev = theano.shared(np.float32(0.))
@@ -244,7 +244,7 @@ class AdaMax(object):
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        print(('@ ADAMAX. ALPHA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
+        print(('USING ADAMAX. ALPHA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
 
     def get_updates(self, params, grads):
         t_prev = theano.shared(np.float32(0.))
