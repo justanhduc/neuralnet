@@ -67,14 +67,14 @@ class DataManager(ConfigParser):
     def load_data(self):
         raise NotImplementedError
 
-    def get_batches(self, epoch=None, num_epochs=None, stage='train', show_progress=True, *args):
-        batches = self.generator(stage)
-        if stage == 'train' and self.augmentation:
+    def get_batches(self, epoch=None, num_epochs=None, training=True, show_progress=True, *args):
+        batches = self.generator(training)
+        if training and self.augmentation:
             batches = self.augment_minibatches(batches, *args)
         batches = self.generate_in_background(batches)
         if epoch is not None and num_epochs is not None:
-            shape = self.num_train_data if stage == 'train' else self.num_test_data
-            batch_size = self.batch_size if stage == 'train' else self.test_batch_size
+            shape = self.num_train_data if training else self.num_test_data
+            batch_size = self.batch_size if training else self.test_batch_size
             num_batches = shape // batch_size
             if show_progress:
                 batches = self._progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=num_batches)
@@ -150,10 +150,10 @@ class DataManager(ConfigParser):
         else:
             raise TypeError('Expected theano shared or list/tuple type, got {}'.format(type(self.placeholders)))
 
-    def generator(self, stage='train'):
-        dataset = self.training_set if stage == 'train' else self.testing_set
-        shape = self.num_train_data if stage == 'train' else self.num_test_data
-        shuffle = self.shuffle if stage == 'train' else False
+    def generator(self, training=True):
+        dataset = self.training_set if training else self.testing_set
+        shape = self.num_train_data if training else self.num_test_data
+        shuffle = self.shuffle if training else False
         num_batches = shape // self.batch_size
         if not self.no_target:
             x, y = dataset

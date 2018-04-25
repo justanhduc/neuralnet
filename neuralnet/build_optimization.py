@@ -36,7 +36,7 @@ class Optimization(utils.ConfigParser):
 
     def build_cost(self, y_pred, y, **kwargs):
         if self.cost_function.lower() == 'mse':
-            cost = metrics.mean_squared_error(y_pred, y)
+            cost = metrics.norm_error(y_pred, y)
         elif self.cost_function.lower() == 'sigmoid_ce':
             cost = metrics.binary_cross_entropy(y_pred, y)
         elif self.cost_function.lower() == 'softmax_ce':
@@ -82,8 +82,13 @@ class Optimization(utils.ConfigParser):
             opt = optimization.AdaMax(learning_rate, beta1, beta2)
             updates = opt.get_updates(params, grads)
         elif method.lower() == 'sgd':
-            print('Vanilla SGD used')
             opt = optimization.VanillaSGD(learning_rate)
+            updates = opt.get_updates(params, grads)
+        elif method.lower() == 'nadam':
+            opt = optimization.NAdam(learning_rate, beta1, beta2, epsilon)
+            updates = opt.get_updates(params, grads)
+        elif method.lower() == 'amsgrad':
+            opt = optimization.AMSGrad(learning_rate, beta1, beta2, epsilon, kwargs.get('decay', lambda x, t: x))
             updates = opt.get_updates(params, grads)
         else:
             print('No valid optimization method chosen. Use Vanilla SGD instead')

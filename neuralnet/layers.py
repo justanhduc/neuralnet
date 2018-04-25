@@ -1319,7 +1319,7 @@ class ResNetBlock2(Layer):
 
 class DenseBlock(Layer):
     def __init__(self, input_shape, transit=False, num_conv_layer=6, growth_rate=32, dropout=False, activation='relu',
-                 layer_name='DenseBlock', pool_transition=True, target='dev0', **kwargs):
+                 layer_name='DenseBlock', pool_transition=True, normlization='bn', target='dev0', **kwargs):
         """
 
         :param input_shape:
@@ -1334,6 +1334,8 @@ class DenseBlock(Layer):
         :param kwargs:
         """
         super(DenseBlock, self).__init__()
+        assert normlization == 'bn' or normlization == 'dbn', \
+            'normalization should be either \'bn\' or \'dbn\', got %s' % normlization
 
         self.input_shape = tuple(input_shape)
         self.transit = transit
@@ -1344,21 +1346,22 @@ class DenseBlock(Layer):
         self.pool_transition = pool_transition
         self.layer_name = layer_name
         self.target = target
+        self.normalization = BatchNormLayer if normlization == 'bn' else DecorrBatchNormLayer
         self.kwargs = kwargs
-        self.descriptions = '{} Dense Block {} conv layers growth rate {} transit {} dropout {} {}'.\
-            format(layer_name, num_conv_layer, growth_rate, transit, dropout, activation)
 
         if not self.transit:
             self.block = self._dense_block(self.input_shape, self.num_conv_layer, self.growth_rate, self.dropout,
                                            self.activation, self.layer_name)
-            pass
         else:
             self.block = self._transition(self.input_shape, self.dropout, self.activation,
                                           self.layer_name + '_transition')
 
+        self.descriptions = '{} Dense Block: {} -> {} {} conv layers growth rate {} transit {} dropout {} {}'.\
+            format(layer_name, input_shape, self.output_shape, num_conv_layer, growth_rate, transit, dropout, activation)
+
     def _bn_act_conv(self, input_shape, num_filters, filter_size, dropout, activation, stride=1, layer_name='bn_re_conv'):
         block = [
-            BatchNormLayer(input_shape, activation=activation, layer_name=layer_name + '_bn', **self.kwargs),
+            self.normalization(input_shape, activation=activation, layer_name=layer_name + '_bn', **self.kwargs),
             ConvolutionalLayer(input_shape, num_filters, filter_size, He_init='normal', stride=stride,
                                activation='linear', layer_name=layer_name + '_conv')
         ]
@@ -1410,8 +1413,12 @@ class DenseBlock(Layer):
         return tuple(shape)
 
     def reset(self):
-        for layer in self.block:
-            layer.reset()
+        for layers in self.block:
+            if isinstance(layers, Layer):
+                layers.reset()
+            else:
+                for layer in layers:
+                    layer.reset()
 
 
 class BatchNormLayer(Layer):
@@ -1482,6 +1489,105 @@ class BatchNormLayer(Layer):
     def get_output(self, input):
         return self.activation(self.batch_normalization_train(input) if self.training_flag
                                else self.batch_normalization_test(input), **self.kwargs)
+
+    @property
+    @validate
+    def output_shape(self):
+        return tuple(self.input_shape)
+
+    def reset(self):
+        self.gamma.set_value(np.copy(self.gamma_values))
+        self.beta.set_value(np.copy(self.beta_values))
+
+    @staticmethod
+    def set_training(training):
+        for layer in BatchNormLayer.layers:
+            layer.training_flag = training
+
+
+class DecorrBatchNormLayer(Layer):
+    """
+    From the paper "Decorrelated Batch Normalization" - Lei Huang, Dawei Yang, Bo Lang, Jia Deng
+    """
+    layers = []
+
+    def __init__(self, input_shape, layer_name='DBN', epsilon=1e-4, running_average_factor=1e-1, activation='relu',
+                 no_scale=False, **kwargs):
+        '''
+
+        :param input_shape: (int, int, int, int) or (int, int)
+        :param layer_name: str
+        :param epsilon: float
+        :param running_average_factor: float
+        :param axes: 'spatial' or 'per-activation'
+        '''
+        super(DecorrBatchNormLayer, self).__init__()
+
+        self.layer_name = layer_name
+        self.input_shape = tuple(input_shape)
+        self.epsilon = np.float32(epsilon)
+        self.running_average_factor = running_average_factor
+        self.activation = utils.function[activation]
+        self.no_scale = no_scale
+        self.training_flag = False
+        self.axes = (0,) #+ tuple(range(2, len(input_shape)))
+        self.shape = (self.input_shape[1],)
+        self.kwargs = kwargs
+
+        self.gamma_values = np.ones(self.shape, dtype=theano.config.floatX)
+        self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '_gamma', borrow=True)
+
+        self.beta_values = np.zeros(self.shape, dtype=theano.config.floatX)
+        self.beta = theano.shared(np.copy(self.beta_values), name=layer_name + '_beta', borrow=True)
+
+        self.running_mean = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
+                                          name=layer_name + '_running_mean', borrow=True)
+        self.running_var = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
+                                         name=layer_name + '_running_var', borrow=True)
+
+        self.params += [self.gamma, self.beta, self.running_mean, self.running_var]
+        self.trainable += [self.beta] if self. no_scale else [self.beta, self.gamma]
+        self.regularizable += [self.gamma] if not self.no_scale else []
+
+        self.descriptions = '{} DecorrelatedBatchNorm Layer: shape: {} -> {} running_average_factor = {:.4f} activation: {}'\
+            .format(layer_name, self.input_shape, self.output_shape, self.running_average_factor, activation)
+        DecorrBatchNormLayer.layers.append(self)
+
+    def batch_normalization_train(self, input):
+        out, _, _, mean_, var_ = T.nnet.bn.batch_normalization_train(input, self.gamma, self.beta, self.axes,
+                                                                     self.epsilon, self.running_average_factor,
+                                                                     self.running_mean, self.running_var)
+
+        # Update running mean and variance
+        # Tricks adopted from Lasagne implementation
+        # http://lasagne.readthedocs.io/en/latest/modules/layers/normalization.html
+        running_mean = theano.clone(self.running_mean, share_inputs=False)
+        running_var = theano.clone(self.running_var, share_inputs=False)
+        running_mean.default_update = mean_
+        running_var.default_update = var_
+        out += 0 * (running_mean + running_var)
+        return out
+
+    def batch_normalization_test(self, input):
+        out = T.nnet.bn.batch_normalization_test(input, self.gamma, self.beta, self.running_mean, self.running_var,
+                                                 axes=self.axes, epsilon=self.epsilon)
+        return out
+
+    def get_output(self, input):
+        m, c, h, w = T.shape(input)
+        X = input.dimshuffle((1, 0, 2, 3))
+        X = X.flatten(2)
+        Muy = T.mean(X, axis=1)
+        X_centered = X - Muy
+        Sigma = 1. / m * T.dot(X_centered, X_centered.T)
+        D, Lambda, _ = T.nlinalg.svd(Sigma)
+        Z = T.dot(T.dot(D, T.nlinalg.diag(T.sqrt(T.nlinalg.diag(Lambda)))), D.T)
+        X = T.dot(Z, X)
+        out = self.activation(self.batch_normalization_train(X.T) if self.training_flag
+                               else self.batch_normalization_test(X.T), **self.kwargs)
+        out = T.reshape(out.T, (c, m, h, w))
+        out = out.dimshuffle((1, 0, 2, 3))
+        return out
 
     @property
     @validate
@@ -1918,3 +2024,4 @@ def set_training_status(training):
     DropoutLayer.set_training(training)
     BatchNormLayer.set_training(training)
     BatchRenormLayer.set_training(training)
+    DecorrBatchNormLayer.set_training(training)

@@ -10,21 +10,30 @@ import theano
 from theano import tensor as T
 import numpy as np
 from collections import OrderedDict
+import abc
 
 
-class VanillaSGD(object):
-    def __init__(self, alpha):
-        self.alpha = T.cast(alpha, theano.config.floatX)
-        print(('USING VANILLA GRADIENT DESCEND. ALPHA = %s ' % alpha))
+class Optimizer(metaclass=abc.ABCMeta):
+    def __init__(self, eta):
+        self.eta = T.cast(eta, theano.config.floatX)
+
+    @abc.abstractmethod
+    def get_updates(self, params, grads):
+        pass
+
+class VanillaSGD(Optimizer):
+    def __init__(self, eta):
+        super(VanillaSGD, self).__init__(eta)
+        print(('USING VANILLA GRADIENT DESCEND. ETA = %s ' % eta))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
         for param, grad in zip(params, grads):
-            updates[param] = param - self.alpha * grad
+            updates[param] = param - self.eta * grad
         return updates
 
 
-class AdaDelta(object):
+class AdaDelta(Optimizer):
     """
         rho: decay rate (usually >0.9 and <1)
     epsilon: constant (usually 1e-8 ~ 1e-4)
@@ -36,6 +45,7 @@ class AdaDelta(object):
     """
 
     def __init__(self, rho, epsilon):
+        super(AdaDelta, self).__init__(0.)
         self.rho = T.as_tensor_variable(np.cast[theano.config.floatX](rho))
         self.epsilon = T.as_tensor_variable(np.cast[theano.config.floatX](epsilon))
         print(('USING ADADELTA. RHO = %s EPSILON = %s ' % (self.rho, self.epsilon)))
@@ -50,6 +60,7 @@ class AdaDelta(object):
             Edelx2_i = theano.shared(np.zeros(param.get_value(borrow=True).shape, dtype=theano.config.floatX),
                                 broadcastable=param.broadcastable)
             delta_i = T.sqrt(Edelx2_i + self.epsilon) / T.sqrt(Eg2_i + self.epsilon) * grad
+
             updates[param] = param - delta_i
             updates[prev_delta_i] = delta_i
             updates[Edelx2_i] = self.rho * Edelx2_i + (1. - self.rho) * delta_i**2
@@ -57,12 +68,12 @@ class AdaDelta(object):
         return updates
 
 
-class SGDMomentum(object):
+class SGDMomentum(Optimizer):
     def __init__(self, lr, mom, nesterov=False):
-        self.eta = T.cast(lr, dtype=theano.config.floatX)
+        super(SGDMomentum, self).__init__(lr)
         self.alpha = T.cast(mom, dtype=theano.config.floatX)
         self.nesterov = nesterov
-        print(('USING STOCHASTIC GRADIENT DESCENT MOMENTUM. LEARNING RATE = %s MOMENTUM = %s NESTEROV = %s'
+        print(('USING STOCHASTIC GRADIENT DESCENT MOMENTUM. ETA = %s MOMENTUM = %s NESTEROV = %s'
               % (lr, mom, nesterov)))
 
     def get_updates(self, params, grads):
@@ -172,9 +183,9 @@ class SGDMomentum(object):
         return updates
 
 
-class AdaGrad(object):
+class AdaGrad(Optimizer):
     def __init__(self, eta, epsilon=1e-6):
-        self.eta = T.cast(eta, theano.config.floatX)
+        super(AdaGrad, self).__init__(eta)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
         print(('USING ADAGRAD. ETA = %s ' % eta))
 
@@ -188,9 +199,9 @@ class AdaGrad(object):
         return updates
 
 
-class RMSprop(object):
+class RMSprop(Optimizer):
     def __init__(self, eta=1e-3, gamma=0.9, epsilon=1e-6):
-        self.eta = T.cast(eta, theano.config.floatX)
+        super(RMSprop, self).__init__(eta)
         self.gamma = T.cast(gamma, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
         print(('USING RMSPROP. ETA = %s GAMMA = %s ' % (eta, gamma)))
@@ -205,21 +216,21 @@ class RMSprop(object):
         return updates
 
 
-class Adam(object):
+class Adam(Optimizer):
     def __init__(self, alpha=1e-3, beta1=0.9, beta2=0.999, epsilon=1e-8):
-        self.alpha = T.cast(alpha, theano.config.floatX)
+        super(Adam, self).__init__(alpha)
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = epsilon
-        print(('USING ADAM. ALPHA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
+        print(('USING ADAM. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
 
     def get_updates(self, params, grads):
-        t_prev = theano.shared(np.float32(0.))
         updates = OrderedDict()
+        t_prev = theano.shared(np.float32(0.))
 
         one = T.constant(1)
         t = t_prev + 1
-        a_t = self.alpha * T.sqrt(one - self.beta2 ** t) / (one - self.beta1 ** t)
+        a_t = self.eta * T.sqrt(one - self.beta2 ** t) / (one - self.beta1 ** t)
 
         for param, g_t in zip(params, grads):
             value = param.get_value(borrow=True)
@@ -238,20 +249,20 @@ class Adam(object):
         return updates
 
 
-class AdaMax(object):
+class AdaMax(Optimizer):
     def __init__(self, alpha=2e-3, beta1=0.9, beta2=0.999, epsilon=1e-8):
-        self.alpha = T.cast(alpha, theano.config.floatX)
+        super(AdaMax, self).__init__(alpha)
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        print(('USING ADAMAX. ALPHA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
+        print(('USING ADAMAX. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
 
     def get_updates(self, params, grads):
-        t_prev = theano.shared(np.float32(0.))
         updates = OrderedDict()
+        t_prev = theano.shared(np.float32(0.))
         one = T.constant(1)
         t = t_prev + 1
-        a_t = self.alpha / (one - self.beta1 ** t)
+        a_t = self.eta / (one - self.beta1 ** t)
 
         for param, g_t in zip(params, grads):
             value = param.get_value(borrow=True)
@@ -265,6 +276,79 @@ class AdaMax(object):
             updates[m_prev] = m_t
             updates[u_prev] = u_t
             updates[param] = param - step
+
+        updates[t_prev] = t
+        return updates
+
+
+class NAdam(Optimizer):
+    def __init__(self, alpha=1e-3, beta1=.99, beta2=.999, epsilon=1e-8, decay=lambda x, t: x * (1. - .5 * .96 ** (t / 250.))):
+        super(NAdam, self).__init__(alpha)
+        self.beta1 = T.cast(beta1, 'float32')
+        self.beta2 = T.cast(beta2, 'float32')
+        self.epsilon = T.cast(epsilon, 'float32')
+        self.decay = decay
+        print('USING NESTEROV ADAM. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2))
+
+    def get_updates(self, params, grads):
+        updates = OrderedDict()
+        beta1_acc = theano.shared(1., 'beta1 accumulation')
+        t_prev = theano.shared(0, 'time')
+        t = t_prev + 1
+        for param, g_t in zip(params, grads):
+            value = param.get_value(borrow=True)
+            m_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
+            n_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
+
+            beta1_t = self.decay(self.beta1, t)
+            beta1_tp1 = self.decay(self.beta1, t+1)
+            beta1_acc_t = beta1_acc * beta1_t
+
+            g_hat_t = g_t / (1. - beta1_acc_t)
+            m_t = self.beta1 * m_prev + (1 - self.beta1) * g_t
+            m_hat_t = m_t / (1 - beta1_acc_t * beta1_tp1)
+            n_t = self.beta2 * n_prev + (1 - self.beta2) * g_t ** 2
+            n_hat_t = n_t / (1. - self.beta2 ** t)
+            m_bar_t = (1 - self.beta1) * g_hat_t + beta1_tp1 * m_hat_t
+
+            updates[param] = param - self.eta * m_bar_t / (T.sqrt(n_hat_t) + self.epsilon)
+            updates[beta1_acc] = beta1_acc_t
+            updates[m_prev] = m_t
+            updates[n_prev] = n_t
+
+        updates[t_prev] = t
+        return updates
+
+
+class AMSGrad(Optimizer):
+    def __init__(self, alpha=1e-3, beta1=.9, beta2=.99, epsilon=1e-8, decay=lambda x, t: x):
+        super(AMSGrad, self).__init__(alpha)
+        self.beta1 = T.cast(beta1, 'float32')
+        self.beta2 = T.cast(beta2, 'float32')
+        self.epsilon = T.cast(epsilon, 'float32')
+        self.decay = decay
+        print('USING AMSGRAD. ALPHA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2))
+
+    def get_updates(self, params, grads):
+        updates = OrderedDict()
+
+        t_prev = theano.shared(0, 'time step')
+        t = t_prev + 1
+        for param, g_t in zip(params, grads):
+            value = param.get_value(borrow=True)
+            m_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
+            v_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
+            v_hat_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
+
+            m_t = self.beta1 * m_prev + (1. - self.beta1) * g_t
+            v_t = self.beta2 * v_prev + (1. - self.beta2) * g_t ** 2
+            v_hat_t = T.maximum(v_hat_prev, v_t)
+            eta_t = self.decay(self.eta, t)
+
+            updates[param] = param - eta_t * m_t / (T.sqrt(v_hat_t) + self.epsilon)
+            updates[m_prev] = m_t
+            updates[v_prev] = v_t
+            updates[v_hat_prev] = v_hat_t
 
         updates[t_prev] = t
         return updates
