@@ -453,7 +453,7 @@ class StackingConv(Layer):
                                                      ' '.join([' '.join((k, str(v))) for k, v in kwargs.items()]))
         self.block = []
         shape = tuple(self.input_shape)
-        conv_layer = ConvBNAct if batch_norm else ConvolutionalLayer
+        conv_layer = ConvNormAct if batch_norm else ConvolutionalLayer
         for num in range(num_layers - 1):
             self.block.append(conv_layer(shape, num_filters, filter_size, He_init=He_init, He_init_gain=He_init_gain,
                                          no_bias=no_bias, border_mode=border_mode, stride=(1, 1), dilation=dilation,
@@ -556,17 +556,17 @@ class DilatedConvModule(Layer):
 
         self.module = [[] for i in range(dilation_scale)]
         for i in range(dilation_scale):
-            self.module[i].append(ConvBNAct(input_shape, num_filters, filter_size, 'normal', border_mode=border_mode,
-                                            stride=(1, 1), dilation=(i + 1, i + 1), activation=activation,
-                                            layer_name=layer_name + '_branch1'))
-            self.module[i].append(ConvBNAct(self.module[i][-1].output_shape, num_filters, filter_size, 'normal',
-                                            border_mode=border_mode, stride=(1, 1), dilation=(i + 1, i + 1),
-                                            activation=activation,
-                                            layer_name=layer_name + '_branch1_conv2'))
-            self.module[i].append(ConvBNAct(self.module[i][-1].output_shape, num_filters, filter_size, 'normal',
-                                            border_mode=border_mode, stride=stride, dilation=(i + 1, i + 1),
-                                            activation=activation,
-                                            layer_name=layer_name + '_branch1_conv3'))
+            self.module[i].append(ConvNormAct(input_shape, num_filters, filter_size, 'normal', border_mode=border_mode,
+                                              stride=(1, 1), dilation=(i + 1, i + 1), activation=activation,
+                                              layer_name=layer_name + '_branch1'))
+            self.module[i].append(ConvNormAct(self.module[i][-1].output_shape, num_filters, filter_size, 'normal',
+                                              border_mode=border_mode, stride=(1, 1), dilation=(i + 1, i + 1),
+                                              activation=activation,
+                                              layer_name=layer_name + '_branch1_conv2'))
+            self.module[i].append(ConvNormAct(self.module[i][-1].output_shape, num_filters, filter_size, 'normal',
+                                              border_mode=border_mode, stride=stride, dilation=(i + 1, i + 1),
+                                              activation=activation,
+                                              layer_name=layer_name + '_branch1_conv3'))
 
         self.params += [p for block in self.module for layer in block for p in layer.params]
         self.trainable += [p for block in self.module for layer in block for p in layer.trainable]
@@ -598,32 +598,32 @@ class InceptionModule1(Layer):
         self.layer_name = layer_name
 
         self.module = [[], [], [], []]
-        self.module[0].append(ConvBNAct(input_shape, num_filters, (1, 1), 'normal', border_mode=border_mode,
-                                        stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch1_conv1x1'))
-        self.module[0].append(ConvBNAct(self.module[0][-1].output_shape, num_filters * 4 // 3, 3,
+        self.module[0].append(ConvNormAct(input_shape, num_filters, (1, 1), 'normal', border_mode=border_mode,
+                                          stride=(1, 1), activation=activation,
+                                          layer_name=layer_name + '_branch1_conv1x1'))
+        self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters * 4 // 3, 3,
                                         'normal', border_mode=border_mode, stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch1_conv3x3'))
-        self.module[0].append(ConvBNAct(self.module[0][-1].output_shape, num_filters * 4 // 3, 3,
+                                          layer_name=layer_name + '_branch1_conv3x3'))
+        self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters * 4 // 3, 3,
                                         'normal', border_mode=border_mode, stride=stride, activation=activation,
-                                        layer_name=layer_name + '_branch1_conv3x3'))
+                                          layer_name=layer_name + '_branch1_conv3x3'))
 
-        self.module[1].append(ConvBNAct(input_shape, num_filters * 4 // 3, 1, 'normal', border_mode=border_mode,
-                                        stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch2_conv1x1'))
-        self.module[1].append(ConvBNAct(self.module[1][-1].output_shape, num_filters * 2, 3,
+        self.module[1].append(ConvNormAct(input_shape, num_filters * 4 // 3, 1, 'normal', border_mode=border_mode,
+                                          stride=(1, 1), activation=activation,
+                                          layer_name=layer_name + '_branch2_conv1x1'))
+        self.module[1].append(ConvNormAct(self.module[1][-1].output_shape, num_filters * 2, 3,
                                         'normal', border_mode=border_mode, stride=stride, activation=activation,
-                                        layer_name=layer_name + '_branch2_conv3x3'))
+                                          layer_name=layer_name + '_branch2_conv3x3'))
 
         self.module[2].append(PoolingLayer(input_shape, (3, 3), stride=stride, mode='average_exc_pad', pad='half',
                                            ignore_border=True, layer_name=layer_name + '_branch3_pooling'))
-        self.module[2].append(ConvBNAct(self.module[2][-1].output_shape, num_filters * 2 // 3, 1,
+        self.module[2].append(ConvNormAct(self.module[2][-1].output_shape, num_filters * 2 // 3, 1,
                                         'normal', border_mode=border_mode, stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch3_conv1x1'))
+                                          layer_name=layer_name + '_branch3_conv1x1'))
 
-        self.module[3].append(ConvBNAct(input_shape, num_filters * 4 // 3, 1, 'normal', border_mode=border_mode,
-                                        stride=stride, activation=activation,
-                                        layer_name=layer_name + '_branch4_conv1x1'))
+        self.module[3].append(ConvNormAct(input_shape, num_filters * 4 // 3, 1, 'normal', border_mode=border_mode,
+                                          stride=stride, activation=activation,
+                                          layer_name=layer_name + '_branch4_conv1x1'))
 
         self.descriptions = '{} Inception module 1: {} -> {}'.format(layer_name, input_shape, self.output_shape)
 
@@ -662,41 +662,41 @@ class InceptionModule2(Layer):
         self.layer_name = layer_name
 
         self.module = [[], [], [], []]
-        self.module[0].append(ConvBNAct(input_shape, num_filters, (1, 1), 'normal', border_mode=border_mode,
-                                        stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch1_conv1x1'))
-        self.module[0].append(ConvBNAct(self.module[0][-1].output_shape, num_filters, (filter_size, 1),
+        self.module[0].append(ConvNormAct(input_shape, num_filters, (1, 1), 'normal', border_mode=border_mode,
+                                          stride=(1, 1), activation=activation,
+                                          layer_name=layer_name + '_branch1_conv1x1'))
+        self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters, (filter_size, 1),
                                         'normal', border_mode=border_mode, stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch1_conv7x1_1'))
-        self.module[0].append(ConvBNAct(self.module[0][-1].output_shape, num_filters, (1, filter_size),
+                                          layer_name=layer_name + '_branch1_conv7x1_1'))
+        self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters, (1, filter_size),
                                         'normal', border_mode=border_mode, stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch1_conv1x7_1'))
-        self.module[0].append(ConvBNAct(self.module[0][-1].output_shape, num_filters, (filter_size, 1),
+                                          layer_name=layer_name + '_branch1_conv1x7_1'))
+        self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters, (filter_size, 1),
                                         'normal', border_mode=border_mode, stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch1_conv7x1_2'))
-        self.module[0].append(ConvBNAct(self.module[0][-1].output_shape, num_filters * 3 // 2, (1, filter_size),
+                                          layer_name=layer_name + '_branch1_conv7x1_2'))
+        self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters * 3 // 2, (1, filter_size),
                                         'normal', border_mode=border_mode, stride=stride, activation=activation,
-                                        layer_name=layer_name + '_branch1_conv1x7_2'))
+                                          layer_name=layer_name + '_branch1_conv1x7_2'))
 
-        self.module[1].append(ConvBNAct(input_shape, 64, (1, 1), 'normal', border_mode=border_mode,
-                                        stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch2_conv1x1'))
-        self.module[1].append(ConvBNAct(self.module[1][-1].output_shape, num_filters, (filter_size, 1),
+        self.module[1].append(ConvNormAct(input_shape, 64, (1, 1), 'normal', border_mode=border_mode,
+                                          stride=(1, 1), activation=activation,
+                                          layer_name=layer_name + '_branch2_conv1x1'))
+        self.module[1].append(ConvNormAct(self.module[1][-1].output_shape, num_filters, (filter_size, 1),
                                         'normal', border_mode=border_mode, stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch2_conv7x1'))
-        self.module[1].append(ConvBNAct(self.module[1][-1].output_shape, num_filters * 3 // 2, (1, filter_size),
+                                          layer_name=layer_name + '_branch2_conv7x1'))
+        self.module[1].append(ConvNormAct(self.module[1][-1].output_shape, num_filters * 3 // 2, (1, filter_size),
                                         'normal', border_mode=border_mode, stride=stride, activation=activation,
-                                        layer_name=layer_name + '_branch2_conv1x7'))
+                                          layer_name=layer_name + '_branch2_conv1x7'))
 
         self.module[2].append(PoolingLayer(input_shape, (3, 3), stride=stride, mode='average_exc_pad', pad='half',
                                            ignore_border=True, layer_name=layer_name + '_branch3_pooling'))
-        self.module[2].append(ConvBNAct(self.module[2][-1].output_shape, num_filters * 3 // 2, (1, 1),
+        self.module[2].append(ConvNormAct(self.module[2][-1].output_shape, num_filters * 3 // 2, (1, 1),
                                         'normal', border_mode=border_mode, stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch3_conv1x1'))
+                                          layer_name=layer_name + '_branch3_conv1x1'))
 
-        self.module[3].append(ConvBNAct(input_shape, num_filters * 3 // 2, (1, 1), 'normal', border_mode=border_mode,
-                                        stride=stride, activation=activation,
-                                        layer_name=layer_name + '_branch4_conv1x1'))
+        self.module[3].append(ConvNormAct(input_shape, num_filters * 3 // 2, (1, 1), 'normal', border_mode=border_mode,
+                                          stride=stride, activation=activation,
+                                          layer_name=layer_name + '_branch4_conv1x1'))
 
         self.descriptions = '{} Inception module 2: {} -> {}'.format(layer_name, input_shape, self.output_shape)
 
@@ -733,40 +733,40 @@ class InceptionModule3(Layer):
         self.layer_name = layer_name
 
         self.module = [[], [], [], []]
-        self.module[0].append(ConvBNAct(input_shape, num_filters * 7 // 5, (1, 1), 'normal', border_mode=border_mode,
-                                        stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch1_conv1x1'))
-        self.module[0].append(ConvBNAct(self.module[0][-1].output_shape, num_filters * 6 // 5, (3, 3),
+        self.module[0].append(ConvNormAct(input_shape, num_filters * 7 // 5, (1, 1), 'normal', border_mode=border_mode,
+                                          stride=(1, 1), activation=activation,
+                                          layer_name=layer_name + '_branch1_conv1x1'))
+        self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters * 6 // 5, (3, 3),
                                         'normal', border_mode=border_mode, stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch1_conv3x3'))
+                                          layer_name=layer_name + '_branch1_conv3x3'))
         self.module[0].append([[], []])
-        self.module[0][-1][0].append(ConvBNAct(self.module[0][1].output_shape, num_filters * 6 // 5, (3, 1),
+        self.module[0][-1][0].append(ConvNormAct(self.module[0][1].output_shape, num_filters * 6 // 5, (3, 1),
                                                'normal', border_mode=border_mode, stride=stride, activation=activation,
-                                               layer_name=layer_name + '_branch1_conv3x1'))
-        self.module[0][-1][1].append(ConvBNAct(self.module[0][1].output_shape, num_filters * 6 // 5, (3, 1),
+                                                 layer_name=layer_name + '_branch1_conv3x1'))
+        self.module[0][-1][1].append(ConvNormAct(self.module[0][1].output_shape, num_filters * 6 // 5, (3, 1),
                                                'normal', border_mode=border_mode, stride=stride, activation=activation,
-                                               layer_name=layer_name + '_branch1_conv1x3'))
+                                                 layer_name=layer_name + '_branch1_conv1x3'))
 
-        self.module[1].append(ConvBNAct(input_shape, num_filters * 7 // 5, (1, 1), 'normal', border_mode=border_mode,
-                                        stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch2_conv1x1'))
+        self.module[1].append(ConvNormAct(input_shape, num_filters * 7 // 5, (1, 1), 'normal', border_mode=border_mode,
+                                          stride=(1, 1), activation=activation,
+                                          layer_name=layer_name + '_branch2_conv1x1'))
         self.module[1].append([[], []])
-        self.module[1][-1][0].append(ConvBNAct(self.module[1][0].output_shape, num_filters * 6 // 5, (3, 1),
+        self.module[1][-1][0].append(ConvNormAct(self.module[1][0].output_shape, num_filters * 6 // 5, (3, 1),
                                                'normal', border_mode=border_mode, stride=stride, activation=activation,
-                                               layer_name=layer_name + '_branch2_conv3x1'))
-        self.module[1][-1][1].append(ConvBNAct(self.module[1][0].output_shape, num_filters * 6 // 5, (3, 1),
+                                                 layer_name=layer_name + '_branch2_conv3x1'))
+        self.module[1][-1][1].append(ConvNormAct(self.module[1][0].output_shape, num_filters * 6 // 5, (3, 1),
                                                'normal', border_mode=border_mode, stride=stride, activation=activation,
-                                               layer_name=layer_name + '_branch2_conv1x3'))
+                                                 layer_name=layer_name + '_branch2_conv1x3'))
 
         self.module[2].append(PoolingLayer(input_shape, (3, 3), stride=stride, mode='average_exc_pad', pad='half',
                                            ignore_border=True, layer_name=layer_name + '_branch3_pooling'))
-        self.module[2].append(ConvBNAct(self.module[2][-1].output_shape, num_filters * 2 // 3, (1, 1),
+        self.module[2].append(ConvNormAct(self.module[2][-1].output_shape, num_filters * 2 // 3, (1, 1),
                                         'normal', border_mode=border_mode, stride=(1, 1), activation=activation,
-                                        layer_name=layer_name + '_branch3_conv1x1'))
+                                          layer_name=layer_name + '_branch3_conv1x1'))
 
-        self.module[3].append(ConvBNAct(input_shape, num_filters * 4 // 3, (1, 1), 'normal', border_mode=border_mode,
-                                        stride=stride, activation=activation,
-                                        layer_name=layer_name + '_branch4_conv1x1'))
+        self.module[3].append(ConvNormAct(input_shape, num_filters * 4 // 3, (1, 1), 'normal', border_mode=border_mode,
+                                          stride=stride, activation=activation,
+                                          layer_name=layer_name + '_branch4_conv1x1'))
 
         for block in self.module:
             for layer in block:
@@ -819,11 +819,10 @@ class InceptionModule3(Layer):
                     layer.reset()
 
 
-class ConvBNAct(Layer):
-    def __init__(self, input_shape, num_filters, filter_size, He_init=None, He_init_gain=None, no_bias=True,
-                 border_mode='half', stride=(1, 1), layer_name='convbnact', activation='relu', dilation=(1, 1),
-                 epsilon=1e-4,
-                 running_average_factor=1e-1, axes='spatial', no_scale=False, target='dev0', **kwargs):
+class ConvNormAct(Layer):
+    def __init__(self, input_shape, num_filters, filter_size, He_init=None, He_init_gain=None, no_bias=True, border_mode='half',
+                 stride=(1, 1), layer_name='convbnact', activation='relu', dilation=(1, 1), epsilon=1e-4, running_average_factor=1e-1,
+                 axes='spatial', no_scale=False, normalization='bn', groups=32, **kwargs):
         """
 
         :param input_shape:
@@ -831,10 +830,8 @@ class ConvBNAct(Layer):
         :param filter_size:
         :param He_init:
         :param He_init_gain:
-        :param W:
-        :param b:
         :param no_bias:
-        :param border_mode: int, list, tuple, or str
+        :param border_mode:
         :param stride:
         :param layer_name:
         :param activation:
@@ -843,10 +840,11 @@ class ConvBNAct(Layer):
         :param running_average_factor:
         :param axes:
         :param no_scale:
-        :param show:
-        :param target:
+        :param normalization:
+        :param kwargs:
         """
-        super(ConvBNAct, self).__init__()
+        super(ConvNormAct, self).__init__()
+        assert normalization in ('bn', 'gn'), 'normalization can be either \'bn\' or \'gn\', got %s' % normalization
         self.layer_type = 'Conv BN Act Block {} filters size {} padding {} stride {} {} {}'. \
             format(num_filters, filter_size, border_mode, stride, activation,
                    ' '.join([' '.join((k, str(v))) for k, v in kwargs.items()]))
@@ -854,12 +852,13 @@ class ConvBNAct(Layer):
                                        He_init_gain=He_init_gain,
                                        no_bias=no_bias, border_mode=border_mode, stride=stride, dilation=dilation,
                                        layer_name=layer_name + '_conv', activation='linear')
-        self.BN = BatchNormLayer(self.Conv.output_shape, layer_name + 'bn', epsilon, running_average_factor, axes,
-                                 activation, no_scale, **kwargs)
-        self.block = [self.Conv, self.BN]
-        self.trainable += self.Conv.trainable + self.BN.trainable
-        self.regularizable += self.Conv.regularizable + self.BN.regularizable
-        self.params += self.Conv.params + self.BN.params
+        self.Norm = BatchNormLayer(self.Conv.output_shape, layer_name + '_bn', epsilon, running_average_factor, axes,
+                                   activation, no_scale, **kwargs) if normalization == 'bn' \
+            else GroupNormLayer(self.Conv.output_shape, layer_name+'_gn', groups, epsilon, activation, **kwargs)
+        self.block = [self.Conv, self.Norm]
+        self.trainable += self.Conv.trainable + self.Norm.trainable
+        self.regularizable += self.Conv.regularizable + self.Norm.regularizable
+        self.params += self.Conv.params + self.Norm.params
         self.descriptions = '{} Conv BN Act: {} -> {}'.format(layer_name, input_shape, self.output_shape)
 
     def get_output(self, input):
@@ -1102,10 +1101,10 @@ class ResNetBlockWGAN(Layer):
         if resample == 'down':
             self.proj.append(MeanPoolConvLayer(input_shape, num_filters, 1, 'linear', False, True, layer_name + '_shortcut'))
 
-            self.block.append(LayerNormLayer(self.input_shape, layer_name + '_ln1', activation=activation))
+            self.block.append(GroupNormLayer(self.input_shape, layer_name + '_ln1', activation=activation))
             self.block.append(ConvolutionalLayer(self.block[-1].output_shape, input_shape[1], filter_size, 'uniform', no_bias=True,
                                                  layer_name=layer_name+'_conv1', activation='linear'))
-            self.block.append(LayerNormLayer(self.block[-1].output_shape, layer_name + '_ln2', activation=activation))
+            self.block.append(GroupNormLayer(self.block[-1].output_shape, layer_name + '_ln2', activation=activation))
             self.block.append(ConvMeanPoolLayer(self.block[-1].output_shape, num_filters, filter_size, 'linear',
                                                 he_init, True, layer_name + '_ConvMeanPool'))
         elif resample == 'up':
@@ -1155,14 +1154,10 @@ class ResNetBlockWGAN(Layer):
             shortcut = layer(shortcut)
         return shortcut + output
 
-    @staticmethod
-    def reset():
-        reset_training()
-
 
 class ResNetBlock(Layer):
     def __init__(self, input_shape, num_filters, stride=(1, 1), dilation=(1, 1), activation='relu', left_branch=False,
-                 layer_name='ResBlock', **kwargs):
+                 layer_name='ResBlock', normalization='bn', groups=32, **kwargs):
         '''
 
         :param input_shape: (
@@ -1184,6 +1179,8 @@ class ResNetBlock(Layer):
         self.layer_name = layer_name
         self.activation = activation
         self.left_branch = left_branch
+        self.normalization = normalization
+        self.groups = groups
         self.kwargs = kwargs
         self.descriptions = '{} ResNet Block 1 {} filters stride {} dilation {} left branch {} {} {}'.\
             format(layer_name, num_filters, stride, dilation, left_branch, activation, ' '.join([' '.join((k, str(v))) for k, v in kwargs.items()]))
@@ -1197,7 +1194,10 @@ class ResNetBlock(Layer):
             self.shortcut = []
             self.shortcut.append(ConvolutionalLayer(self.input_shape, num_filters, 3, 'normal',
                                                     stride=stride, layer_name=layer_name+'_2', activation='linear'))
-            self.shortcut.append(BatchNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '_2_bn', activation='linear'))
+            self.shortcut.append(BatchNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '_2_bn',
+                                                activation='linear') if normalization == 'bn'
+                                 else GroupNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '_2_gn',
+                                                     groups=groups, activation='linear'))
             self.params += [p for layer in self.shortcut for p in layer.params]
             self.trainable += [p for layer in self.shortcut for p in layer.trainable]
             self.regularizable += [p for layer in self.shortcut for p in layer.regularizable]
@@ -1207,11 +1207,15 @@ class ResNetBlock(Layer):
         block.append(ConvolutionalLayer(self.input_shape, self.num_filters, 3, border_mode='half', stride=self.stride,
                                      dilation=self.dilation, layer_name=block_name + '_conv1', no_bias=no_bias, activation='linear'))
         block.append(BatchNormLayer(block[-1].output_shape, activation=self.activation,
-                                     layer_name=block_name + '_conv1_bn', **self.kwargs))
+                                     layer_name=block_name + '_conv1_bn', **self.kwargs) if self.normalization == 'bn'
+                     else GroupNormLayer(block[-1].output_shape, activation=self.activation,
+                                         layer_name=block_name+'_conv1_gn', groups=self.groups, **self.kwargs))
 
         block.append(ConvolutionalLayer(block[-1].output_shape, self.num_filters, 3, border_mode='half', dilation=self.dilation,
                                          layer_name=block_name + '_conv2', no_bias=no_bias, activation='linear'))
-        block.append(BatchNormLayer(block[-1].output_shape, layer_name=block_name + '_conv2_bn', activation='linear'))
+        block.append(BatchNormLayer(block[-1].output_shape, layer_name=block_name + '_conv2_bn', activation='linear')
+                     if self.normalization == 'bn' else GroupNormLayer(block[-1].output_shape, activation='linear',
+                                                                       layer_name=block_name + '_conv2_gn', groups=self.groups))
         return block
 
     def get_output(self, input):
@@ -1275,22 +1279,22 @@ class ResNetBlock2(Layer):
 
         if self.left_branch:
             self.shortcut = []
-            self.shortcut.append(ConvBNAct(self.input_shape, int(input_shape[1] * 4 * ratio_n_filter), 1, 'normal',
-                                           stride=stride, layer_name=layer_name+'_2', activation='linear'))
+            self.shortcut.append(ConvNormAct(self.input_shape, int(input_shape[1] * 4 * ratio_n_filter), 1, 'normal',
+                                             stride=stride, layer_name=layer_name+'_2', activation='linear'))
             self.params += [p for layer in self.shortcut for p in layer.params]
             self.trainable += [p for layer in self.shortcut for p in layer.trainable]
             self.regularizable += [p for layer in self.shortcut for p in layer.regularizable]
 
     def _build_simple_block(self, block_name, no_bias):
         layers = []
-        layers.append(ConvBNAct(self.input_shape, int(self.input_shape[1]*self.ratio_n_filter), 1, 'normal',
-                                stride=self.stride, no_bias=no_bias, activation=self.activation, layer_name=block_name+'_conv_bn_act_1'))
+        layers.append(ConvNormAct(self.input_shape, int(self.input_shape[1] * self.ratio_n_filter), 1, 'normal',
+                                  stride=self.stride, no_bias=no_bias, activation=self.activation, layer_name=block_name+'_conv_bn_act_1'))
 
-        layers.append(ConvBNAct(layers[-1].output_shape, layers[-1].output_shape[1], 3, stride=(1, 1), border_mode='half',
-                                activation=self.activation, layer_name=block_name+'_conv_bn_act_2', no_bias=no_bias))
+        layers.append(ConvNormAct(layers[-1].output_shape, layers[-1].output_shape[1], 3, stride=(1, 1), border_mode='half',
+                                  activation=self.activation, layer_name=block_name+'_conv_bn_act_2', no_bias=no_bias))
 
-        layers.append(ConvBNAct(layers[-1].output_shape, layers[-1].output_shape[1]*self.upscale_factor, 1, stride=1,
-                                activation='linear', layer_name=block_name+'_conv_bn_act_3', no_bias=no_bias))
+        layers.append(ConvNormAct(layers[-1].output_shape, layers[-1].output_shape[1] * self.upscale_factor, 1, stride=1,
+                                  activation='linear', layer_name=block_name+'_conv_bn_act_3', no_bias=no_bias))
         return layers
 
     def get_output(self, input):
@@ -1604,17 +1608,22 @@ class DecorrBatchNormLayer(Layer):
             layer.training_flag = training
 
 
-class LayerNormLayer(Layer):
-    def __init__(self, input_shape, layer_name='LN', epsilon=1e-4, axes='all-nodes', activation='relu'):
-        super(LayerNormLayer, self).__init__()
+class GroupNormLayer(Layer):
+    """
+    Implementation of the paper "Group Normalization" - Wu et al.
+    group = 1 -> Insntance Normalization
+    group = input_shape[1] -> Layer Normalization
+    """
+    def __init__(self, input_shape, layer_name='GN', groups=32, epsilon=1e-4, activation='relu', **kwargs):
+        super(GroupNormLayer, self).__init__()
+        assert input_shape[1] / groups == input_shape[1] // groups, 'groups must divide the number of input channels.'
+
         self.layer_name = layer_name
         self.input_shape = tuple(input_shape)
+        self.groups = groups
         self.epsilon = np.float32(epsilon)
         self.activation = utils.function[activation]
-        if axes == 'all-nodes':
-            self.axes = [i for i in range(1, len(self.input_shape))]
-        else:
-            raise NotImplementedError
+        self.kwargs = kwargs
         self.gamma_values = np.ones(self.input_shape[1], dtype=theano.config.floatX)
         self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '_gamma', borrow=True)
 
@@ -1624,16 +1633,20 @@ class LayerNormLayer(Layer):
         self.params += [self.gamma, self.beta]
         self.trainable += [self.gamma, self.beta]
         self.regularizable += [self.gamma]
-        self.descriptions = '{} LayerNorm Layer: shape: {} -> {} activation: {}'\
+        self.descriptions = '{} GroupNorm Layer: shape: {} -> {} activation: {}'\
             .format(layer_name, self.input_shape, self.output_shape, activation)
 
     def get_output(self, input):
-        mean = T.mean(input, self.axes).dimshuffle((0, 'x', 'x', 'x'))
-        var = T.var(input, self.axes).dimshuffle((0, 'x', 'x', 'x'))
+        n, c, h, w = T.shape(input)
+        input = T.reshape(input, (n, self.groups, -1, h, w))
+        mean = T.mean(input, (2, 3, 4)).dimshuffle((0, 1, 'x', 'x', 'x'))
+        var = T.var(input, (2, 3, 4)).dimshuffle((0, 1, 'x', 'x', 'x'))
         gamma = self.gamma.dimshuffle(('x', 0, 'x', 'x'))
         beta = self.beta.dimshuffle(('x', 0, 'x', 'x'))
-        output = gamma * (input - mean) / T.sqrt(var + self.epsilon) + beta
-        return self.activation(output)
+        input = (input - mean) / T.sqrt(var + self.epsilon)
+        input = T.reshape(input, (n, c, h, w))
+        output = gamma * input + beta
+        return self.activation(output, **self.kwargs)
 
     @property
     def output_shape(self):
