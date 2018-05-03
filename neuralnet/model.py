@@ -29,6 +29,9 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
     def __len__(self):
         return len(self.model)
 
+    def __call__(self, input, *args, **kwargs):
+        return self.inference(input, *args, **kwargs)
+
     def add(self, layer):
         assert isinstance(layer, layers.Layer), 'Expect \'layer\' to belong to {}, got {}'.format(type(layers.Layer), type(layer))
         self.model.append(layer)
@@ -37,7 +40,7 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
         return
 
     @abc.abstractmethod
-    def inference(self, input):
+    def inference(self, input, *args, **kwargs):
         return
 
     def get_all_params(self):
