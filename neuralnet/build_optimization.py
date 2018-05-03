@@ -35,6 +35,7 @@ class Optimization(utils.ConfigParser):
         self.last_iter_to_decrease = self.config['optimization']['last_iter_to_decrease']
 
     def build_cost(self, y_pred, y, **kwargs):
+        y_pred, y = y_pred.flatten(), y.flatten()
         if self.cost_function.lower() == 'mse':
             cost = metrics.norm_error(y_pred, y)
         elif self.cost_function.lower() == 'sigmoid_ce':
