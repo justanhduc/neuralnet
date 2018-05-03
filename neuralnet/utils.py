@@ -423,7 +423,7 @@ def interpolate_bilinear(im, x, y, out_shape, border_mode):
     wd = ((1. - (x1_f - x)) * (1. - (y1_f - y))).dimshuffle((0, 'x'))
 
     output = T.sum((wa*pixel_a, wb*pixel_b, wc*pixel_c, wd*pixel_d), axis=0)
-    output = T.reshape(output, (n, h, w, c))
+    output = T.reshape(output, (n, h_out, w_out, c))
     return output.dimshuffle((0, 2, 3, 1))
 
 
