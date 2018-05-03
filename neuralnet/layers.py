@@ -1815,7 +1815,7 @@ class TransformerLayer(Layer):
         super(TransformerLayer, self).__init__()
         self.input_shape, self.transform_shape = tuple(input_shapes)
         self.layer_name = layer_name
-        self.downsample_factor = downsample_factor
+        self.downsample_factor = (downsample_factor, downsample_factor) if isinstance(downsample_factor, int) else tuple(downsample_factor)
         self.border_mode = border_mode
         self.kwargs = kwargs
         self.descriptions = '%s Warping layer.' % layer_name
