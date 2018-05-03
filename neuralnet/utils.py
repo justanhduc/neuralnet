@@ -402,7 +402,7 @@ def interpolate_bilinear(im, x, y, out_shape, border_mode):
     base = T.arange(n) * w * h
     base = T.reshape(base, (-1, 1))
     base = T.tile(base, (1, h_out * w_out))
-    base = T.reshape(base, (-1))
+    base = base.flatten()
 
     base_y0 = base + y0 * w
     base_y1 = base + y1 * w
