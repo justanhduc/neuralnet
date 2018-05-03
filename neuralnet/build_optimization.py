@@ -64,36 +64,36 @@ class Optimization(utils.ConfigParser):
 
         grads = T.grad(cost, params)
         if method.lower() == 'adadelta':
-            opt = optimization.AdaDelta(rho, epsilon)
-            updates = opt.get_updates(params, grads)
+            self.opt = optimization.AdaDelta(rho, epsilon)
+            updates = self.opt.get_updates(params, grads)
         elif method.lower() == 'rmsprop':
-            opt = optimization.RMSprop(learning_rate, self.gamma, self.epsilon)
-            updates = opt.get_updates(params, grads)
+            self.opt = optimization.RMSprop(learning_rate, self.gamma, self.epsilon)
+            updates = self.opt.get_updates(params, grads)
         elif method.lower() == 'sgdmomentum':
-            opt = optimization.SGDMomentum(learning_rate, momentum, nesterov)
-            updates = opt.get_updates(params, grads)
+            self.opt = optimization.SGDMomentum(learning_rate, momentum, nesterov)
+            updates = self.opt.get_updates(params, grads)
         elif method.lower() == 'adagrad':
-            opt = optimization.AdaGrad(learning_rate, epsilon)
-            updates = opt.get_updates(params, grads)
+            self.opt = optimization.AdaGrad(learning_rate, epsilon)
+            updates = self.opt.get_updates(params, grads)
         elif method.lower() == 'adam':
-            opt = optimization.Adam(learning_rate, beta1, beta2)
-            updates = opt.get_updates(params, grads)
+            self.opt = optimization.Adam(learning_rate, beta1, beta2)
+            updates = self.opt.get_updates(params, grads)
         elif method.lower() == 'adamax':
-            opt = optimization.AdaMax(learning_rate, beta1, beta2)
-            updates = opt.get_updates(params, grads)
+            self.opt = optimization.AdaMax(learning_rate, beta1, beta2)
+            updates = self.opt.get_updates(params, grads)
         elif method.lower() == 'sgd':
-            opt = optimization.VanillaSGD(learning_rate)
-            updates = opt.get_updates(params, grads)
+            self.opt = optimization.VanillaSGD(learning_rate)
+            updates = self.opt.get_updates(params, grads)
         elif method.lower() == 'nadam':
-            opt = optimization.NAdam(learning_rate, beta1, beta2, epsilon)
-            updates = opt.get_updates(params, grads)
+            self.opt = optimization.NAdam(learning_rate, beta1, beta2, epsilon)
+            updates = self.opt.get_updates(params, grads)
         elif method.lower() == 'amsgrad':
-            opt = optimization.AMSGrad(learning_rate, beta1, beta2, epsilon, kwargs.get('decay', lambda x, t: x))
-            updates = opt.get_updates(params, grads)
+            self.opt = optimization.AMSGrad(learning_rate, beta1, beta2, epsilon, kwargs.get('decay', lambda x, t: x))
+            updates = self.opt.get_updates(params, grads)
         else:
             print('No valid optimization method chosen. Use Vanilla SGD instead')
-            opt = optimization.VanillaSGD(learning_rate)
-            updates = opt.get_updates(params, grads)
+            self.opt = optimization.VanillaSGD(learning_rate)
+            updates = self.opt.get_updates(params, grads)
         return updates
 
     def build_regularization(self, params, **kwargs):

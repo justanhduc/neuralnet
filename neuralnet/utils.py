@@ -277,10 +277,11 @@ def ramp(x, **kwargs):
     return T.switch(left > 1, 1, left)
 
 
-def prelu(x, alpha):
-    f1 = 0.5 * (1 + alpha)
-    f2 = 0.5 * (1 - alpha)
-    return f1 * x + f2 * abs(x)
+def prelu(x, **kwargs):
+    alpha = kwargs.get('alpha', None)
+    if alpha is None or not isinstance(alpha, T.sharedvar.ScalarSharedVariable):
+        raise ValueError('alpha must be a shared variable, got %s' % type(alpha))
+    return T.nnet.relu(x, alpha=alpha)
 
 
 def swish(x, **kwargs):
@@ -330,22 +331,122 @@ def ycbcr2rgb(img):
     return T.concatenate((R.dimshuffle((0, 'x', 1, 2)), G.dimshuffle((0, 'x', 1, 2)), B.dimshuffle((0, 'x', 1, 2))), 1)
 
 
+def linspace(start, stop, num):
+    # Theano linspace. Behaves similar to np.linspace
+    start = T.cast(start, theano.config.floatX)
+    stop = T.cast(stop, theano.config.floatX)
+    num = T.cast(num, theano.config.floatX)
+    step = (stop-start)/(num-1)
+    return T.arange(num, dtype=theano.config.floatX)*step+start
+
+
+def meshgrid(height, width):
+    # This function is the grid generator from eq. (1) in reference [1].
+    # It is equivalent to the following numpy code:
+    #  x_t, y_t = np.meshgrid(np.linspace(-1, 1, width),
+    #                         np.linspace(-1, 1, height))
+    #  ones = np.ones(np.prod(x_t.shape))
+    #  grid = np.vstack([x_t.flatten(), y_t.flatten(), ones])
+    # It is implemented in Theano instead to support symbolic grid sizes.
+    # Note: If the image size is known at layer construction time, we could
+    # compute the meshgrid offline in numpy instead of doing it dynamically
+    # in Theano. However, it hardly affected performance when we tried.
+    x_t = T.dot(T.ones((height, 1)), linspace(-1.0, 1.0, width).dimshuffle('x', 0))
+    y_t = T.dot(linspace(-1.0, 1.0, height).dimshuffle(0, 'x'), T.ones((1, width)))
+
+    x_t_flat = x_t.reshape((1, -1))
+    y_t_flat = y_t.reshape((1, -1))
+    ones = T.ones_like(x_t_flat)
+    grid = T.concatenate([x_t_flat, y_t_flat, ones], axis=0)
+    return grid
+
+
+def interpolate_bilinear(im, x, y, out_shape, border_mode):
+    x, y = x.flatten(), y.flatten()
+    n, c, h, w = im.shape
+    h_out, w_out = out_shape
+    height_f = T.cast(h, theano.config.floatX)
+    width_f = T.cast(w, theano.config.floatX)
+
+    # scale coordinates from [-1, 1] to [0, width/height - 1]
+    x = (x + 1) / 2 * (width_f - 1)
+    y = (y + 1) / 2 * (height_f - 1)
+
+    x0_f = T.floor(x)
+    y0_f = T.floor(y)
+    x1_f = x0_f + 1
+    y1_f = y0_f + 1
+
+    if border_mode == 'nearest':
+        x0 = T.clip(x0_f, 0, width_f - 1)
+        x1 = T.clip(x1_f, 0, width_f - 1)
+        y0 = T.clip(y0_f, 0, height_f - 1)
+        y1 = T.clip(y1_f, 0, height_f - 1)
+    elif border_mode == 'mirror':
+        w = 2 * (width_f - 1)
+        x0 = T.minimum(x0_f % w, -x0_f % w)
+        x1 = T.minimum(x1_f % w, -x1_f % w)
+        h = 2 * (height_f - 1)
+        y0 = T.minimum(y0_f % h, -y0_f % h)
+        y1 = T.minimum(y1_f % h, -y1_f % h)
+    elif border_mode == 'wrap':
+        x0 = T.mod(x0_f, width_f)
+        x1 = T.mod(x1_f, width_f)
+        y0 = T.mod(y0_f, height_f)
+        y1 = T.mod(y1_f, height_f)
+    else:
+        raise ValueError("border_mode must be one of "
+                         "'nearest', 'mirror', 'wrap'")
+    x0, x1, y0, y1 = (T.cast(v, 'int64') for v in (x0, x1, y0, y1))
+
+    base = T.arange(n) * w * h
+    base = T.reshape(base, (-1, 1))
+    base = T.tile(base, (1, h_out * w_out))
+    base = T.reshape(base, (-1))
+
+    base_y0 = base + y0 * w
+    base_y1 = base + y1 * w
+    idx_a = base_y0 + x0
+    idx_b = base_y1 + x0
+    idx_c = base_y0 + x1
+    idx_d = base_y1 + x1
+
+    im_flat = T.reshape(im.dimshuffle((0, 3, 1, 2)), (-1, c))
+    pixel_a = im_flat[idx_a]
+    pixel_b = im_flat[idx_b]
+    pixel_c = im_flat[idx_c]
+    pixel_d = im_flat[idx_d]
+
+    wa = ((x1_f - x) * (y1_f - y)).dimshuffle((0, 'x'))
+    wb = ((x1_f - x) * (1. - (y1_f - y))).dimshuffle((0, 'x'))
+    wc = ((1. - (x1_f - x)) * (y1_f - y)).dimshuffle((0, 'x'))
+    wd = ((1. - (x1_f - x)) * (1. - (y1_f - y))).dimshuffle((0, 'x'))
+
+    output = T.sum((wa*pixel_a, wb*pixel_b, wc*pixel_c, wd*pixel_d), axis=0)
+    output = T.reshape(output, (n, h, w, c))
+    return output.dimshuffle((0, 2, 3, 1))
+
+
+def transform_affine(theta, input, downsample_factor=(1, 1), border_mode='nearest'):
+    n, c, h, w = input.shape
+    theta = T.reshape(theta, (-1, 2, 3))
+
+    h_out = T.cast(h // downsample_factor[0], 'int64')
+    w_out = T.cast(w // downsample_factor[1], 'int64')
+    grid = meshgrid(h_out, w_out)
+
+    Tg = T.dot(theta, grid)
+    xs = Tg[:, 0]
+    ys = Tg[:, 1]
+    return interpolate_bilinear(input, xs, ys, (h_out, w_out), border_mode)
+
+
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
             'tanh': lambda x, **kwargs: T.tanh(x), 'lrelu': lrelu, 'softmax': lambda x, **kwargs: T.nnet.softmax(x),
             'linear': linear, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,
-            'sin': lambda x, **kwargs: T.sin(x), 'cos': lambda x, **kwargs: T.cos(x), 'swish': swish, 'selu': selu}
+            'sin': lambda x, **kwargs: T.sin(x), 'cos': lambda x, **kwargs: T.cos(x), 'swish': swish, 'selu': selu,
+            'prelu': prelu}
 
 
 if __name__ == '__main__':
-    a = T.tensor4()
-    b = ycbcr2rgb(rgb2ycbcr(a))
-    f = theano.function([a], b)
-    img = misc.imread('E:/Users/Duc/frame_interpolation/utils/v_ApplyEyeMakeup_g04_c05/1.jpg')
-    img = np.transpose(img, (2, 0, 1))
-    img = img[None]
-    from matplotlib import pyplot as plt
-    plt.figure()
-    plt.imshow(np.uint8(np.transpose(f(img)[0], (1, 2, 0))))
-    plt.figure()
-    plt.imshow(np.transpose(img[0], (1, 2, 0)))
-    plt.show()
+    pass

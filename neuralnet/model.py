@@ -68,6 +68,8 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
     def reset(self):
         for layer in self.model:
             layer.reset()
+        if hasattr(self, 'opt'):
+            self.opt.reset()
 
     def show(self):
         for layer in self.model:

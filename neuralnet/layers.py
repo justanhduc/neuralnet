@@ -151,12 +151,20 @@ class ActivationLayer(Layer):
         self.layer_name = layer_name
         self.descriptions = '{} Activation layer: {}'.format(self.layer_name, activation)
 
+        if activation == 'prelu':
+            self.alpha = theano.shared(np.float32(.1), 'alpha')
+            self.trainable += [self.alpha]
+
     def get_output(self, input):
         return self.activation(input)
 
     @property
     def output_shape(self):
         return tuple(self.input_shape)
+
+    def reset(self):
+        if self.alpha is utils.function['prelu']:
+            self.alpha.set_value(np.float32(.1))
 
 
 class PoolingLayer(Layer):
@@ -305,6 +313,11 @@ class FullyConnectedLayer(Layer):
             self.trainable.append(self.b)
             self.params.append(self.b)
 
+        if activation == 'prelu':
+            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.trainable += [self.alpha]
+            self.kwargs['alpha'] = self.alpha
+
         self.regularizable.append(self.W)
         self.descriptions = '{} FC: in_shape = {} weight shape = {} -> {} activation: {}'\
             .format(self.layer_name, self.input_shape, (self.input_shape[1], num_nodes), self.output_shape, activation)
@@ -323,6 +336,8 @@ class FullyConnectedLayer(Layer):
         self.W.set_value(np.copy(self.W_values))
         if not self.no_bias:
             self.b.set_value(np.copy(self.b_values))
+        if self.activation is utils.function['prelu']:
+            self.alpha.set_value(np.float32(.1))
 
 
 class ConvolutionalLayer(Layer):
@@ -386,6 +401,11 @@ class ConvolutionalLayer(Layer):
             self.trainable.append(self.b)
             self.params.append(self.b)
 
+        if activation == 'prelu':
+            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.trainable += [self.alpha]
+            self.kwargs['alpha'] = self.alpha
+
         self.regularizable += [self.W]
         self.descriptions = ''.join(('{} Conv Layer: '.format(self.layer_name), 'border mode: {} '.format(border_mode),
                                      'subsampling: {} dilation {} '.format(stride, dilation), 'input shape: {} x '.format(input_shape),
@@ -433,12 +453,13 @@ class ConvolutionalLayer(Layer):
         self.W.set_value(np.copy(self.W_values))
         if not self.no_bias:
             self.b.set_value(np.copy(self.b_values))
+        if self.activation is utils.function['prelu']:
+            self.alpha.set_value(np.float32(.1))
 
 
 class StackingConv(Layer):
     def __init__(self, input_shape, num_layers, num_filters, filter_size=3, batch_norm=False, layer_name='StackingConv',
-                 He_init=None,
-                 He_init_gain=None, no_bias=True, border_mode='half', stride=1, dilation=(1, 1),
+                 He_init=None, He_init_gain=None, no_bias=True, border_mode='half', stride=1, dilation=(1, 1),
                  activation='relu', **kwargs):
         assert num_layers > 1, 'num_layers must be greater than 1, got %d' % num_layers
         super(StackingConv, self).__init__()
@@ -922,6 +943,11 @@ class TransposedConvolutionalLayer(Layer):
         self.trainable += [self.W, self.b]
         self.regularizable.append(self.W)
 
+        if activation == 'prelu':
+            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.trainable += [self.alpha]
+            self.kwargs['alpha'] = self.alpha
+
         self.descriptions = '{} Transposed Conv Layer: '.format(layer_name), \
                             'shape: {} '.format(input_shape), 'filter shape: {} '.format(self.filter_shape), \
                             '-> {} '.format(self.output_shape), 'padding: {}'.format(self.padding), \
@@ -979,6 +1005,8 @@ class TransposedConvolutionalLayer(Layer):
     def reset(self):
         self.W.set_value(np.copy(self.W_values))
         self.b.set_value(np.copy(self.b_values))
+        if self.activation is utils.function['prelu']:
+            self.alpha.set_value(np.float32(.1))
 
 
 class PixelShuffleLayer(Layer):
@@ -1190,6 +1218,11 @@ class ResNetBlock(Layer):
         self.trainable += [p for layer in self.block for p in layer.trainable]
         self.regularizable += [p for layer in self.block for p in layer.regularizable]
 
+        if activation == 'prelu':
+            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.trainable += [self.alpha]
+            self.kwargs['alpha'] = self.alpha
+
         if self.left_branch:
             self.shortcut = []
             self.shortcut.append(ConvolutionalLayer(self.input_shape, num_filters, 3, 'normal',
@@ -1242,12 +1275,15 @@ class ResNetBlock(Layer):
             for layer in self.shortcut:
                 layer.reset()
 
+        if self.activation == 'prelu':
+            self.alpha.set_value(np.float32(.1))
+
 
 class ResNetBlock2(Layer):
     layers = []
 
     def __init__(self, input_shape, ratio_n_filter=1.0, stride=1, upscale_factor=4, dilation=(1, 1),
-                 activation='relu', left_branch=False, layer_name='ResBlock'):
+                 activation='relu', left_branch=False, layer_name='ResBlock', **kwargs):
         '''
 
         :param input_shape: (
@@ -1269,6 +1305,7 @@ class ResNetBlock2(Layer):
         self.layer_name = layer_name
         self.activation = activation
         self.left_branch = left_branch
+        self.kwargs = kwargs
         self.descriptions = 'ResNet Block 2 ratio {} stride {} upscale {} dilation {} left branch {} {}'.\
             format(ratio_n_filter, stride, upscale_factor, dilation, left_branch, activation)
 
@@ -1277,10 +1314,15 @@ class ResNetBlock2(Layer):
         self.trainable += [p for layer in self.block for p in layer.trainable]
         self.regularizable += [p for layer in self.block for p in layer.regularizable]
 
+        if activation == 'prelu':
+            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.trainable += [self.alpha]
+            self.kwargs['alpha'] = self.alpha
+
         if self.left_branch:
             self.shortcut = []
             self.shortcut.append(ConvNormAct(self.input_shape, int(input_shape[1] * 4 * ratio_n_filter), 1, 'normal',
-                                             stride=stride, layer_name=layer_name+'_2', activation='linear'))
+                                             stride=stride, layer_name=layer_name+'_2', activation='linear', **self.kwargs))
             self.params += [p for layer in self.shortcut for p in layer.params]
             self.trainable += [p for layer in self.shortcut for p in layer.trainable]
             self.regularizable += [p for layer in self.shortcut for p in layer.regularizable]
@@ -1288,13 +1330,13 @@ class ResNetBlock2(Layer):
     def _build_simple_block(self, block_name, no_bias):
         layers = []
         layers.append(ConvNormAct(self.input_shape, int(self.input_shape[1] * self.ratio_n_filter), 1, 'normal',
-                                  stride=self.stride, no_bias=no_bias, activation=self.activation, layer_name=block_name+'_conv_bn_act_1'))
+                                  stride=self.stride, no_bias=no_bias, activation=self.activation, layer_name=block_name+'_conv_bn_act_1', **self.kwargs))
 
         layers.append(ConvNormAct(layers[-1].output_shape, layers[-1].output_shape[1], 3, stride=(1, 1), border_mode='half',
-                                  activation=self.activation, layer_name=block_name+'_conv_bn_act_2', no_bias=no_bias))
+                                  activation=self.activation, layer_name=block_name+'_conv_bn_act_2', no_bias=no_bias, **self.kwargs))
 
         layers.append(ConvNormAct(layers[-1].output_shape, layers[-1].output_shape[1] * self.upscale_factor, 1, stride=1,
-                                  activation='linear', layer_name=block_name+'_conv_bn_act_3', no_bias=no_bias))
+                                  activation='linear', layer_name=block_name+'_conv_bn_act_3', no_bias=no_bias, **self.kwargs))
         return layers
 
     def get_output(self, input):
@@ -1306,7 +1348,7 @@ class ResNetBlock2(Layer):
         if self.left_branch:
             for layer in self.shortcut:
                 res = layer(res)
-        return utils.function[self.activation](output + res)
+        return utils.function[self.activation](output + res, **self.kwargs)
 
     @property
     @validate
@@ -1319,6 +1361,9 @@ class ResNetBlock2(Layer):
 
         for layer in self.shortcut:
             layer.reset()
+
+        if self.activation is utils.function['prelu']:
+            self.alpha.set_value(np.float32(.1))
 
 
 class DenseBlock(Layer):
@@ -1466,6 +1511,11 @@ class BatchNormLayer(Layer):
         self.trainable += [self.beta] if self. no_scale else [self.beta, self.gamma]
         self.regularizable += [self.gamma] if not self.no_scale else []
 
+        if activation == 'prelu':
+            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.trainable += [self.alpha]
+            self.kwargs['alpha'] = self.alpha
+
         self.descriptions = '{} BatchNorm Layer: shape: {} -> {} running_average_factor = {:.4f} activation: {}'\
             .format(layer_name, self.input_shape, self.output_shape, self.running_average_factor, activation)
         BatchNormLayer.layers.append(self)
@@ -1502,6 +1552,8 @@ class BatchNormLayer(Layer):
     def reset(self):
         self.gamma.set_value(np.copy(self.gamma_values))
         self.beta.set_value(np.copy(self.beta_values))
+        if self.activation is utils.function['prelu']:
+            self.alpha.set_value(np.float32(.1))
 
     @staticmethod
     def set_training(training):
@@ -1633,14 +1685,20 @@ class GroupNormLayer(Layer):
         self.params += [self.gamma, self.beta]
         self.trainable += [self.gamma, self.beta]
         self.regularizable += [self.gamma]
+
+        if activation == 'prelu':
+            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.trainable += [self.alpha]
+            self.kwargs['alpha'] = self.alpha
+
         self.descriptions = '{} GroupNorm Layer: shape: {} -> {} activation: {}'\
             .format(layer_name, self.input_shape, self.output_shape, activation)
 
     def get_output(self, input):
         n, c, h, w = T.shape(input)
         input = T.reshape(input, (n, self.groups, -1, h, w))
-        mean = T.mean(input, (2, 3, 4)).dimshuffle((0, 1, 'x', 'x', 'x'))
-        var = T.var(input, (2, 3, 4)).dimshuffle((0, 1, 'x', 'x', 'x'))
+        mean = T.mean(input, (2, 3, 4), keepdims=True)
+        var = T.var(input, (2, 3, 4), keepdims=True)
         gamma = self.gamma.dimshuffle(('x', 0, 'x', 'x'))
         beta = self.beta.dimshuffle(('x', 0, 'x', 'x'))
         input = (input - mean) / T.sqrt(var + self.epsilon)
@@ -1655,6 +1713,8 @@ class GroupNormLayer(Layer):
     def reset(self):
         self.gamma.set_value(np.copy(self.gamma_values))
         self.beta.set_value(np.copy(self.beta_values))
+        if self.activation is utils.function['prelu']:
+            self.alpha.set_value(np.float32(.1))
 
 
 class BatchRenormLayer(Layer):
@@ -1730,6 +1790,35 @@ class BatchRenormLayer(Layer):
     def set_training(training):
         for layer in BatchRenormLayer.layers:
             layer.training_flag = training
+
+
+class TransformerLayer(Layer):
+    """Implementation of the bilinear interpolation transformer layer in https://arxiv.org/abs/1506.020250. Based on
+    the implementation in Lasagne.
+    coordinates is a tensor of shape (n, 2, h, w). coordinates[:, 0, :, :] is the horizontal coordinates and the other
+    is the vertical coordinates.
+    """
+
+    def __init__(self, input_shapes, downsample_factor=1, border_mode='nearest', layer_name='Warping', **kwargs):
+        assert isinstance(input_shapes, (list, tuple)), 'input_shapes must be a list a tuple of shapes, got %s.' % type(input_shapes)
+
+        super(TransformerLayer, self).__init__()
+        self.input_shape, self.transform_shape = tuple(input_shapes)
+        self.layer_name = layer_name
+        self.downsample_factor = downsample_factor
+        self.border_mode = border_mode
+        self.kwargs = kwargs
+        self.descriptions = '%s Warping layer.' % layer_name
+
+    @property
+    def output_shape(self):
+        shape = self.input_shape
+        factors = self.downsample_factor
+        return (shape[:2] + tuple(None if s is None else int(s // f) for s, f in zip(shape[2:], factors)))
+
+    def get_output(self, inputs):
+        input, theta = inputs
+        return utils.transform_affine(theta, input, self.downsample_factor, self.border_mode)
 
 
 class IdentityLayer(Layer):
