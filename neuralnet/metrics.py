@@ -121,7 +121,7 @@ def multinoulli_cross_entropy(p_y_given_x, y):
     # lsm = xdev - T.log(T.sum(T.exp(xdev), axis=1, keepdims=True))
     # cm2 = -lsm[T.arange(y.shape[0]), y]
     # cost = cm2.mean()
-    cost = T.nnet.categorical_crossentropy(p_y_given_x, y).mean()
+    cost = T.nnet.categorical_crossentropy(p_y_given_x, T.cast(y, 'float32')).mean()
     return cost
 
 
