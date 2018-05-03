@@ -144,19 +144,22 @@ class Sequential(Layer):
 
 
 class ActivationLayer(Layer):
-    def __init__(self, input_shape, activation='relu', layer_name='Activation'):
+    def __init__(self, input_shape, activation='relu', layer_name='Activation', **kwargs):
         super(ActivationLayer, self).__init__()
         self.input_shape = tuple(input_shape)
         self.activation = utils.function[activation]
         self.layer_name = layer_name
+        self.kwargs = kwargs
         self.descriptions = '{} Activation layer: {}'.format(self.layer_name, activation)
 
         if activation == 'prelu':
             self.alpha = theano.shared(np.float32(.1), 'alpha')
+            self.params += [self.alpha]
             self.trainable += [self.alpha]
+            self.kwargs['alpha'] = self.alpha
 
     def get_output(self, input):
-        return self.activation(input)
+        return self.activation(input, **self.kwargs)
 
     @property
     def output_shape(self):
@@ -315,6 +318,7 @@ class FullyConnectedLayer(Layer):
 
         if activation == 'prelu':
             self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
@@ -403,6 +407,7 @@ class ConvolutionalLayer(Layer):
 
         if activation == 'prelu':
             self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
@@ -945,6 +950,7 @@ class TransposedConvolutionalLayer(Layer):
 
         if activation == 'prelu':
             self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
@@ -1220,6 +1226,7 @@ class ResNetBlock(Layer):
 
         if activation == 'prelu':
             self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
@@ -1316,6 +1323,7 @@ class ResNetBlock2(Layer):
 
         if activation == 'prelu':
             self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
@@ -1513,6 +1521,7 @@ class BatchNormLayer(Layer):
 
         if activation == 'prelu':
             self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
@@ -1688,6 +1697,7 @@ class GroupNormLayer(Layer):
 
         if activation == 'prelu':
             self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
