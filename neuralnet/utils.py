@@ -411,7 +411,7 @@ def interpolate_bilinear(im, x, y, out_shape, border_mode):
     idx_c = base_y0 + x1
     idx_d = base_y1 + x1
 
-    im_flat = T.reshape(im.dimshuffle((0, 3, 1, 2)), (-1, c))
+    im_flat = T.reshape(im.dimshuffle((0, 2, 3, 1)), (-1, c))
     pixel_a = im_flat[idx_a]
     pixel_b = im_flat[idx_b]
     pixel_c = im_flat[idx_c]
@@ -424,7 +424,7 @@ def interpolate_bilinear(im, x, y, out_shape, border_mode):
 
     output = T.sum((wa*pixel_a, wb*pixel_b, wc*pixel_c, wd*pixel_d), axis=0)
     output = T.reshape(output, (n, h_out, w_out, c))
-    return output.dimshuffle((0, 2, 3, 1))
+    return output.dimshuffle((0, 3, 1, 2))
 
 
 def transform_affine(theta, input, downsample_factor=(1, 1), border_mode='nearest'):
