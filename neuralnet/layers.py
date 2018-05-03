@@ -269,7 +269,7 @@ class DropoutLayer(Layer):
 
 class FullyConnectedLayer(Layer):
     def __init__(self, input_shape, num_nodes, He_init=None, He_init_gain=None, no_bias=False, layer_name='fc',
-                 activation='relu', **kwargs):
+                 activation='relu', keep_dims=False, **kwargs):
         """
 
         :param input_shape:
@@ -295,6 +295,7 @@ class FullyConnectedLayer(Layer):
         self.activation = utils.function[activation]
         self.no_bias = no_bias
         self.layer_name = layer_name
+        self.keep_dims = keep_dims
         self.kwargs = kwargs
 
         if self.He_init:
@@ -327,7 +328,7 @@ class FullyConnectedLayer(Layer):
 
     def get_output(self, input):
         output = T.dot(input.flatten(2), self.W) + self.b if not self.no_bias else T.dot(input.flatten(2), self.W)
-        return self.activation(output, **self.kwargs)
+        return self.activation(output, **self.kwargs) if self.keep_dims else T.squeeze(self.activation(output, **self.kwargs))
 
     @property
     @validate
