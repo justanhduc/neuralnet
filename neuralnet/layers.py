@@ -1809,7 +1809,7 @@ class TransformerLayer(Layer):
     is the vertical coordinates.
     """
 
-    def __init__(self, input_shapes, downsample_factor=1, border_mode='nearest', layer_name='Warping', **kwargs):
+    def __init__(self, input_shapes, downsample_factor=1, border_mode='nearest', layer_name='Transformer', **kwargs):
         assert isinstance(input_shapes, (list, tuple)), 'input_shapes must be a list a tuple of shapes, got %s.' % type(input_shapes)
 
         super(TransformerLayer, self).__init__()
@@ -1818,7 +1818,7 @@ class TransformerLayer(Layer):
         self.downsample_factor = (downsample_factor, downsample_factor) if isinstance(downsample_factor, int) else tuple(downsample_factor)
         self.border_mode = border_mode
         self.kwargs = kwargs
-        self.descriptions = '%s Warping layer.' % layer_name
+        self.descriptions = '%s Transformer layer.' % layer_name
 
     @property
     def output_shape(self):
