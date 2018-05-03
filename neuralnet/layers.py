@@ -1824,7 +1824,7 @@ class TransformerLayer(Layer):
     def output_shape(self):
         shape = self.input_shape
         factors = self.downsample_factor
-        return (shape[:2] + tuple(None if s is None else int(s // f) for s, f in zip(shape[2:], factors)))
+        return tuple(shape[:2] + [None if s is None else int(s // f) for s, f in zip(shape[2:], factors)])
 
     def get_output(self, inputs):
         input, theta = inputs
