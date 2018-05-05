@@ -474,9 +474,7 @@ class StackingConv(Layer):
         self.layer_name = layer_name
         self.descriptions = '{} Stacking {} Convolutional Blocks {} filters size {} batchnorm {} ' \
                             'stride {} {} {}'.format(layer_name, num_layers, num_filters, filter_size, batch_norm,
-                                                     stride,
-                                                     activation,
-                                                     ' '.join([' '.join((k, str(v))) for k, v in kwargs.items()]))
+                                                     stride, activation, ' '.join([' '.join((k, str(v))) for k, v in kwargs.items()]))
         self.block = []
         shape = tuple(self.input_shape)
         conv_layer = ConvNormAct if batch_norm else ConvolutionalLayer
@@ -2044,92 +2042,233 @@ class ScalingLayer(Layer):
         return tuple(self.input_shape)
 
 
-class Gate(object):
-    def __init__(self, n_in, n_hid, use_peephole=False, W_hid=None, W_cell=False, bias_init_range=(-.5, .5),
-                 layer_name='gate'):
+class Gate:
+    """
+    lasagne.layers.recurrent.Gate(W_in=lasagne.init.Normal(0.1),
+    W_hid=lasagne.init.Normal(0.1), W_cell=lasagne.init.Normal(0.1),
+    b=lasagne.init.Constant(0.), nonlinearity=lasagne.nonlinearities.sigmoid)
+    Simple class to hold the parameters for a gate connection.  We define
+    a gate loosely as something which computes the linear mix of two inputs,
+    optionally computes an element-wise product with a third, adds a bias, and
+    applies a nonlinearity.
+    Parameters
+    ----------
+    W_in : Theano shared variable, numpy array or callable
+        Initializer for input-to-gate weight matrix.
+    W_hid : Theano shared variable, numpy array or callable
+        Initializer for hidden-to-gate weight matrix.
+    W_cell : Theano shared variable, numpy array, callable, or None
+        Initializer for cell-to-gate weight vector.  If None, no cell-to-gate
+        weight vector will be stored.
+    b : Theano shared variable, numpy array or callable
+        Initializer for input gate bias vector.
+    nonlinearity : callable or None
+        The nonlinearity that is applied to the input gate activation. If None
+        is provided, no nonlinearity will be applied.
+    Examples
+    --------
+    For :class:`LSTMLayer` the bias of the forget gate is often initialized to
+    a large positive value to encourage the layer initially remember the cell
+    value, see e.g. [1]_ page 15.
+    References
+    ----------
+    .. [1] Gers, Felix A., Jürgen Schmidhuber, and Fred Cummins. "Learning to
+           forget: Continual prediction with LSTM." Neural computation 12.10
+           (2000): 2451-2471.
+    """
+    def __init__(self, num_inputs, num_units, W_cell=False, activation='sigmoid', layer_name='Gate'):
+        assert isinstance(num_units, int), 'num_units must be an int, got %s.' % type(num_units)
+        assert isinstance(num_inputs, int), 'num_inputs must be an int, got %s.' % type(num_units)
+
         super(Gate, self).__init__()
+        self.W_in = theano.shared(np.random.normal(.1, size=(num_inputs, num_units)).astype('float32'), layer_name+'W_in')
+        self.W_hid = theano.shared(np.random.normal(.1, size=(num_units, num_units)).astype('float32'), layer_name+'W_hid')
+        self.params = [self.W_in, self.W_hid]
+        self.trainable = [self.W_in, self.W_hid]
+        self.regularizable = [self.W_in, self.W_hid]
+        if W_cell:
+            self.W_cell = theano.shared(np.random.normal(.1, size=(num_inputs, num_units)).astype('float32'), layer_name+'W_cell')
+            self.params.append(self.W_cell)
+            self.trainable.append(self.W_cell)
+            self.regularizable.append(self.W_cell)
+        self.b = theano.shared(np.random.normal(size=(num_units,)).astype('float32'), layer_name + 'W_cell')
+        self.params.append(self.b)
+        self.trainable.append(self.b)
+        self.activation = utils.function[activation]
 
-        self.n_in = n_in
-        self.n_hid = n_hid
-        self.bias_init_range = bias_init_range
-        self.layer_name = layer_name
+
+class LSTMCell(Layer):
+    def __init__(self, input_shape, num_units, use_peephole=False, backward=False, learn_init=False, grad_step=-1,
+                 grad_clip=0, activation='tanh', layer_name='LSTMCell', **kwargs):
+        """
+
+        :param input_shape:
+        :param num_units:
+        :param use_peephole:
+        :param backward:
+        :param learn_init:
+        :param grad_step:
+        :param grad_clip:
+        :param activation:
+        :param layer_name:
+        """
+        assert isinstance(input_shape, (list, tuple)), 'input_shape must be a list or tuple, got %s.' % input_shape
+        assert len(input_shape) == 3, 'input_shape must contain exactly 3 elements, got %d.' % len(input_shape)
+
+        super(LSTMCell, self).__init__()
+        self.input_shape = input_shape
+        self.num_units = num_units
         self.use_peephole = use_peephole
-        if not use_peephole:
-            self.W_hid = theano.shared(self.sample_weights(n_in + n_hid, n_hid), name=layer_name + '_Whid') if W_hid is None else W_hid
-        else:
-            self.W_hid = theano.shared(self.sample_weights(n_hid, n_hid), name=layer_name + '_Whid_ph') if isinstance(W_cell, int) else W_cell
-        self.b = theano.shared(np.cast[theano.config.floatX](np.random.uniform(bias_init_range[0], bias_init_range[1],
-                                                                               size=n_hid)), name=layer_name + '_b')
-
-        self.trainable = [self.W_in, self.W_hid, self.W_cell, self.b] if W_cell else [self.W_in, self.W_hid, self.b]
-        self.regularizable = [self.W_in, self.W_hid, self.W_cell, self.b] if W_cell else [self.W_in, self.W_hid, self.b]
-
-    def sample_weights(self, sizeX, sizeY):
-        values = np.ndarray([sizeX, sizeY], dtype=theano.config.floatX)
-        for dx in range(sizeX):
-            vals = np.random.uniform(low=-1., high=1., size=(sizeY,))
-            # vals_norm = np.sqrt((vals**2).sum())
-            # vals = vals / vals_norm
-            values[dx, :] = vals
-        _, svs, _ = np.linalg.svd(values)
-        # svs[0] is the largest singular value
-        values = values / svs[0]
-        return values
-
-
-class LSTMcell(Layer):
-    def __init__(self, n_in, n_hid, use_peephole=False, tensordot=False, gradien_clipping=False, layer_name='lstmcell'):
-        super(LSTMcell, self).__init__()
-
-        self.n_in = n_in
-        self.n_hid = n_hid
-        self.use_peephole = False
-        self.tensordot = tensordot
-        self.gradient_clipping = gradien_clipping
+        self.backward = backward
+        self.learn_init = learn_init
+        self.grad_step = grad_step
+        self.grad_clip = grad_clip
         self.layer_name = layer_name
-        self.in_gate = Gate(n_in, n_hid, W_cell=True, layer_name='in_gate')
-        self.forget_gate = Gate(n_hid, n_hid, W_cell=True, bias_init_range=(0., 1.), layer_name='forget_gate')
-        self.cell_gate = Gate(n_hid, n_hid, W_cell=False, layer_name='cell_gate')
-        self.out_gate = Gate(n_hid, n_hid, W_cell=True, layer_name='out_gate')
-        self.c0 = theano.shared(np.zeros((n_hid, ), dtype=theano.config.floatX), 'first_cell_state')
-        self.h0 = utils.function['tanh'](self.c0)
-        self.trainable += self.in_gate.trainable + self.forget_gate.trainable + self.cell_gate.trainable + self.out_gate.trainable + \
-                          [self.c0]
+        self.activation = utils.function[activation]
+        self.kwargs = kwargs
+
+        n_in = self.input_shape[-1]
+        self.in_gate = Gate(n_in, num_units, W_cell=False, layer_name='in_gate')
+        self.forget_gate = Gate(n_in, num_units, W_cell=False, layer_name='forget_gate')
+        self.cell_gate = Gate(n_in, num_units, W_cell=False, layer_name='cell_gate')
+        self.out_gate = Gate(n_in, num_units, W_cell=False, layer_name='out_gate')
+
+        self.cell_init = theano.shared(np.zeros((1, num_units), 'float32'), 'cell_init')
+        self.hid_init = theano.shared(np.zeros((1, num_units), 'float32'), 'hid_init')
+        self.params += self.in_gate.trainable + self.forget_gate.trainable + \
+                       self.cell_gate.trainable + self.out_gate.trainable + [self.cell_init, self.hid_init]
+        self.trainable += self.in_gate.trainable + self.forget_gate.trainable + \
+                          self.cell_gate.trainable + self.out_gate.trainable
         self.regularizable += self.in_gate.regularizable + self.forget_gate.regularizable + \
-                              self.cell_gate.regularizable + self.out_gate.regularizable + [self.c0]
-        print('@ %s LSTMCell: shape = (%d, %d)' % (self.layer_name, n_in, n_hid))
+                              self.cell_gate.regularizable + self.out_gate.regularizable
+        if self.learn_init:
+            self.trainable += [self.cell_init, self.hid_init]
+        self.descriptions = '%s LSTMCell: shape = (%d, %d)' % (self.layer_name, n_in, num_units)
 
-    def get_output_onestep(self, x_t, h_tm1, c_tm1, W_i, b_i, W_f, b_f, W_c, b_c, W_o, b_o):
-        from theano import dot
-        inputs = T.concatenate((x_t, h_tm1), 1)
-        W = T.concatenate((W_i, W_f, W_c, W_o), 1)
-
+    def get_output(self, input):
+        input = input.dimshuffle(1, 0, 2)
+        seq_len, num_batch, _ = input.shape
+        W_in_stacked = T.concatenate([self.in_gate.W_in, self.forget_gate.W_in, self.cell_gate.W_in, self.out_gate.W_in], 1)
+        W_hid_stacked = T.concatenate([self.in_gate.W_hid, self.forget_gate.W_hid, self.cell_gate.W_hid, self.out_gate.W_hid], 1)
+        b_stacked = T.concatenate([self.in_gate.b, self.forget_gate.b, self.cell_gate.b, self.out_gate.b], 0)
 
         def slice_w(x, n):
-            s = x[:, n*self.n_hid:(n+1)*self.n_hid]
-            if self.n_hid == 1:
+            s = x[:, n * self.num_units:(n + 1) * self.num_units]
+            if self.num_units == 1:
                 s = T.addbroadcast(s, 1)  # Theano cannot infer this by itself
             return s
 
-        xt_dot_W = dot(x_t, W_x)
-        htm1_dot_W = dot(h_tm1, W_htm1)
-        ctm1_dot_W = dot(c_tm1, W_ctm1)
-        i_t = utils.function['sigmoid'](_slice(xt_dot_W, 0, self.n_hid) + dot(h_tm1, W_hi) + dot(c_tm1, W_ci) + b_i)
-        f_t = utils.function['sigmoid'](dot(x_t, W_xf) + dot(h_tm1, W_hf) + dot(c_tm1, W_cf) + b_f)
-        c_t = f_t * c_tm1 + i_t * utils.function['tanh'](dot(x_t, W_xc) + dot(h_tm1, W_hc) + b_c)
-        o_t = utils.function['sigmoid'](dot(x_t, W_xo) + dot(h_tm1, W_ho) + dot(c_t, W_co) + b_o)
-        h_t = o_t * utils.function['tanh'](c_t)
-        return h_t, c_t
+        def step(input_n, cell_prev, hid_prev, *args):
+            input_n = T.dot(input_n, W_in_stacked) + b_stacked
+            gates = input_n + T.dot(hid_prev, W_hid_stacked)
+            if self.grad_clip:
+                gates = theano.gradient.grad_clip(gates, -self.grad_clip, self.grad_clip)
+
+            in_gate = slice_w(gates, 0)
+            forget_gate = slice_w(gates, 1)
+            cell_input = slice_w(gates, 2)
+            out_gate = slice_w(gates, 3)
+
+            in_gate = self.in_gate.activation(in_gate, **self.kwargs)
+            forget_gate = self.forget_gate.activation(forget_gate, **self.kwargs)
+            cell_input = self.cell_gate.activation(cell_input, **self.kwargs)
+
+            cell = forget_gate * cell_prev + in_gate * cell_input
+            out_gate = self.out_gate.activation(out_gate, **self.kwargs)
+            hid = out_gate * self.activation(cell)
+            return cell, hid
+
+        ones = T.ones((num_batch, 1), 'float32')
+        non_seqs = [W_hid_stacked, W_in_stacked, b_stacked]
+        cell_init = T.dot(ones, self.cell_init)
+        hid_init = T.dot(ones, self.hid_init)
+        cell_out, hid_out = theano.scan(step, input, [cell_init, hid_init], go_backwards=self.backward,
+                                        truncate_gradient=self.grad_step, non_sequences=non_seqs, strict=True)[0]
+        hid_out = hid_out.dimshuffle(1, 0, 2)
+        if self.backward:
+            hid_out = hid_out[:, ::-1]
+        return hid_out
+
+    @property
+    def output_shape(self):
+        return self.input_shape[0], self.input_shape[1], self.num_units
+
+
+class GRUCell(Layer):
+    def __init__(self, input_shape, num_units, backwards=False, learn_init=False, grad_steps=-1, grad_clip=0, **kwargs):
+        assert isinstance(input_shape, (list, tuple)), 'input_shape must be a list or tuple, got %s.' % input_shape
+        assert len(input_shape) == 3, 'input_shape must contain exactly 3 elements, got %d.' % len(input_shape)
+
+        super(GRUCell, self).__init__()
+        self.input_shape = input_shape
+        self.num_units = num_units
+        self.backwards = backwards
+        self.learn_init = learn_init
+        self.grad_steps = grad_steps
+        self.grad_clip = grad_clip
+        self.kwargs = kwargs
+
+        num_inputs = input_shape[-1]
+        self.update_gate = Gate(num_inputs, num_units, layer_name='update_gate')
+        self.reset_gate = Gate(num_inputs, num_units, layer_name='reset_gate')
+        self.hidden_update = Gate(num_inputs, num_units, layer_name='hidden_update')
+        self.params += self.update_gate.params + self.reset_gate.params + self.hidden_update.params
+        self.trainable += self.update_gate.trainable + self.reset_gate.trainable + self.hidden_update.trainable
+        self.regularizable += self.update_gate.regularizable + self.reset_gate.regularizable + self.hidden_update.regularizable
+
+        self.hid_init = theano.shared(np.zeros((1, num_units), 'float32'), 'hid_init')
+        self.params.append(self.hid_init)
+        if learn_init:
+            self.trainable.append(self.hid_init)
 
     def get_output(self, input):
-        non_sequences = list(self.trainable)
-        non_sequences.pop()
-        [h_vals, _], _ = theano.scan(LSTMcell.get_output_onestep, sequences=dict(input=input, taps=[0]),
-                                     outputs_info=[self.h0, self.c0], non_sequences=non_sequences)
-        return h_vals
+        input = input.dimshuffle(1, 0, 2)
+        seq_len, num_batch, _ = input.shape
 
+        W_in_stacked = T.concatenate([self.reset_gate.W_in, self.update_gate.W_in, self.hidden_update.W_in], 1)
+        W_hid_stacked = T.concatenate([self.reset_gate.W_hid, self.update_gate.W_hid, self.hidden_update.W_hid], 1)
+        b_stacked = T.concatenate([self.reset_gate.b, self.update_gate.b, self.hidden_update.b])
+
+        def slice_w(x, n):
+            s = x[:, n * self.num_units:(n + 1) * self.num_units]
+            if self.num_units == 1:
+                s = T.addbroadcast(s, 1)  # Theano cannot infer this by itself
+            return s
+
+        def step(input_n, hid_prev, *args):
+            hid_input = T.dot(hid_prev, W_hid_stacked)
+
+            if self.grad_clip:
+                input_n = theano.gradient.grad_clip(input_n, -self.grad_clip, self.grad_clip)
+                hid_input = theano.gradient.grad_clip(hid_input, -self.grad_clip, self.grad_clip)
+
+            input_n = T.dot(input_n, W_in_stacked) + b_stacked
+
+            reset_gate = slice_w(hid_input, 0) + slice_w(input_n, 0)
+            update_gate = slice_w(hid_input, 1) + slice_w(input_n, 1)
+            reset_gate = self.reset_gate.activation(reset_gate, **self.kwargs)
+            update_gate = self.update_gate.activation(update_gate, **self.kwargs)
+
+            hidden_update_in = slice_w(input_n, 2)
+            hidden_update_hid = slice_w(hid_input, 2)
+            hidden_update = hidden_update_in + reset_gate * hidden_update_hid
+            if self.grad_clip:
+                hidden_update = theano.gradient.grad_clip(hidden_update, -self.grad_clip, self.grad_clip)
+            hidden_update = self.hidden_update.activation(hidden_update, **self.kwargs)
+            return (1. - update_gate) * hid_prev + update_gate * hidden_update
+
+        hid_init = T.dot(T.ones((num_batch, 1), 'float32'), self.hid_init)
+        non_seqs = [W_hid_stacked, W_in_stacked, b_stacked]
+        hid_out = theano.scan(step, input, [hid_init], non_seqs, go_backwards=self.backwards,
+                              truncate_gradient=self.grad_steps, strict=True)[0]
+        hid_out = hid_out.dimshuffle(1, 0, 2)
+        if self.backwards:
+            hid_out = hid_out[:, ::-1]
+        return hid_out
+
+    @property
     def output_shape(self):
-        return None, self.n_in
+        return self.input_shape[0], self.input_shape[1], self.num_units
 
 
 def set_training_status(training):
