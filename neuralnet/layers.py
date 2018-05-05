@@ -2195,7 +2195,7 @@ class LSTMCell(Layer):
 
 
 class GRUCell(Layer):
-    def __init__(self, input_shape, num_units, backwards=False, learn_init=False, grad_steps=-1, grad_clip=0, **kwargs):
+    def __init__(self, input_shape, num_units, backwards=False, learn_init=False, grad_steps=-1, grad_clip=0, layer_name='GRUCell', **kwargs):
         assert isinstance(input_shape, (list, tuple)), 'input_shape must be a list or tuple, got %s.' % input_shape
         assert len(input_shape) == 3, 'input_shape must contain exactly 3 elements, got %d.' % len(input_shape)
 
@@ -2206,6 +2206,7 @@ class GRUCell(Layer):
         self.learn_init = learn_init
         self.grad_steps = grad_steps
         self.grad_clip = grad_clip
+        self.layer_name = layer_name
         self.kwargs = kwargs
 
         num_inputs = input_shape[-1]
@@ -2220,6 +2221,7 @@ class GRUCell(Layer):
         self.params.append(self.hid_init)
         if learn_init:
             self.trainable.append(self.hid_init)
+        self.descriptions = '%s GRUCell: shape = (%d, %d)' % (self.layer_name, num_inputs, num_units)
 
     def get_output(self, input):
         input = input.dimshuffle(1, 0, 2)
