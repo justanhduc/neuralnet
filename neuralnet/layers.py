@@ -2314,8 +2314,8 @@ class AttConvLSTMCell(Layer):
         self.att_gate = Gate(filter_shape, W_cell=False, activation='tanh', layer_name='att_gate')
         self.Va = theano.shared(np.zeros((1, filter_shape[0], filter_shape[2], filter_shape[3]), 'float32'), 'att_kern')
 
-        self.cell_init = theano.shared(np.zeros((filter_shape[0], filter_shape[0], input_shape[2], input_shape[3]), 'float32'), 'cell_init')
-        self.hid_init = theano.shared(np.zeros((filter_shape[0], filter_shape[0], input_shape[2], input_shape[3]), 'float32'), 'hid_init')
+        self.cell_init = theano.shared(np.zeros((input_shape[0], filter_shape[0], input_shape[2], input_shape[3]), 'float32'), 'cell_init')
+        self.hid_init = theano.shared(np.zeros((input_shape[0], filter_shape[0], input_shape[2], input_shape[3]), 'float32'), 'hid_init')
         self.params += self.in_gate.params + self.forget_gate.params + self.cell_gate.params + \
                        self.out_gate.params + self.att_gate.params + [self.cell_init, self.hid_init, self.Va]
         self.trainable += self.in_gate.trainable + self.forget_gate.trainable + self.cell_gate.trainable + \
