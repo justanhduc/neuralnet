@@ -2314,15 +2314,18 @@ class AttConvLSTMCell(Layer):
         self.att_gate = Gate(filter_shape, W_cell=False, activation='tanh', layer_name='att_gate')
         self.Va = theano.shared(np.zeros((1, filter_shape[0], filter_shape[2], filter_shape[3]), 'float32'), 'att_kern')
 
-        self.cell_init = theano.shared(np.zeros((input_shape[0], filter_shape[0], input_shape[2], input_shape[3]), 'float32'), 'cell_init')
-        self.hid_init = theano.shared(np.zeros((input_shape[0], filter_shape[0], input_shape[2], input_shape[3]), 'float32'), 'hid_init')
         self.params += self.in_gate.params + self.forget_gate.params + self.cell_gate.params + \
-                       self.out_gate.params + self.att_gate.params + [self.cell_init, self.hid_init, self.Va]
+                       self.out_gate.params + self.att_gate.params + [self.Va]
         self.trainable += self.in_gate.trainable + self.forget_gate.trainable + self.cell_gate.trainable + \
                           self.out_gate.trainable + self.att_gate.trainable + [self.Va]
         self.regularizable += self.in_gate.regularizable + self.forget_gate.regularizable + \
                               self.cell_gate.regularizable + self.out_gate.regularizable + self.att_gate.regularizable
         if self.learn_init:
+            self.cell_init = theano.shared(
+                np.zeros((input_shape[0], filter_shape[0], input_shape[2], input_shape[3]), 'float32'), 'cell_init')
+            self.hid_init = theano.shared(
+                np.zeros((input_shape[0], filter_shape[0], input_shape[2], input_shape[3]), 'float32'), 'hid_init')
+            self.params += [self.cell_init, self.hid_init]
             self.trainable += [self.cell_init, self.hid_init]
         self.descriptions = '{} AttConvLSTMCell: input shape = {} filter shape = {}'.format(self.layer_name, input_shape,
                                                                                             filter_shape)
@@ -2333,6 +2336,9 @@ class AttConvLSTMCell(Layer):
 
     def get_output(self, input):
         conv = lambda x, y: T.nnet.conv2d(x, y, border_mode='half')
+        num_batch, _, _, _ = input.shape
+        cell_init = T.zeros((num_batch, self.filter_shape[0], self.input_shape[2], self.input_shape[3]), 'float32')
+        hid_init = T.zeros((num_batch, self.filter_shape[0], self.input_shape[2], self.input_shape[3]), 'float32')
 
         def softmax(x):
             exp = T.exp(x)
@@ -2354,14 +2360,14 @@ class AttConvLSTMCell(Layer):
             Ht = Ot * self.activation(Ct)
 
             Zt = conv(self.att_gate.activation(conv(Xt, self.att_gate.W_in) + conv(hid_prev, self.att_gate.W_hid)
-                                                        + self.att_gate.b.dimshuffle('x', 0, 'x', 'x'), **self.kwargs), self.Va)
+                                               + self.att_gate.b.dimshuffle('x', 0, 'x', 'x'), **self.kwargs), self.Va)
             Xt = T.addbroadcast(softmax(Zt), 1) * Xt
             return Xt, Ct, Ht
 
         non_seqs = [self.in_gate.W_in, self.in_gate.W_hid, self.in_gate.b, self.forget_gate.W_in, self.forget_gate.W_hid,
                     self.forget_gate.b, self.out_gate.W_in, self.out_gate.W_hid, self.out_gate.b, self.cell_gate.W_in,
                     self.cell_gate.W_hid, self.cell_gate.b, self.att_gate.W_in, self.att_gate.W_hid, self.att_gate.b, self.Va]
-        X, cell_out, hid_out = theano.scan(step, outputs_info=[input, self.cell_init, self.hid_init], strict=True,
+        X, cell_out, hid_out = theano.scan(step, outputs_info=[input, cell_init, hid_init], strict=True,
                                            truncate_gradient=self.grad_step, non_sequences=non_seqs, n_steps=self.steps)[0]
         return X[-1]
 
