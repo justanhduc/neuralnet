@@ -2353,8 +2353,8 @@ class AttConvLSTMCell(Layer):
             Ct = Ft * cell_prev + It * Gt
             Ht = Ot * self.activation(Ct)
 
-            Zt = conv(self.Va, self.att_gate.activation(conv(Xt, self.att_gate.W_in) + conv(hid_prev, self.att_gate.W_hid)
-                                                        + self.att_gate.b.dimshuffle('x', 0, 'x', 'x'), **self.kwargs))
+            Zt = conv(self.att_gate.activation(conv(Xt, self.att_gate.W_in) + conv(hid_prev, self.att_gate.W_hid)
+                                                        + self.att_gate.b.dimshuffle('x', 0, 'x', 'x'), **self.kwargs), self.Va)
             Xt = T.addbroadcast(softmax(Zt), 1) * Xt
             return Xt, Ct, Ht
 
