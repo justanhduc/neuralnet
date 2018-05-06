@@ -2363,7 +2363,7 @@ class AttConvLSTMCell(Layer):
                     self.cell_gate.W_hid, self.cell_gate.b, self.att_gate.W_in, self.att_gate.W_hid, self.att_gate.b, self.Va]
         X, cell_out, hid_out = theano.scan(step, outputs_info=[input, self.cell_init, self.hid_init], strict=True,
                                            truncate_gradient=self.grad_step, non_sequences=non_seqs, n_steps=self.steps)[0]
-        return X
+        return X[-1]
 
 
 def set_training_status(training):
