@@ -10,3 +10,4 @@ from .utils import ConfigParser
 from .build_training import Training
 from .build_optimization import Optimization
 from .model import Model
+from .init import *

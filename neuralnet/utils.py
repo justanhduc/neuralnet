@@ -441,6 +441,21 @@ def transform_affine(theta, input, downsample_factor=(1, 1), border_mode='neares
     return interpolate_bilinear(input, xs, ys, (h_out, w_out), border_mode)
 
 
+def floatX(arr):
+    """Converts data to a numpy array of dtype ``theano.config.floatX``.
+    Parameters
+    ----------
+    arr : array_like
+        The data to be converted.
+    Returns
+    -------
+    numpy ndarray
+        The input array in the ``floatX`` dtype configured for Theano.
+        If `arr` is an ndarray of correct dtype, it is returned as is.
+    """
+    return np.asarray(arr, dtype=theano.config.floatX)
+
+
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
             'tanh': lambda x, **kwargs: T.tanh(x), 'lrelu': lrelu, 'softmax': lambda x, **kwargs: T.nnet.softmax(x),
             'linear': linear, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,
