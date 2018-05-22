@@ -268,10 +268,6 @@ def lrelu(x, **kwargs):
     return T.nnet.relu(x, alpha=alpha)
 
 
-def linear(x, **kwargs):
-    return x
-
-
 def ramp(x, **kwargs):
     left = T.switch(x < 0, 0, x)
     return T.switch(left > 1, 1, left)
@@ -456,9 +452,76 @@ def floatX(arr):
     return np.asarray(arr, dtype=theano.config.floatX)
 
 
+def unroll_scan(fn, sequences, outputs_info, non_sequences, n_steps, go_backwards=False):
+    """
+    Helper function to unroll for loops. Can be used to unroll theano.scan.
+    The parameter names are identical to theano.scan, please refer to here
+    for more information.
+    Note that this function does not support the truncate_gradient
+    setting from theano.scan.
+    Parameters
+    ----------
+    fn : function
+        Function that defines calculations at each step.
+    sequences : TensorVariable or list of TensorVariables
+        List of TensorVariable with sequence data. The function iterates
+        over the first dimension of each TensorVariable.
+    outputs_info : list of TensorVariables
+        List of tensors specifying the initial values for each recurrent
+        value.
+    non_sequences: list of TensorVariables
+        List of theano.shared variables that are used in the step function.
+    n_steps: int
+        Number of steps to unroll.
+    go_backwards: bool
+        If true the recursion starts at sequences[-1] and iterates
+        backwards.
+    Returns
+    -------
+    List of TensorVariables. Each element in the list gives the recurrent
+    values at each time step.
+    """
+    if sequences is None:
+        sequences = []
+
+    if not isinstance(sequences, (list, tuple)):
+        sequences = [sequences]
+
+    if not isinstance(outputs_info, (list, tuple)):
+        outputs_info = [outputs_info]
+
+    # When backwards reverse the recursion direction
+    counter = range(n_steps)
+    if go_backwards:
+        counter = counter[::-1]
+
+    output = []
+    prev_vals = list(outputs_info)
+    for i in counter:
+        step_input = [s[i] for s in sequences] + prev_vals + non_sequences
+        out_ = fn(*step_input)
+        # The returned values from step can be either a TensorVariable,
+        # a list, or a tuple.  Below, we force it to always be a list.
+        if isinstance(out_, T.TensorVariable):
+            out_ = [out_]
+        if isinstance(out_, tuple):
+            out_ = list(out_)
+        output.append(out_)
+        prev_vals = output[-1]
+
+    # iterate over each scan output and convert it to same format as scan:
+    # [[output11, output12,...output1n],
+    # [output21, output22,...output2n],...]
+    output_scan = []
+    for i in range(len(output[0])):
+        l = map(lambda x: x[i], output)
+        output_scan.append(T.stack(*l))
+    return output_scan if len(output_scan) > 1 else output_scan[0]
+
+
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
             'tanh': lambda x, **kwargs: T.tanh(x), 'lrelu': lrelu, 'softmax': lambda x, **kwargs: T.nnet.softmax(x),
-            'linear': linear, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,
+            'linear': lambda x, **kwargs: x, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,
             'sin': lambda x, **kwargs: T.sin(x), 'cos': lambda x, **kwargs: T.cos(x), 'swish': swish, 'selu': selu,
             'prelu': prelu}
 
