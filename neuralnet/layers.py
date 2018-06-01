@@ -1,23 +1,27 @@
-'''
+"""
 Written and collected by Duc Nguyen
-Last Modified by Duc Nguyen (theano version >= 0.8.1 required)
-Updates on Sep 2017: added BatchNormDNNLayer from Lasagne
-
-
-'''
+"""
 __author__ = 'Duc Nguyen'
 
 import math
 import time
-import numpy as np
 import abc
 import theano
+import numpy as np
 from theano import tensor as T
 from theano.tensor.nnet import conv2d as conv
 from theano.tensor.signal.pool import pool_2d as pool
 
 from neuralnet import utils
 from neuralnet.init import *
+
+__all__ = ['Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', 'TransformerLayer',
+           'TransposedConvolutionalLayer', 'BatchNormLayer', 'BatchRenormLayer', 'DecorrBatchNormLayer',
+           'DenseBlock', 'SumLayer', 'StackingConv', 'ScalingLayer', 'SlicingLayer', 'StackingDeconv',
+           'PixelShuffleLayer', 'LSTMCell', 'ActivationLayer', 'AttConvLSTMCell', 'ConvMeanPoolLayer',
+           'ConcatLayer', 'ConvLSTMCell', 'ConvNormAct', 'MeanPoolConvLayer', 'ReshapingLayer',
+           'RecursiveResNetBlock', 'ResizingLayer', 'ResNetBlock', 'ResNetBlock2', 'GRUCell', 'IdentityLayer',
+           'DropoutLayer', 'PoolingLayer', 'InceptionModule1', 'InceptionModule2', 'InceptionModule3']
 
 
 def validate(func):
@@ -1101,8 +1105,9 @@ class ResNetBlock(Layer):
         :param target:
         '''
         assert left_branch or (input_shape[1] == num_filters), 'Cannot have identity branch when input dim changes.'
-        super(ResNetBlock, self).__init__()
+        assert normalization in (None, 'bn', 'gn')
 
+        super(ResNetBlock, self).__init__()
         self.input_shape = tuple(input_shape)
         self.num_filters = num_filters
         self.stride = stride
@@ -1131,10 +1136,11 @@ class ResNetBlock(Layer):
             self.shortcut = []
             self.shortcut.append(ConvolutionalLayer(self.input_shape, num_filters, 3, stride=stride,
                                                     layer_name=layer_name+'_2', activation='linear'))
-            self.shortcut.append(BatchNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '_2_bn',
-                                                activation='linear') if normalization == 'bn'
-                                 else GroupNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '_2_gn',
-                                                     groups=groups, activation='linear'))
+            if self.normalization:
+                self.shortcut.append(BatchNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '_2_bn',
+                                                    activation='linear') if normalization == 'bn'
+                                     else GroupNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '_2_gn',
+                                                         groups=groups, activation='linear'))
             self.params += [p for layer in self.shortcut for p in layer.params]
             self.trainable += [p for layer in self.shortcut for p in layer.trainable]
             self.regularizable += [p for layer in self.shortcut for p in layer.regularizable]
@@ -1143,16 +1149,22 @@ class ResNetBlock(Layer):
         block = []
         block.append(ConvolutionalLayer(self.input_shape, self.num_filters, 3, border_mode='half', stride=self.stride,
                                         dilation=self.dilation, layer_name=block_name + '_conv1', no_bias=no_bias, activation='linear'))
-        block.append(BatchNormLayer(block[-1].output_shape, activation=self.activation,
-                                    layer_name=block_name + '_conv1_bn', **self.kwargs) if self.normalization == 'bn'
-                     else GroupNormLayer(block[-1].output_shape, activation=self.activation,
-                                         layer_name=block_name+'_conv1_gn', groups=self.groups, **self.kwargs))
+
+        if self.normalization:
+            block.append(BatchNormLayer(block[-1].output_shape, activation=self.activation,
+                                        layer_name=block_name + '_conv1_bn', **self.kwargs) if self.normalization == 'bn'
+                         else GroupNormLayer(block[-1].output_shape, activation=self.activation,
+                                             layer_name=block_name+'_conv1_gn', groups=self.groups, **self.kwargs))
+        else:
+            block.append(ActivationLayer(block[-1].output_shape, self.activation, block_name+'_act1', **self.kwargs))
 
         block.append(ConvolutionalLayer(block[-1].output_shape, self.num_filters, 3, border_mode='half', dilation=self.dilation,
                                         layer_name=block_name + '_conv2', no_bias=no_bias, activation='linear'))
-        block.append(BatchNormLayer(block[-1].output_shape, layer_name=block_name + '_conv2_bn', activation='linear')
-                     if self.normalization == 'bn' else GroupNormLayer(block[-1].output_shape, activation='linear',
-                                                                       layer_name=block_name + '_conv2_gn', groups=self.groups))
+
+        if self.normalization:
+            block.append(BatchNormLayer(block[-1].output_shape, layer_name=block_name + '_conv2_bn', activation='linear')
+                         if self.normalization == 'bn' else GroupNormLayer(block[-1].output_shape, activation='linear',
+                                                                           layer_name=block_name + '_conv2_gn', groups=self.groups))
         return block
 
     def get_output(self, input):
@@ -2070,8 +2082,8 @@ class Gate:
         self.params = [self.W_in, self.W_hid]
         self.trainable = [self.W_in, self.W_hid]
         self.regularizable = [self.W_in, self.W_hid]
+
         if W_cell:
-            assert isinstance(W_cell, Initializer), 'W_cell must be an instance of Initializer, got %s.' % type(W_cell)
             self.W_cell = theano.shared(W_cell(hid_shape), layer_name+'_W_cell')
             self.params.append(self.W_cell)
             self.trainable.append(self.W_cell)

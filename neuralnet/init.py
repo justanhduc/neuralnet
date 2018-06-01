@@ -7,6 +7,9 @@ import numpy as np
 
 from .utils import floatX
 
+__all__ = ['HeNormal', 'HeUniform', 'He', 'Constant', 'GlorotNormal', 'Glorot', 'GlorotUniform',
+           'Orthogonal', 'Normal', 'Sparse', 'Uniform']
+
 
 class Initializer(object):
     """Base class for parameter tensor initializers.

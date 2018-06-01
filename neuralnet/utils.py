@@ -7,6 +7,7 @@ import numpy as np
 import theano
 from theano import tensor as T
 from scipy import misc
+from functools import reduce
 
 thread_lock = threading.Lock()
 
@@ -336,7 +337,7 @@ def linspace(start, stop, num):
     return T.arange(num, dtype=theano.config.floatX)*step+start
 
 
-def meshgrid(height, width):
+def _meshgrid(height, width):
     # This function is the grid generator from eq. (1) in reference [1].
     # It is equivalent to the following numpy code:
     #  x_t, y_t = np.meshgrid(np.linspace(-1, 1, width),
@@ -429,7 +430,7 @@ def transform_affine(theta, input, downsample_factor=(1, 1), border_mode='neares
 
     h_out = T.cast(h // downsample_factor[0], 'int64')
     w_out = T.cast(w // downsample_factor[1], 'int64')
-    grid = meshgrid(h_out, w_out)
+    grid = _meshgrid(h_out, w_out)
 
     Tg = T.dot(theta, grid)
     xs = Tg[:, 0]
@@ -517,6 +518,27 @@ def unroll_scan(fn, sequences, outputs_info, non_sequences, n_steps, go_backward
         l = map(lambda x: x[i], output)
         output_scan.append(T.stack(*l))
     return output_scan if len(output_scan) > 1 else output_scan[0]
+
+
+def lagrange_interpolation(x, y, u, order):
+    _, w = y.shape
+    r = range(order+1)
+    a = [y[i] / reduce(lambda a, b: a*b, [x[i] - x[j] for j in r if j != i]) for i in r]
+    out = T.sum([a[i] * reduce(lambda a, b: a*b, [u - x[j] for j in r if j != i]) for i in r], 0)
+    return out
+
+
+def point_op(image, lut, origin, increment, *args):
+    h, w = image.shape
+    im = image.flatten()
+    lutsize = lut.shape[0] - 2
+
+    pos = (im - origin) / increment
+    index = pos.astype('int64')
+    index = T.set_subtensor(index[index < 0], 0)
+    index = T.set_subtensor(index[index > lutsize], lutsize)
+    res = lut[index] + (lut[index+1] - lut[index]) * (pos - index.astype('float32'))
+    return T.reshape(res, (h, w)).astype('float32')
 
 
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),

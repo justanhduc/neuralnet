@@ -12,6 +12,8 @@ import numpy as np
 from collections import OrderedDict
 import abc
 
+__all__ = ['sgd', 'sgdmomentum', 'adadelta', 'adagrad', 'adam', 'adamax', 'nadam', 'rmsprop', 'amsgrad']
+
 
 class Optimizer(metaclass=abc.ABCMeta):
     def __init__(self, eta):
@@ -49,7 +51,7 @@ class AdaDelta(Optimizer):
         updates = get_updates(parameter_list, grad_list)
     """
 
-    def __init__(self, rho, epsilon):
+    def __init__(self, rho=.95, epsilon=1e-6):
         super(AdaDelta, self).__init__(0.)
         self.rho = T.as_tensor_variable(np.cast[theano.config.floatX](rho))
         self.epsilon = T.as_tensor_variable(np.cast[theano.config.floatX](epsilon))
@@ -410,3 +412,58 @@ class AMSGrad(Optimizer):
     def reset(self):
         for param in self.params:
             param.set_value(param.get_value() * np.float32(0))
+
+
+def sgd(cost, params, eta=1e-3):
+    grads = T.grad(cost, params)
+    sgd_op = VanillaSGD(eta)
+    return sgd_op.get_updates(params, grads)
+
+
+def adadelta(cost, params, rho=.95, epsilon=1e-6):
+    grads = T.grad(cost, params)
+    adadelta_op = AdaDelta(rho, epsilon)
+    return adadelta_op.get_updates(params, grads)
+
+
+def adam(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8):
+    grads = T.grad(cost, params)
+    adam_op = Adam(alpha, beta1, beta2, epsilon)
+    return adam_op.get_updates(params, grads)
+
+
+def amsgrad(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x):
+    grads = T.grad(cost, params)
+    amsgrad_op = AMSGrad(alpha, beta1, beta2, epsilon, decay)
+    return amsgrad_op.get_updates(params, grads)
+
+
+def sgdmomentum(cost, params, lr, mom=.95, nesterov=False):
+    grads = T.grad(cost, params)
+    sgdmom_op = SGDMomentum(lr, mom, nesterov)
+    return sgdmom_op.get_updates(params, grads)
+
+
+def rmsprop(cost, params, eta=1e-3, gamma=.9, epsilon=1e-6):
+    grads = T.grad(cost, params)
+    rmsprop_op = RMSprop(eta, gamma, epsilon)
+    return rmsprop_op.get_updates(params, grads)
+
+
+def adagrad(cost, params, eta, epsilon=1e-6):
+    grads = T.grad(cost, params)
+    adagrad_op = AdaGrad(eta, epsilon)
+    return adagrad_op.get_updates(params, grads)
+
+
+def nadam(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x):
+    grads = T.grad(cost, params)
+    nadam_op = NAdam(alpha, beta1, beta2, epsilon, decay)
+    return nadam_op.get_updates(params, grads)
+
+
+def adamax(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8):
+    grads = T.grad(cost, params)
+    adamax_op = AdaMax(alpha, beta1, beta2, epsilon)
+    return adamax_op.get_updates(params, grads)
+
