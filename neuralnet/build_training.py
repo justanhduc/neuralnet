@@ -7,7 +7,6 @@ from neuralnet import ConfigParser
 class Training(ConfigParser):
     def __init__(self, config_file, **kwargs):
         super(Training, self).__init__(config_file, **kwargs)
-
         self.n_epochs = self.config['training']['n_epochs']
         self.continue_training = self.config['training']['continue']
         self.batch_size = self.config['training']['batch_size']

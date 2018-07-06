@@ -11,7 +11,9 @@ from theano import tensor as T
 import numpy as np
 from collections import OrderedDict
 import abc
+import sys
 
+sys.setrecursionlimit(10000)
 __all__ = ['sgd', 'sgdmomentum', 'adadelta', 'adagrad', 'adam', 'adamax', 'nadam', 'rmsprop', 'amsgrad']
 
 

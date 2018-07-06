@@ -49,9 +49,9 @@ def reshape_cifar(cifar_numpy_array, new_size=(32, 32)):
     from scipy import misc
     data = []
     for i in tqdm.tqdm(range(cifar_numpy_array.shape[0]), unit='images'):
-        r = misc.imresize(np.reshape(cifar_numpy_array[i, :1024], (32, 32)), new_size)
-        g = misc.imresize(np.reshape(cifar_numpy_array[i, 1024: 2048], (32, 32)), new_size)
-        b = misc.imresize(np.reshape(cifar_numpy_array[i, 2048:], (32, 32)), new_size)
+        r = misc.imresize(np.reshape(cifar_numpy_array[i, 0], (32, 32)), new_size)
+        g = misc.imresize(np.reshape(cifar_numpy_array[i, 1], (32, 32)), new_size)
+        b = misc.imresize(np.reshape(cifar_numpy_array[i, 2], (32, 32)), new_size)
         data.append(np.dstack((r, g, b)))
     return np.transpose(np.array(data, dtype='float32'), (0, 3, 1, 2))
 
@@ -100,7 +100,7 @@ def load_dataset(path, normalize=False, new_shape=None):
     X_train = X_train.reshape(-1, 3, 32, 32)
     X_test = X_test.reshape(-1, 3, 32, 32)
 
-    if new_shape is not None:
+    if new_shape:
         X_train = reshape_cifar(X_train)
         X_test = reshape_cifar(X_test)
 

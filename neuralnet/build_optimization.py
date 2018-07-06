@@ -15,7 +15,6 @@ import numpy as np
 class Optimization(utils.ConfigParser):
     def __init__(self, config_file, **kwargs):
         super(Optimization, self).__init__(config_file, **kwargs)
-
         self.cost_function = self.config['optimization']['cost_function']
         self.class_weights = self.config['optimization']['class_weights']
         self.method = self.config['optimization']['method']
@@ -50,6 +49,9 @@ class Optimization(utils.ConfigParser):
         return cost
 
     def build_updates(self, cost, trainable, **kwargs):
+        if not trainable:
+            raise ValueError('No trainable parameters are given.')
+
         try:
             method = kwargs.get('method', self.method)
             learning_rate = kwargs.get('learning_rate', self.learning_rate)

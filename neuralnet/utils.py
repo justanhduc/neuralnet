@@ -9,6 +9,7 @@ from theano import tensor as T
 from scipy import misc
 from functools import reduce
 
+__all__ = ['ConfigParser', 'DataManager']
 thread_lock = threading.Lock()
 
 
@@ -26,11 +27,14 @@ class Thread(threading.Thread):
         thread_lock.release()
 
 
-class ConfigParser(object):
-    def __init__(self, config_file, **kwargs):
-        super(ConfigParser, self).__init__()
+class ConfigParser:
+    def __init__(self, config_file=None, **kwargs):
+        super(ConfigParser, self).__init__(**kwargs)
         self.config_file = config_file
-        self.config = self.load_configuration()
+        if config_file:
+            self.config = self.load_configuration()
+        else:
+            self.config = None
 
     def load_configuration(self):
         try:
@@ -46,40 +50,45 @@ class DataManager(ConfigParser):
     '''Manage dataset
     '''
 
-    def __init__(self, config_file, placeholders):
+    def __init__(self, config_file, placeholders, **kwargs):
         '''
 
         :param dataset: (features, targets) or features. Features and targets must be numpy arrays
         '''
+        assert config_file or kwargs, 'Either config_file or keyword arguments must be provided.'
+
         super(DataManager, self).__init__(config_file)
-        self.path = self.config['data']['path']
-        self.training_set = None
-        self.testing_set = None
-        self.num_train_data = None
-        self.num_test_data = None
-        self.batch_size = self.config['training']['batch_size']
-        self.test_batch_size = self.config['training']['validation_batch_size']
+        self.path = kwargs.get('path') if kwargs.get('path') else self.config['data']['path']
+        self.batch_size = kwargs.get('batch_size') if kwargs.get('batch_size') else self.config['training'][
+            'batch_size']
+        self.shuffle = kwargs.get('shuffle') if kwargs.get('shuffle') else self.config['data'][
+            'shuffle'] if config_file else False
+        self.augmentation = kwargs.get('augmentation') if kwargs.get('augmentation') else self.config['data'][
+            'augmentation'] if config_file else False
+        self.num_cached = kwargs.get('num_cached') if kwargs.get('num_cached') else self.config['data'][
+            'num_cached'] if config_file else 10
+        self.dataset = None
+        self.data_size = None
         self.placeholders = placeholders
-        self.shuffle = self.config['data']['shuffle']
-        self.no_target = self.config['data']['no_target']
-        self.augmentation = self.config['data']['augmentation']
-        self.num_cached = self.config['data']['num_cached']
 
     def load_data(self):
         raise NotImplementedError
 
-    def get_batches(self, epoch=None, num_epochs=None, training=True, show_progress=True, *args):
-        batches = self.generator(training)
-        if training and self.augmentation:
-            batches = self.augment_minibatches(batches, *args)
+    def augment_minibatches(self, minibatches, *args, **kwargs):
+        raise NotImplementedError
+
+    def get_batches(self, epoch=None, num_epochs=None, show_progress=False, *args, **kwargs):
+        batches = self.generator()
+        if self.augmentation:
+            batches = self.augment_minibatches(batches, *args, **kwargs)
         batches = self.generate_in_background(batches)
-        if epoch is not None and num_epochs is not None:
-            shape = self.num_train_data if training else self.num_test_data
-            batch_size = self.batch_size if training else self.test_batch_size
-            num_batches = shape // batch_size
+        if epoch and num_epochs:
+            num_batches = self.data_size // self.batch_size
             if show_progress:
-                batches = self._progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=num_batches)
-        return batches
+                batches = _progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=num_batches)
+        for b in batches:
+            self.update_input(b)
+            yield
 
     def generate_in_background(self, generator):
         """
@@ -105,78 +114,71 @@ class DataManager(ConfigParser):
             yield item
             item = queue.get()
 
-    @staticmethod
-    def _progress(items, desc='', total=None, min_delay=0.1):
-        """
-        Returns a generator over `items`, printing the number and percentage of
-        items processed and the estimated remaining processing time before yielding
-        the next item. `total` gives the total number of items (required if `items`
-        has no length), and `min_delay` gives the minimum time in seconds between
-        subsequent prints. `desc` gives an optional prefix text (end with a space).
-        """
-        total = total or len(items)
-        t_start = time.time()
-        t_last = 0
-        for n, item in enumerate(items):
-            t_now = time.time()
-            if t_now - t_last > min_delay:
-                print("\r%s%d/%d (%6.2f%%)" % (
-                        desc, n+1, total, n / float(total) * 100), end=" ")
-                if n > 0:
-                    t_done = t_now - t_start
-                    t_total = t_done / n * total
-                    print("(ETA: %d:%02d)" % divmod(t_total - t_done, 60), end=" ")
-                sys.stdout.flush()
-                t_last = t_now
-            yield item
-        t_total = time.time() - t_start
-        print("\r%s%d/%d (100.00%%) (took %d:%02d)" % ((desc, total, total) + divmod(t_total, 60)))
-
-    def augment_minibatches(self, minibatches, *args):
-        raise NotImplementedError
-
-    def update_input(self, data, *args):
-        no_target = args[0] if args else self.no_target
-        if isinstance(self.placeholders, (list, tuple)):
+    def update_input(self, data):
+        if isinstance(self.placeholders, (list, tuple)) and isinstance(data, (list, tuple)):
             assert len(self.placeholders) == len(data), 'Data has length %d but placeholders has length %d.' % \
                                                         (len(data), len(self.placeholders))
             for d, p in zip(data, self.placeholders):
                 p.set_value(d, borrow=True)
-        elif isinstance(self.placeholders, theano.gpuarray.type.GpuArraySharedVariable):
+        elif isinstance(self.placeholders, theano.gpuarray.type.GpuArraySharedVariable) and isinstance(data, np.ndarray):
             x = data
             shape_x = self.placeholders.get_value().shape
-            # if x.shape != shape_x:
-            #     raise ValueError('Input of the shared variable must have the same shape with the shared variable')
+            if x.shape != shape_x:
+                raise ValueError('Input of the shared variable must have the same shape with the shared variable')
             self.placeholders.set_value(x, borrow=True)
         else:
-            raise TypeError('Expected theano shared or list/tuple type, got {}'.format(type(self.placeholders)))
+            raise TypeError(
+                'placeholders should be a theano shared or list/tuple type and data should be a list, tuple or numpy ndarray, got {} and {}'.format(
+                    type(self.placeholders), type(data)))
 
-    def generator(self, training=True):
-        dataset = self.training_set if training else self.testing_set
-        shape = self.num_train_data if training else self.num_test_data
-        shuffle = self.shuffle if training else False
-        num_batches = shape // self.batch_size
-        if not self.no_target:
-            x, y = dataset
-            y = np.asarray(y)
-        else:
-            x = dataset
-
-        if shuffle:
-            index = np.arange(0, np.asarray(x).shape[0])
+    def generator(self):
+        num_batches = self.data_size // self.batch_size
+        dataset = self.dataset
+        if self.shuffle:
+            index = np.arange(0, self.data_size)
             np.random.shuffle(index)
-            x = x[index]
-            if not self.no_target:
-                y = y[index]
+            if isinstance(self.dataset, (list, tuple)):
+                dataset = tuple([x[index] for x in self.dataset])
+            elif isinstance(self.dataset, np.ndarray):
+                dataset = self.dataset[index]
+            else:
+                raise TypeError('dataset should be a list, tuple or numpy ndarray, got %s.' % type(self.dataset))
         for i in range(num_batches):
-            yield (x[i * self.batch_size:(i + 1) * self.batch_size], y[i * self.batch_size:(i + 1) * self.batch_size]) \
-                if not self.no_target else x[i * self.batch_size:(i + 1) * self.batch_size]
+            yield [data[i * self.batch_size:(i + 1) * self.batch_size] for data in dataset] if isinstance(self.dataset, (list, tuple)) else dataset[i * self.batch_size:(i + 1) * self.batch_size]
 
-    def shared_dataset(self, data_xy):
-        data_x, data_y = data_xy
-        shared_x = theano.shared(np.asarray(data_x, dtype=theano.config.floatX))
-        shared_y = theano.shared(np.asarray(data_y, dtype=theano.config.floatX))
-        return shared_x, T.cast(shared_y, 'int32')
+
+def _progress(items, desc='', total=None, min_delay=0.1):
+    """
+    Returns a generator over `items`, printing the number and percentage of
+    items processed and the estimated remaining processing time before yielding
+    the next item. `total` gives the total number of items (required if `items`
+    has no length), and `min_delay` gives the minimum time in seconds between
+    subsequent prints. `desc` gives an optional prefix text (end with a space).
+    """
+    total = total or len(list(items))
+    t_start = time.time()
+    t_last = 0
+    for n, item in enumerate(items):
+        t_now = time.time()
+        if t_now - t_last > min_delay:
+            print("\r%s%d/%d (%6.2f%%)" % (
+                    desc, n+1, total, n / float(total) * 100), end=" ")
+            if n > 0:
+                t_done = t_now - t_start
+                t_total = t_done / n * total
+                print("(ETA: %d:%02d)" % divmod(t_total - t_done, 60), end=" ")
+            sys.stdout.flush()
+            t_last = t_now
+        yield item
+    t_total = time.time() - t_start
+    print("\r%s%d/%d (100.00%%) (took %d:%02d)" % ((desc, total, total) + divmod(t_total, 60)))
+
+
+def shared_dataset(self, data_xy):
+    data_x, data_y = data_xy
+    shared_x = theano.shared(np.asarray(data_x, dtype=theano.config.floatX))
+    shared_y = theano.shared(np.asarray(data_y, dtype=theano.config.floatX))
+    return shared_x, T.cast(shared_y, 'int32')
 
 
 def crop_center(image, resize=256, crop=(224, 224)):
@@ -193,6 +195,33 @@ def crop_center(image, resize=256, crop=(224, 224)):
     w0 = int((orig_shape[1] - crop[1]) * 0.5)
     image = image[h0:h0 + crop[0], w0:w0 + crop[1]]
     return image.astype('uint8')
+
+
+def prep_image(fname, mean_bgr, color='bgr', resize=256):
+    im = misc.imread(fname)
+
+    # Resize
+    h, w, _ = im.shape
+    if h < w:
+        new_sh = (resize, int(w * resize / h))
+    else:
+        new_sh = (int(h * resize / w), resize)
+    im = misc.imresize(im, new_sh, interp='bicubic')
+
+    # Crop center 224, 224
+    h, w = new_sh
+    im = im[h // 2 - 112:h // 2 + 112, w // 2 - 112:w // 2 + 112]
+
+    rawim = np.copy(im).astype('uint8')
+
+    im = im.astype('float32')
+    if color == 'bgr':
+        im = im[:, :, ::-1] - mean_bgr
+    elif color == 'rgb':
+        im = im - mean_bgr[:, :, ::-1]
+    else:
+        raise NotImplementedError
+    return rawim, np.transpose(im[None], (0, 3, 1, 2))
 
 
 def load_weights(weight_file, model):
@@ -212,7 +241,7 @@ def load_weights(weight_file, model):
                 print('No compatible parameters for layer %d %s found. '
                       'Random initialization is used' % (i, keys[j]))
         except:
-            W_converted = fully_connected_to_convolution(weights[keys[j]], layer.filter_shape) \
+            W_converted = convert_dense_weights_data_format(weights[keys[j]], layer.filter_shape) \
                 if hasattr(layer, 'filter_shape') else None
 
             if W_converted is not None:
@@ -240,16 +269,22 @@ def load_weights(weight_file, model):
     print('Loaded successfully!')
 
 
-def fully_connected_to_convolution(weight, prev_layer_shape):
-    weight = np.asarray(weight, 'float32')
-    shape = weight.shape
-    filter_size_square = shape[0] / prev_layer_shape[1]
-    filter_size = np.sqrt(filter_size_square)
-    if filter_size == int(filter_size):
-        filter_size = int(filter_size)
-        return np.reshape(weight, [-1, prev_layer_shape[1], filter_size, filter_size])
-    else:
-        return None
+def convert_dense_weights_data_format(weights, previous_feature_map_shape, target_data_format='channels_first'):
+    assert target_data_format in {'channels_last', 'channels_first'}
+    kernel = np.array(weights, 'float32')
+    for i in range(kernel.shape[1]):
+        if target_data_format == 'channels_first':
+            c, h, w = previous_feature_map_shape
+            original_fm_shape = (h, w, c)
+            ki = kernel[:, i].reshape(original_fm_shape)
+            ki = np.transpose(ki, (2, 0, 1))  # last -> first
+        else:
+            h, w, c = previous_feature_map_shape
+            original_fm_shape = (c, h, w)
+            ki = kernel[:, i].reshape(original_fm_shape)
+            ki = np.transpose(ki, (1, 2, 0))  # first -> last
+        kernel[:, i] = np.reshape(ki, (np.prod(previous_feature_map_shape),))
+    return kernel
 
 
 def maxout(input, **kwargs):
@@ -541,6 +576,169 @@ def point_op(image, lut, origin, increment, *args):
     return T.reshape(res, (h, w)).astype('float32')
 
 
+def get_kernel(factor, kernel_type, phase, kernel_width, support=None, sigma=None):
+    assert kernel_type in ['lanczos', 'gauss', 'box']
+
+    # factor  = float(factor)
+    if phase == 0.5 and kernel_type != 'box':
+        kernel = np.zeros([kernel_width - 1, kernel_width - 1])
+    else:
+        kernel = np.zeros([kernel_width, kernel_width])
+
+    if kernel_type == 'box':
+        assert phase == 0.5, 'Box filter is always half-phased'
+        kernel[:] = 1. / (kernel_width * kernel_width)
+
+    elif kernel_type == 'gauss':
+        assert sigma, 'sigma is not specified'
+        assert phase != 0.5, 'phase 1/2 for gauss not implemented'
+
+        center = (kernel_width + 1.) / 2.
+        sigma_sq = sigma * sigma
+
+        for i in range(1, kernel.shape[0] + 1):
+            for j in range(1, kernel.shape[1] + 1):
+                di = (i - center) / 2.
+                dj = (j - center) / 2.
+                kernel[i - 1][j - 1] = np.exp(-(di * di + dj * dj) / (2 * sigma_sq))
+                kernel[i - 1][j - 1] = kernel[i - 1][j - 1] / (2. * np.pi * sigma_sq)
+    elif kernel_type == 'lanczos':
+        assert support, 'support is not specified'
+        center = (kernel_width + 1) / 2.
+
+        for i in range(1, kernel.shape[0] + 1):
+            for j in range(1, kernel.shape[1] + 1):
+
+                if phase == 0.5:
+                    di = abs(i + 0.5 - center) / factor
+                    dj = abs(j + 0.5 - center) / factor
+                else:
+                    di = abs(i - center) / factor
+                    dj = abs(j - center) / factor
+
+                pi_sq = np.pi * np.pi
+
+                val = 1
+                if di != 0:
+                    val = val * support * np.sin(np.pi * di) * np.sin(np.pi * di / support)
+                    val = val / (pi_sq * di * di)
+
+                if dj != 0:
+                    val = val * support * np.sin(np.pi * dj) * np.sin(np.pi * dj / support)
+                    val = val / (pi_sq * dj * dj)
+
+                kernel[i - 1][j - 1] = val
+    else:
+        assert False, 'Wrong method name.'
+
+    kernel /= kernel.sum()
+    return floatX(kernel)
+
+
+def replication_pad2d(input, padding):
+    """
+    Mimicking torch.nn.ReplicationPad2d(padding)
+
+    :param padding: (int, tuple) – the size of the padding. If is int, uses the same padding in all boundaries.
+    If a 4-tuple, uses (paddingLeft, paddingRight, paddingTop, paddingBottom)
+    :return:
+    """
+
+    if not isinstance(padding, (int, list, tuple)):
+        raise TypeError('padding must be an int, a list or a tuple. Got %s.' % type(padding))
+
+    if isinstance(padding, int):
+        padding = (padding, ) * 4
+
+    output = input
+    for axis, i in enumerate(padding):
+        for j in range(i):
+            if axis == 0:
+                output = T.concatenate((output[:, :, :, 0:1], output), 3)
+            elif axis == 1:
+                output = T.concatenate((output, output[:, :, :, -1:]), 3)
+            elif axis == 2:
+                output = T.concatenate((output[:, :, 0:1], output), 2)
+            elif axis == 3:
+                output = T.concatenate((output, output[:, :, -1:]), 2)
+            else:
+                raise ValueError('padding must have 4 elements. Received %d.' % len(padding))
+
+    return output
+
+
+def unpool(input, shape):
+    assert input.ndim == 4, 'input must be a 4D tensor.'
+    assert isinstance(shape, (list, tuple, int)), 'shape must be a list, tuple, or int, got %s' % type(shape)
+
+    shape = tuple(shape) if isinstance(shape, (list, tuple)) else (shape, shape)
+    output = T.repeat(input, shape[0], 2)
+    output = T.repeat(output, shape[1], 3)
+    return output
+
+
+def batch_set_value(tuples):
+    for x, value in tuples:
+        if x.get_value().shape != value.shape:
+            raise ValueError('Dimension mismatch for %s.' % x.name)
+        x.set_value(np.asarray(value, dtype=x.dtype))
+
+
+def make_tensor_kernel_from_numpy(kern_shape, numpy_kernel, type='each'):
+    if type not in ('each', 'all'):
+        raise ValueError('type must be \'each\' or \'all\'.')
+    if not isinstance(kern_shape, (list, tuple)):
+        raise ValueError('kern_shape must be a list or tuple.')
+    if len(kern_shape) != 2:
+        raise ValueError('kern_shape must be a tuple of (out, in) shape.')
+    if numpy_kernel.ndim != 2:
+        raise ValueError('numpy_kernel must be a 2D filter.')
+
+    if type == 'each':
+        if kern_shape[0] != kern_shape[1]:
+            raise ValueError('kern_shape values must be the same for \'each\'.')
+        kern = T.zeros(tuple(kern_shape) + numpy_kernel.shape, 'float32')
+        for ii in range(kern_shape[0]):
+            kern = T.set_subtensor(kern[ii, ii], numpy_kernel)
+    else:
+        kern = T.tile(numpy_kernel, tuple(kern_shape)+(1, 1), 4)
+    return kern
+
+
+def gaussian2(size, sigma):
+    """Returns a normalized circularly symmetric 2D gauss kernel array
+
+    f(x,y) = A.e^{-(x^2/2*sigma^2 + y^2/2*sigma^2)} where
+
+    A = 1/(2*pi*sigma^2)
+
+    as define by Wolfram Mathworld
+    http://mathworld.wolfram.com/GaussianFunction.html
+    """
+    A = 1. / (2. * np.pi * sigma ** 2)
+    x, y = np.mgrid[-size // 2 + 1:size // 2 + 1, -size // 2 + 1:size // 2 + 1]
+    g = A * np.exp(-((x ** 2 / (2. * sigma ** 2)) + (y ** 2 / (2. * sigma ** 2))))
+    return np.float32(g)
+
+
+def fspecial_gauss(size, sigma):
+    """Function to mimic the 'fspecial' gaussian MATLAB function
+    """
+    x, y = T.mgrid[-size // 2 + 1:size // 2 + 1, -size // 2 + 1:size // 2 + 1]
+    g = T.exp(-((T.cast(x, 'float32') ** 2 + T.cast(y, 'float32') ** 2) / (2.0 * sigma ** 2)))
+    return g / T.sum(g)
+
+
+def difference_of_gaussian(x, depth, size=21, sigma1=1, sigma2=1.6):
+    kern1 = gaussian2(size, sigma1)
+    kern2 = gaussian2(size, sigma2)
+    kern1 = make_tensor_kernel_from_numpy((depth, depth), kern1)
+    kern2 = make_tensor_kernel_from_numpy((depth, depth), kern2)
+    x1 = T.nnet.conv2d(x, kern1, border_mode='half')
+    x2 = T.nnet.conv2d(x, kern2, border_mode='half')
+    return x2 - x1
+
+
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
             'tanh': lambda x, **kwargs: T.tanh(x), 'lrelu': lrelu, 'softmax': lambda x, **kwargs: T.nnet.softmax(x),
             'linear': lambda x, **kwargs: x, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,
@@ -549,4 +747,7 @@ function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **k
 
 
 if __name__ == '__main__':
-    pass
+    x = T.tensor4()
+    y = unpool(x, (2, 2))
+    f = theano.function([x], y)
+    print(f(np.random.rand(2, 64, 120, 160).astype('float32')).shape)

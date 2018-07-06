@@ -17,14 +17,23 @@ from neuralnet import utils, model
 
 
 class Monitor(utils.ConfigParser):
-    def __init__(self, config_file):
+    def __init__(self, config_file=None, model_name='my_model', root='results'):
         super(Monitor, self).__init__(config_file)
         self.__num_since_beginning = collections.defaultdict(lambda: {})
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [0]
-        self.name = self.config['model']['name']
-        self.root = 'results' if self.config['result']['root'] is None else self.config['result']['root']
+
+        if self.config:
+            self.name = self.config['model']['name']
+            if self.config['result']['root']:
+                self.root = self.config['result']['root']
+            else:
+                self.root = root
+        else:
+            self.root = root
+            self.name = model_name
+
         self.path = self.root + '/' + self.name
         if not os.path.exists(self.root):
             os.mkdir(self.root)
@@ -38,7 +47,8 @@ class Monitor(utils.ConfigParser):
             self.current_folder = self.path + '/run%d' % (len(subfolders) + 1 + idx)
             idx += 1
         os.mkdir(self.current_folder)
-        copyfile(config_file, '%s/network_config.config' % self.current_folder)
+        if config_file:
+            copyfile(config_file, '%s/network_config.config' % self.current_folder)
         print('Result folder: %s' % self.current_folder)
 
     def dump_model(self, network):

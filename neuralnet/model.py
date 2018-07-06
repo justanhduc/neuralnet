@@ -9,7 +9,9 @@ from neuralnet import Optimization
 class Model(Optimization, Training, metaclass=abc.ABCMeta):
     def __init__(self, config_file, **kwargs):
         super(Model, self).__init__(config_file, **kwargs)
-        self.model = layers.Sequential()
+        self.input_shape = (None, self.config['model']['input_shape'][2]) + tuple(
+            self.config['model']['input_shape'][:2])
+        self.model = layers.Sequential(input_shape=self.input_shape, layer_name=self.config['model']['name'])
         self.params = []
         self.trainable = []
         self.regularizable = []
@@ -41,19 +43,22 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def inference(self, input, *args, **kwargs):
-        return
+        pass
+
+    def get_cost(self, input, gt, **kwargs):
+        raise NotImplementedError
+
+    def learn(self, input, gt, **kwargs):
+        raise NotImplementedError
 
     def get_all_params(self):
-        for layer in self.model:
-            self.params += layer.params
+        self.params = list(self.model.params)
 
     def get_trainable(self):
-        for layer in self.model:
-            self.trainable += layer.trainable
+        self.trainable = list(self.model.trainable)
 
     def get_regularizable(self):
-        for layer in self.model:
-            self.regularizable += layer.regularizable
+        self.regularizable = list(self.model.regularizable)
 
     def save_params(self):
         numpy.savez(self.param_file, **{p.name: p.get_value() for p in self.params})
@@ -74,9 +79,8 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
         if hasattr(self, 'opt'):
             self.opt.reset()
 
-    def show(self):
-        for layer in self.model:
-            print(layer)
+    def __repr__(self):
+        return self.model.descriptions
 
     @staticmethod
     def set_training_status(training):

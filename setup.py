@@ -5,7 +5,7 @@ import os
 AUTHOR = 'DUC NGUYEN'
 MAJOR = 0
 MINOR = 0
-MICRO = '4b'
+MICRO = '5a'
 VERSION = '%d.%d.%s' % (MAJOR, MINOR, MICRO)
 
 

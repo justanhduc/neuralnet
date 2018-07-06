@@ -4,10 +4,13 @@ import theano
 from theano import tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
+from neuralnet.model_zoo import VGG16
+from neuralnet import utils
+
 __all__ = ['manhattan_distance', 'mean_classification_error', 'mean_squared_error', 'msssim',
            'multinoulli_cross_entropy', 'root_mean_squared_error', 'psnr', 'psnr255', 'pearson_correlation',
            'ssim', 'spearman', 'first_derivative_error', 'huberloss', 'binary_cross_entropy',
-           'gradient_difference', 'total_variation', 'kld']
+           'gradient_difference', 'total_variation', 'kld', 'pulling_away', 'vgg16_loss']
 
 
 def manhattan_distance(y_pred, y):
@@ -51,15 +54,15 @@ def huberloss(x, y, thres=1.):
     return T.mean(mask * larger_than_equal_to + (1. - mask) * less_than)
 
 
-def first_derivative_error(x, y, p=2):
+def first_derivative_error(x, y, p=2, depth=3):
     print('Using First derivative loss '),
     if x.ndim != 4 and y.ndim != 4:
         raise TypeError('y and y_pred should have four dimensions')
     kern_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype='float32')
-    kern_x = T.tile(kern_x, (y.shape[1], y.shape[1], 1, 1))
+    kern_x = utils.make_tensor_kernel_from_numpy((depth, depth), kern_x)
 
     kern_y = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
-    kern_y = T.tile(kern_y, (y.shape[1], y.shape[1], 1, 1))
+    kern_y = utils.make_tensor_kernel_from_numpy((depth, depth), kern_y)
 
     x_grad_x = T.nnet.conv2d(x, kern_x, border_mode='half')
     x_grad_y = T.nnet.conv2d(x, kern_y, border_mode='half')
@@ -91,6 +94,24 @@ def total_variation(x, type='aniso'):
         del_v = T.sqr(x[:, :, 1:, :] - x[:, :, :-1, :])
         del_h = T.sqr(x[:, :, :, 1:] - x[:, :, :, :-1])
         return T.sum(T.sqrt(del_v + del_h))
+
+
+def pulling_away(x, y=None):
+    if not y:
+        if x.ndim != 2:
+            raise TypeError('x must be a 2D matrix, got a %dD tensor.' % x.ndim)
+        eye = T.eye(x.shape[0], dtype='float32')
+        x_hat = x / T.sqrt(T.sum(T.sqr(x), 1, keepdims=True))
+        corr = T.dot(x_hat, x_hat.T) ** 2.
+        f = 1. / T.cast(4 * x.shape[0] * (x.shape[0]-1), 'float32') * T.sum(corr * (1. - eye))
+        return f
+    else:
+        if x.ndim != 1:
+            raise TypeError('Inputs must be 2 1D vectors.')
+        x_hat = x / T.sqrt(T.sum(T.sqr(x)))
+        y_hat = y / T.sqrt(T.sum(T.sqr(y)))
+        corr = T.dot(x_hat, y_hat) ** 2.
+        return corr / 2.
 
 
 def kld(y, y_pred):
@@ -146,28 +167,21 @@ def mean_classification_error(p_y_given_x, y, binary_threshold=0.5):
         raise NotImplementedError
 
 
-def gaussian2(size, sigma):
-    """Returns a normalized circularly symmetric 2D gauss kernel array
-
-    f(x,y) = A.e^{-(x^2/2*sigma^2 + y^2/2*sigma^2)} where
-
-    A = 1/(2*pi*sigma^2)
-
-    as define by Wolfram Mathworld
-    http://mathworld.wolfram.com/GaussianFunction.html
-    """
-    A = 1. / (2.0 * np.pi * sigma ** 2)
-    x, y = np.mgrid[-size // 2 + 1:size // 2 + 1, -size // 2 + 1:size // 2 + 1]
-    g = A * np.exp(-((x ** 2 / (2.0 * sigma ** 2)) + (y ** 2 / (2.0 * sigma ** 2))))
-    return np.float32(g)
+def vgg16_loss(x, y, weight_file, p=2):
+    if x.ndim != 4 and y.ndim != 4:
+        raise TypeError('x and y should be image tensors.')
+    print('Using VGG16 loss')
+    net = VGG16((None, 3, 224, 224), False)
+    net.load_weights(weight_file)
+    out_x = net(x)
+    out_y = net(y)
+    return norm_error(out_x, out_y, p)
 
 
-def _fspecial_gauss(size, sigma):
-    """Function to mimic the 'fspecial' gaussian MATLAB function
-    """
-    x, y = T.mgrid[-size // 2 + 1:size // 2 + 1, -size // 2 + 1:size // 2 + 1]
-    g = T.exp(-((T.cast(x, 'float32') ** 2 + T.cast(y, 'float32') ** 2) / (2.0 * sigma ** 2)))
-    return g / T.sum(g)
+def dog_loss(x, y, depth, size=21, sigma1=1, sigma2=1.6, p=2):
+    x = utils.difference_of_gaussian(x, depth, size, sigma1, sigma2)
+    y = utils.difference_of_gaussian(y, depth, size, sigma1, sigma2)
+    return norm_error(x, y, p)
 
 
 def ssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03, cs_map=False):
@@ -208,7 +222,7 @@ def ssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0
     sigma = (T.cast(size, 'float32') * filter_sigma / filter_size) if filter_size else T.as_tensor_variable(np.float32(1))
 
     if filter_size:
-        window = T.cast(T.reshape(_fspecial_gauss(size, sigma), (1, 1, size, size)), theano.config.floatX)
+        window = T.cast(T.reshape(utils.fspecial_gauss(size, sigma), (1, 1, size, size)), theano.config.floatX)
         mu1 = T.nnet.conv2d(img1, window, border_mode='valid')
         mu2 = T.nnet.conv2d(img2, window, border_mode='valid')
         sigma11 = T.nnet.conv2d(img1 * img1, window, border_mode='valid')
@@ -298,3 +312,19 @@ def psnr255(x, y):
     x = T.round(x)
     y = T.round(y)
     return 20. * T.log(255.) / T.log(10.) - 10. * T.log(T.mean(T.square(y - x))) / T.log(10.)
+
+
+if __name__ == '__main__':
+    X = T.tensor4()
+    Y = utils.difference_of_gaussian(X, 3, 21)
+    f = theano.function([X], Y)
+
+    from scipy import misc
+    from matplotlib import pyplot as plt
+    im = misc.imread('E:/DB/Videos/DAVIS/JPEGImages/480p/bear/00000.jpg').astype('float32') / 255.
+    im = np.transpose(im[None], (0, 3, 1, 2))
+    res = f(im)
+    res = np.transpose(res[0], (1, 2, 0))
+    res = (res - np.min(res)) / (np.max(res) - np.min(res))
+    plt.imshow(res)
+    plt.show()
