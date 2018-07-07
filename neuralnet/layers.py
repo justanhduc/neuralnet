@@ -24,7 +24,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'RecursiveResNetBlock', 'ResizingLayer', 'ResNetBlock', 'ResNetBottleneckBlock', 'GRUCell',
            'IdentityLayer', 'DropoutLayer', 'PoolingLayer', 'InceptionModule1', 'InceptionModule2',
            'InceptionModule3', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'NetworkInNetworkBlock',
-           'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer']
+           'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer']
 
 
 def validate(func):
