@@ -1999,7 +1999,7 @@ class TransposingLayer(Layer):
     @property
     @validate
     def output_shape(self):
-        return tuple(np.transpose(self.input_shape, self.transpose))
+        return tuple([self.input_shape[i] for i in self.transpose])
 
 
 class ScalingLayer(Layer):
