@@ -1987,6 +1987,21 @@ class SumLayer(Layer):
         return tuple(self.input_shape[0])
 
 
+class TransposingLayer(Layer):
+    def __init__(self, input_shape, transpose, layer_name='TransposeLayer'):
+        super(TransposingLayer, self).__init__(input_shape, layer_name)
+        self.transpose = transpose
+        self.descriptions = '{} Transposing layer: {} -> {}'.format(layer_name, [i for i in range(len(input_shape))], transpose)
+
+    def get_output(self, input):
+        return T.transpose(input, self.transpose)
+
+    @property
+    @validate
+    def output_shape(self):
+        return tuple(np.transpose(self.input_shape, self.transpose))
+
+
 class ScalingLayer(Layer):
     """
     Adapted from Lasagne
