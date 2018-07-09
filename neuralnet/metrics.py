@@ -179,6 +179,7 @@ def vgg16_loss(x, y, weight_file, p=2):
 
 
 def dog_loss(x, y, size=21, sigma1=1, sigma2=1.6, p=2, **kwargs):
+    print('Using Difference of Gaussians loss')
     depth = kwargs.get('depth', 3)
     x = utils.difference_of_gaussian(x, depth, size, sigma1, sigma2)
     y = utils.difference_of_gaussian(y, depth, size, sigma1, sigma2)
@@ -186,6 +187,7 @@ def dog_loss(x, y, size=21, sigma1=1, sigma2=1.6, p=2, **kwargs):
 
 
 def log_loss(x, y, size=9, sigma=1., p=2, **kwargs):
+    print('Using Laplacian of Gaussian loss')
     depth = kwargs.get('depth', 3)
     kern = utils.laplacian_of_gaussian_kernel(size, sigma)
     kern = utils.make_tensor_kernel_from_numpy((depth, depth), kern)
