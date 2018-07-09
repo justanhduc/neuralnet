@@ -69,16 +69,22 @@ class Monitor(utils.ConfigParser):
         prints = []
 
         for name, vals in list(self.__num_since_last_flush.items()):
-            prints.append("{}\t{}".format(name, np.mean(list(vals.values()))))
+            prints.append("{}\t{}".format(name, np.mean(np.array(list(vals.values())), 0)))
             self.__num_since_beginning[name].update(vals)
 
             x_vals = np.sort(list(self.__num_since_beginning[name].keys()))
-            y_vals = [self.__num_since_beginning[name][x] for x in x_vals]
-
             plt.clf()
-            plt.plot(x_vals, y_vals)
             plt.xlabel('iteration')
             plt.ylabel(name)
+            if isinstance(vals, (list, tuple)):
+                y_vals = [[self.__num_since_beginning[name][x][i] for x in x_vals] for i in range(len(vals))]
+                plt.hold()
+                for ys in y_vals:
+                    plt.plot(x_vals, ys)
+                plt.hold()
+            else:
+                y_vals = [self.__num_since_beginning[name][x] for x in x_vals]
+                plt.plot(x_vals, y_vals)
             plt.savefig(self.current_folder + '/' + name.replace(' ', '_')+'.jpg')
         self.__num_since_last_flush.clear()
 
@@ -107,3 +113,12 @@ class Monitor(utils.ConfigParser):
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [0]
+
+
+if __name__ == '__main__':
+    mon = Monitor(None)
+    for i in range(10):
+        mon.plot('train-valid', (i+1, i))
+        mon.plot('x2', i*2)
+        mon.tick()
+        mon.flush()

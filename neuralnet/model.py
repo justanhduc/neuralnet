@@ -1,6 +1,7 @@
 import numpy
 import abc
 
+import neuralnet as nn
 from neuralnet import layers
 from neuralnet import Training
 from neuralnet import Optimization
@@ -84,4 +85,4 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
 
     @staticmethod
     def set_training_status(training):
-        layers.set_training_status(training)
+        nn.set_training_status(training)

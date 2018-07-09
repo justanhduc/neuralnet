@@ -3,7 +3,6 @@ Written and collected by Duc Nguyen
 """
 __author__ = 'Duc Nguyen'
 
-import math
 import time
 import abc
 import theano
@@ -24,7 +23,8 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'RecursiveResNetBlock', 'ResizingLayer', 'ResNetBlock', 'ResNetBottleneckBlock', 'GRUCell',
            'IdentityLayer', 'DropoutLayer', 'PoolingLayer', 'InceptionModule1', 'InceptionModule2',
            'InceptionModule3', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'NetworkInNetworkBlock',
-           'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer']
+           'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer',
+           'set_training_status']
 
 
 def validate(func):
@@ -36,6 +36,8 @@ def validate(func):
 
 
 class Layer(metaclass=abc.ABCMeta):
+    training_flag = False
+
     def __init__(self, input_shape, layer_name=''):
         self.input_shape = tuple(input_shape)
         self.rng = np.random.RandomState(int(time.time()))
@@ -61,6 +63,10 @@ class Layer(metaclass=abc.ABCMeta):
 
     def reset(self):
         pass
+
+    @staticmethod
+    def set_training_status(training):
+        Layer.training_flag = training
 
 
 class Sequential(Layer):
@@ -415,8 +421,6 @@ class DetailPreservingPoolingLayer(Layer):
 
 
 class DropoutLayer(Layer):
-    layers = []
-
     def __init__(self, input_shape, drop_prob=0.5, GaussianNoise=False, layer_name='Dropout', **kwargs):
         assert isinstance(input_shape, list) or isinstance(input_shape, tuple), \
             'input_shape must be list or tuple. Received %s' % type(input_shape)
@@ -427,10 +431,8 @@ class DropoutLayer(Layer):
         self.GaussianNoise = GaussianNoise
         self.srng = theano.sandbox.rng_mrg.MRG_RandomStreams(self.rng.randint(1, int(time.time())))
         self.keep_prob = T.as_tensor_variable(np.float32(1. - drop_prob))
-        self.training_flag = False
         self.kwargs = kwargs
         self.descriptions = '{} Dropout Layer: p={:.2f}'.format(layer_name, 1. - drop_prob)
-        DropoutLayer.layers.append(self)
 
     def get_output(self, input):
         mask = self.srng.normal(input.shape) + 1. if self.GaussianNoise else self.srng.binomial(n=1, p=self.keep_prob, size=input.shape)
@@ -442,11 +444,6 @@ class DropoutLayer(Layer):
     @validate
     def output_shape(self):
         return tuple(self.input_shape)
-
-    @staticmethod
-    def set_training(training):
-        for layer in DropoutLayer.layers:
-            layer.training_flag = training
 
 
 class FullyConnectedLayer(Layer):
@@ -946,8 +943,8 @@ class TransposedConvolutionalLayer(Layer):
         """
         width = self.filter_shape[2]
         height = self.filter_shape[3]
-        f = math.ceil(width/2.0)
-        c = (2 * f - 1 - f % 2) / (2.0 * f)
+        f = int(np.ceil(width/2.))
+        c = (2 * f - 1 - f % 2) / (2. * f)
         bilinear = np.zeros([self.filter_shape[2], self.filter_shape[3]])
         for x in range(width):
             for y in range(height):
@@ -1386,8 +1383,9 @@ class RecursiveResNetBlock(Layer):
             return x + first
 
         if self.recursive > 1:
+            unroll = self.kwargs.pop('unroll', False)
             non_seqs = list(self.params) + [first]
-            if isinstance(self.normalization, BatchNormLayer):
+            if unroll or isinstance(self.normalization, BatchNormLayer):
                 output = utils.unroll_scan(step, None, input, non_seqs, self.recursive - 1)
             else:
                 output = theano.scan(step, outputs_info=input, non_sequences=non_seqs, n_steps=self.recursive - 1, strict=True)[0]
@@ -1508,8 +1506,6 @@ class DenseBlock(Layer):
 
 
 class BatchNormLayer(Layer):
-    layers = []
-
     def __init__(self, input_shape, layer_name='BN', epsilon=1e-4, running_average_factor=1e-1, axes='spatial',
                  activation='relu', no_scale=False, **kwargs):
         '''
@@ -1525,7 +1521,6 @@ class BatchNormLayer(Layer):
         self.running_average_factor = running_average_factor
         self.activation = utils.function[activation]
         self.no_scale = no_scale
-        self.training_flag = False
         self.axes = (0,) + tuple(range(2, len(input_shape))) if axes == 'spatial' else (0,)
         self.shape = (self.input_shape[1],) if axes == 'spatial' else self.input_shape[1:]
         self.kwargs = kwargs
@@ -1553,7 +1548,6 @@ class BatchNormLayer(Layer):
 
         self.descriptions = '{} BatchNorm Layer: shape: {} -> {} running_average_factor = {:.4f} activation: {}'\
             .format(layer_name, self.input_shape, self.output_shape, self.running_average_factor, activation)
-        BatchNormLayer.layers.append(self)
 
     def batch_normalization_train(self, input):
         out, _, _, mean_, var_ = T.nnet.bn.batch_normalization_train(input, self.gamma, self.beta, self.axes,
@@ -1590,37 +1584,28 @@ class BatchNormLayer(Layer):
         if self.activation is utils.function['prelu']:
             self.alpha.set_value(np.float32(.1))
 
-    @staticmethod
-    def set_training(training):
-        for layer in BatchNormLayer.layers:
-            layer.training_flag = training
-
 
 class DecorrBatchNormLayer(Layer):
     """
     From the paper "Decorrelated Batch Normalization" - Lei Huang, Dawei Yang, Bo Lang, Jia Deng
     """
-    layers = []
-
     def __init__(self, input_shape, layer_name='DBN', epsilon=1e-4, running_average_factor=1e-1, activation='relu',
                  no_scale=False, **kwargs):
-        '''
+        """
 
-        :param input_shape: (int, int, int, int) or (int, int)
-        :param layer_name: str
-        :param epsilon: float
-        :param running_average_factor: float
-        :param axes: 'spatial' or 'per-activation'
-        '''
-        super(DecorrBatchNormLayer, self).__init__()
-
-        self.layer_name = layer_name
-        self.input_shape = tuple(input_shape)
+        :param input_shape:
+        :param layer_name:
+        :param epsilon:
+        :param running_average_factor:
+        :param activation:
+        :param no_scale:
+        :param kwargs:
+        """
+        super(DecorrBatchNormLayer, self).__init__(input_shape, layer_name)
         self.epsilon = np.float32(epsilon)
         self.running_average_factor = running_average_factor
         self.activation = utils.function[activation]
         self.no_scale = no_scale
-        self.training_flag = False
         self.axes = (0,) #+ tuple(range(2, len(input_shape)))
         self.shape = (self.input_shape[1],)
         self.kwargs = kwargs
@@ -1689,11 +1674,6 @@ class DecorrBatchNormLayer(Layer):
         self.gamma.set_value(np.copy(self.gamma_values))
         self.beta.set_value(np.copy(self.beta_values))
 
-    @staticmethod
-    def set_training(training):
-        for layer in BatchNormLayer.layers:
-            layer.training_flag = training
-
 
 class GroupNormLayer(Layer):
     """
@@ -1752,8 +1732,6 @@ class GroupNormLayer(Layer):
 
 
 class BatchRenormLayer(Layer):
-    layers = []
-
     def __init__(self, input_shape, layer_name='BRN', epsilon=1e-4, r_max=1, d_max=0, running_average_factor=0.1,
                  axes='spatial', activation='relu'):
         '''
@@ -1768,7 +1746,6 @@ class BatchRenormLayer(Layer):
         self.epsilon = epsilon
         self.running_average_factor = running_average_factor
         self.activation = utils.function[activation]
-        self.training_flag = False
         self.r_max = theano.shared(np.float32(r_max), name=layer_name + 'rmax')
         self.d_max = theano.shared(np.float32(d_max), name=layer_name + 'dmax')
         self.axes = (0,) + tuple(range(2, len(input_shape))) if axes == 'spatial' else (0,)
@@ -1786,7 +1763,6 @@ class BatchRenormLayer(Layer):
         self.trainable += [self.gamma, self.beta]
         self.regularizable.append(self.gamma)
         self.descriptions = '{} Batch Renorm Layer: running_average_factor = {:.4f}'.format(layer_name, self.running_average_factor)
-        BatchRenormLayer.layers.append(self)
 
     def get_output(self, input):
         batch_mean = T.mean(input, axis=self.axes)
@@ -1816,11 +1792,6 @@ class BatchRenormLayer(Layer):
     def reset(self):
         self.gamma.set_value(self.gamma_values)
         self.beta.set_value(self.beta_values)
-
-    @staticmethod
-    def set_training(training):
-        for layer in BatchRenormLayer.layers:
-            layer.training_flag = training
 
 
 class TransformerLayer(Layer):
@@ -2457,10 +2428,7 @@ class AttConvLSTMCell(Layer):
 
 
 def set_training_status(training):
-    DropoutLayer.set_training(training)
-    BatchNormLayer.set_training(training)
-    BatchRenormLayer.set_training(training)
-    DecorrBatchNormLayer.set_training(training)
+    Layer.set_training_status(training)
 
 
 def GlobalAveragePoolingLayer(input_shape, layer_name='GlbAvgPooling'):
