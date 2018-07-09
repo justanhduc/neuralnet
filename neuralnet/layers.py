@@ -1334,7 +1334,6 @@ class RecursiveResNetBlock(Layer):
         self.stride = stride
         self.dilation = dilation
         self.activation = activation
-        self.norm = normalization
         self.kwargs = kwargs
 
         if activation == 'prelu':
@@ -1388,7 +1387,7 @@ class RecursiveResNetBlock(Layer):
 
         if self.recursive > 1:
             non_seqs = list(self.params) + [first]
-            if self.norm == 'bn':
+            if isinstance(self.normalization, BatchNormLayer):
                 output = utils.unroll_scan(step, None, input, non_seqs, self.recursive - 1)
             else:
                 output = theano.scan(step, outputs_info=input, non_sequences=non_seqs, n_steps=self.recursive - 1, strict=True)[0]
