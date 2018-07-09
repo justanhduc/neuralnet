@@ -721,6 +721,21 @@ def gaussian2(size, sigma):
     return np.float32(g)
 
 
+def laplacian_of_gaussian_kernel(size, sigma):
+    """Returns a normalized circularly symmetric 2D gauss kernel array
+
+    f(x,y) = A.e^{-(x^2/2*sigma^2 + y^2/2*sigma^2)} where
+
+    A = 1/(2*pi*sigma^2)
+
+    as define by Wolfram Mathworld
+    http://mathworld.wolfram.com/GaussianFunction.html
+    """
+    x, y = np.mgrid[-size // 2 + 1:size // 2 + 1, -size // 2 + 1:size // 2 + 1]
+    g = 1 / (2*np.pi*sigma**4) * ((x**2 + y**2 - 2*sigma**2) / sigma**2) * np.exp(-(x**2 + y**2) / (2*sigma**2))
+    return np.float32(g)
+
+
 def fspecial_gauss(size, sigma):
     """Function to mimic the 'fspecial' gaussian MATLAB function
     """

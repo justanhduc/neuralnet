@@ -10,7 +10,7 @@ from neuralnet import utils
 __all__ = ['manhattan_distance', 'mean_classification_error', 'mean_squared_error', 'msssim',
            'multinoulli_cross_entropy', 'root_mean_squared_error', 'psnr', 'psnr255', 'pearson_correlation',
            'ssim', 'spearman', 'first_derivative_error', 'huberloss', 'binary_cross_entropy',
-           'gradient_difference', 'total_variation', 'kld', 'pulling_away', 'vgg16_loss', 'dog_loss']
+           'gradient_difference', 'total_variation', 'kld', 'pulling_away', 'vgg16_loss', 'dog_loss', 'log_loss']
 
 
 def manhattan_distance(y_pred, y):
@@ -178,10 +178,20 @@ def vgg16_loss(x, y, weight_file, p=2):
     return norm_error(out_x, out_y, p)
 
 
-def dog_loss(x, y, depth, size=21, sigma1=1, sigma2=1.6, p=2):
+def dog_loss(x, y, size=21, sigma1=1, sigma2=1.6, p=2, **kwargs):
+    depth = kwargs.get('depth', 3)
     x = utils.difference_of_gaussian(x, depth, size, sigma1, sigma2)
     y = utils.difference_of_gaussian(y, depth, size, sigma1, sigma2)
     return norm_error(x, y, p)
+
+
+def log_loss(x, y, size=9, sigma=1., p=2, **kwargs):
+    depth = kwargs.get('depth', 3)
+    kern = utils.laplacian_of_gaussian_kernel(size, sigma)
+    kern = utils.make_tensor_kernel_from_numpy((depth, depth), kern)
+    d2x = T.nnet.conv2d(x, kern, border_mode='half')
+    d2y = T.nnet.conv2d(y, kern, border_mode='half')
+    return norm_error(d2x, d2y, p)
 
 
 def ssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03, cs_map=False):
@@ -316,7 +326,10 @@ def psnr255(x, y):
 
 if __name__ == '__main__':
     X = T.tensor4()
-    Y = utils.difference_of_gaussian(X, 3, 21)
+    X_ = utils.rgb2gray(X)
+    kern = utils.laplacian_of_gaussian_kernel(9, 1.)
+    kern = utils.make_tensor_kernel_from_numpy((1, 1), kern)
+    Y = T.nnet.conv2d(X_, kern, border_mode='half')
     f = theano.function([X], Y)
 
     from scipy import misc
@@ -324,7 +337,7 @@ if __name__ == '__main__':
     im = misc.imread('E:/DB/Videos/DAVIS/JPEGImages/480p/bear/00000.jpg').astype('float32') / 255.
     im = np.transpose(im[None], (0, 3, 1, 2))
     res = f(im)
-    res = np.transpose(res[0], (1, 2, 0))
+    res = np.squeeze(np.transpose(res[0], (1, 2, 0)))
     res = (res - np.min(res)) / (np.max(res) - np.min(res))
-    plt.imshow(res)
+    plt.imshow(res, 'gray')
     plt.show()
