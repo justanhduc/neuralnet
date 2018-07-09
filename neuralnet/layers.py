@@ -116,7 +116,7 @@ class Sequential(Layer):
             return self.block[keys[item]]
         elif isinstance(item, slice):
             keys = list(self.block.keys())
-            return tuple(self.block[keys[item]])
+            return Sequential(self.block[keys[item]], layer_name=self.layer_name)
         else:
             return self.block[item]
 
@@ -1324,7 +1324,8 @@ class NoiseResNetBlock(Layer):
 class RecursiveResNetBlock(Layer):
     def __init__(self, input_shape, num_filters, filter_size, recursive=1, stride=(1, 1), dilation=(1, 1), activation='relu',
                  layer_name='RecursiveResBlock', normalization='bn', groups=32, **kwargs):
-        assert normalization in (None, 'bn', 'gn'), 'normalization must be either \'bn\' or \'gn\', got %s.' % normalization
+        assert normalization in (
+        None, 'bn', 'gn'), 'normalization must be either None, \'bn\' or \'gn\', got %s.' % normalization
 
         super(RecursiveResNetBlock, self).__init__(input_shape, layer_name)
         self.num_filters = num_filters
@@ -1342,33 +1343,33 @@ class RecursiveResNetBlock(Layer):
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
-        self.conv = ConvolutionalLayer(input_shape, num_filters, filter_size, stride=stride,
-                                       layer_name=layer_name+'_first_conv', activation='linear')
+        self.first_conv = ConvolutionalLayer(input_shape, num_filters, filter_size, stride=stride,
+                                             layer_name=layer_name+'_first_conv', activation='linear')
         if normalization:
-            self.normalization = lambda shape, act, name: BatchNormLayer(shape, name, activation=act, **self.kwargs) \
-                if normalization == 'bn' else GroupNormLayer(shape, name, groups=groups, activation=act, **self.kwargs)
+            self.normalization = lambda shape, name: BatchNormLayer(shape, name, activation='linear') \
+                if normalization == 'bn' else GroupNormLayer(shape, name, groups=groups, activation='linear')
         else:
             self.normalization = None
 
         self.block = Sequential(self._recursive_block())
-        self.params += self.conv.params + self.block.params
-        self.trainable += self.conv.trainable + self.block.trainable
-        self.regularizable += self.conv.regularizable + self.block.regularizable
+        self.params += self.first_conv.params + self.block.params
+        self.trainable += self.first_conv.trainable + self.block.trainable
+        self.regularizable += self.first_conv.regularizable + self.block.regularizable
         self.descriptions = '{} Recursive Residual Block: {} -> {} stride {} activation {}'.\
             format(layer_name, input_shape, self.output_shape, stride, activation)
 
     def _recursive_block(self):
-        shape = self.conv.output_shape
+        shape = self.first_conv.output_shape
         block = []
         if self.normalization:
-            block.append(self.normalization(shape, self.activation, self.layer_name+'_norm1'))
+            block.append(self.normalization(shape, self.layer_name+'_norm1'))
         block += [
             ActivationLayer(shape, self.activation, self.layer_name + '_act1', **self.kwargs),
             ConvolutionalLayer(shape, self.num_filters, self.filter_size, layer_name=self.layer_name+'_conv1',
                                activation='linear')
             ]
         if self.normalization:
-            block.append(self.normalization(shape, self.activation, self.layer_name+'_norm2'))
+            block.append(self.normalization(shape, self.layer_name+'_norm2'))
         block += [
             ActivationLayer(shape, self.activation, self.layer_name + '_act2', **self.kwargs),
             ConvolutionalLayer(shape, self.num_filters, self.filter_size, layer_name=self.layer_name + '_conv2',
@@ -1377,7 +1378,7 @@ class RecursiveResNetBlock(Layer):
         return block
 
     def get_output(self, input):
-        input = self.conv(input)
+        input = self.first_conv(input)
         first = input
         input = self.block(input) + first
 
@@ -1387,10 +1388,10 @@ class RecursiveResNetBlock(Layer):
 
         if self.recursive > 1:
             non_seqs = list(self.params) + [first]
-            if self.norm == 'gn':
-                output = theano.scan(step, outputs_info=input, non_sequences=non_seqs, n_steps=self.recursive-1, strict=True)[0]
+            if self.norm == 'bn':
+                output = utils.unroll_scan(step, None, input, non_seqs, self.recursive - 1)
             else:
-                output = utils.unroll_scan(step, None, input, non_seqs, self.recursive-1)
+                output = theano.scan(step, outputs_info=input, non_sequences=non_seqs, n_steps=self.recursive - 1, strict=True)[0]
             output = output[-1]
         else:
             output = input
@@ -1401,7 +1402,7 @@ class RecursiveResNetBlock(Layer):
         return self.block.output_shape
 
     def reset(self):
-        self.conv.reset()
+        self.first_conv.reset()
         self.block.reset()
 
 
