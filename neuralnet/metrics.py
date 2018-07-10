@@ -316,7 +316,7 @@ def msssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2
 def psnr(x, y, mask=None):
     """PSNR for [0,1] images"""
     print('Using PSNR metric for [0, 1] images')
-    mask = mask.astype('float32')
+    mask = mask.astype('float32') if mask else None
     return -10 * T.log(T.sum(T.square((y - x)*mask)) / T.sum(mask)) / T.log(10.) if mask \
         else -10 * T.log(T.mean(T.square(y - x))) / T.log(10.)
 
