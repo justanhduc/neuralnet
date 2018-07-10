@@ -471,14 +471,14 @@ def adamax(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8):
     return adamax_op.get_updates(params, grads)
 
 
-def anneal_learning_rate(lr, t, method='halflife', **kwargs):
-    if method not in ('halflife', 'step', 'exponential', 'inverse'):
+def anneal_learning_rate(lr, t, method='half-life', **kwargs):
+    if method not in ('half-life', 'step', 'exponential', 'inverse'):
         raise ValueError('Unknown annealing method.')
     if not isinstance(lr, theano.gpuarray.type.GpuArraySharedVariable):
         raise TypeError('lr must be a shared variable, got %s.' % type(lr))
 
     lr_ = lr.get_value()
-    if method == 'halflife':
+    if method == 'half-life':
         num_iters = kwargs.pop('num_iters', None)
         decay = kwargs.pop('decay', .1)
         if num_iters is None:
