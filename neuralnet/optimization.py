@@ -14,7 +14,8 @@ import abc
 import sys
 
 sys.setrecursionlimit(10000)
-__all__ = ['sgd', 'sgdmomentum', 'adadelta', 'adagrad', 'adam', 'adamax', 'nadam', 'rmsprop', 'amsgrad']
+__all__ = ['sgd', 'sgdmomentum', 'adadelta', 'adagrad', 'adam', 'adamax', 'nadam', 'rmsprop', 'amsgrad',
+           'anneal_learning_rate']
 
 
 class Optimizer(metaclass=abc.ABCMeta):
@@ -469,3 +470,35 @@ def adamax(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8):
     adamax_op = AdaMax(alpha, beta1, beta2, epsilon)
     return adamax_op.get_updates(params, grads)
 
+
+def anneal_learning_rate(lr, t, method='halflife', **kwargs):
+    if method not in ('halflife', 'step', 'exponential', 'inverse'):
+        raise ValueError('Unknown annealing method.')
+    if not isinstance(lr, theano.gpuarray.type.GpuArraySharedVariable):
+        raise TypeError('lr must be a shared variable, got %s.' % type(lr))
+
+    lr_ = lr.get_value()
+    if method == 'halflife':
+        num_iters = kwargs.pop('num_iters', None)
+        decay = kwargs.pop('decay', .1)
+        if num_iters is None:
+            raise ValueError('num_iters must be provided.')
+
+        if t > num_iters // 2 or t > 3 * num_iters // 4:
+            lr.set_value(lr_ * decay)
+    elif method == 'step':
+        step = kwargs.pop('step', None)
+        decay = kwargs.pop('decay', .5)
+        if step is None:
+            raise ValueError('step must be provided.')
+
+        if t % step == 0:
+            lr.set_value(lr_ * decay)
+    elif method == 'exponential':
+        decay = kwargs.pop('decay', .01)
+        t = np.float32(t)
+        lr.set_value(lr_ * np.exp(-decay * t))
+    else:
+        decay = kwargs.pop('decay', .01)
+        t = np.float32(t)
+        lr.set_value(lr_ * 1. / (1. + decay * t))
