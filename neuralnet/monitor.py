@@ -62,8 +62,8 @@ class Monitor(utils.ConfigParser):
     def plot(self, name, value):
         self.__num_since_last_flush[name][self.__iter[0]] = value
 
-    def save_image(self, name, tensor_img, callback=None):
-        self.__img_since_last_flush[name][self.__iter[0]] = tensor_img if callback is None else callback(tensor_img)
+    def save_image(self, name, tensor_img, callback=lambda x: x):
+        self.__img_since_last_flush[name][self.__iter[0]] = callback(tensor_img)
 
     def flush(self):
         prints = []

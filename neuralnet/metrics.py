@@ -313,10 +313,12 @@ def msssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2
     return T.prod(mcs) * (mssim[levels-1] ** weights[levels-1])
 
 
-def psnr(x, y):
+def psnr(x, y, mask=None):
     """PSNR for [0,1] images"""
     print('Using PSNR metric for [0, 1] images')
-    return -10 * T.log(T.mean(T.square(y - x))) / T.log(10.)
+    mask = mask.astype('float32')
+    return -10 * T.log(T.sum(T.square((y - x)*mask)) / T.sum(mask)) / T.log(10.) if mask \
+        else -10 * T.log(T.mean(T.square(y - x))) / T.log(10.)
 
 
 def psnr255(x, y):
