@@ -495,7 +495,7 @@ def anneal_learning_rate(lr, t, method='half-life', **kwargs):
         if t % step == 0:
             lr.set_value(lr_ * decay)
     elif method == 'exponential':
-        decay = kwargs.pop('decay', .01)
+        decay = kwargs.pop('decay', 1e-4)
         t = np.float32(t)
         lr.set_value(lr_ * np.exp(-decay * t))
     else:
