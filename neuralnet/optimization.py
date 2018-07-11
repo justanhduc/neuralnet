@@ -485,7 +485,7 @@ def anneal_learning_rate(lr, t, method='half-life', **kwargs):
             raise ValueError('num_iters must be provided.')
 
         if t > num_iters // 2 or t > 3 * num_iters // 4:
-            lr.set_value(lr_ * decay)
+            lr.set_value(np.float32(lr_ * decay))
     elif method == 'step':
         step = kwargs.pop('step', None)
         decay = kwargs.pop('decay', .5)
@@ -493,12 +493,10 @@ def anneal_learning_rate(lr, t, method='half-life', **kwargs):
             raise ValueError('step must be provided.')
 
         if t % step == 0:
-            lr.set_value(lr_ * decay)
+            lr.set_value(np.float32(lr_ * decay))
     elif method == 'exponential':
         decay = kwargs.pop('decay', 1e-4)
-        t = np.float32(t)
-        lr.set_value(lr_ * np.exp(-decay * t))
+        lr.set_value(np.float32(lr_ * np.exp(-decay * t)))
     else:
         decay = kwargs.pop('decay', .01)
-        t = np.float32(t)
-        lr.set_value(lr_ * 1. / (1. + decay * t))
+        lr.set_value(np.float32(lr_ * 1. / (1. + decay * t)))
