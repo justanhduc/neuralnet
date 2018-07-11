@@ -53,13 +53,13 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     def get_all_params(self):
-        self.params = list(self.model.params)
+        self.params += list(self.model.params)
 
     def get_trainable(self):
-        self.trainable = list(self.model.trainable)
+        self.trainable += list(self.model.trainable)
 
     def get_regularizable(self):
-        self.regularizable = list(self.model.regularizable)
+        self.regularizable += list(self.model.regularizable)
 
     def save_params(self):
         numpy.savez(self.param_file, **{p.name: p.get_value() for p in self.params})

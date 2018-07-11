@@ -97,8 +97,8 @@ class Monitor(utils.ConfigParser):
                         img = val[num]
                         img = np.squeeze(np.transpose(img, (1, 2, 0)))
                         imsave(self.current_folder + '/' + name + '_%d.jpg' % num, img)
-                elif len(val.shape) == 3:
-                    imsave(name + '.jpg', val)
+                elif len(val.shape) == 3 or len(val.shape) == 2:
+                    imsave(self.current_folder + '/' + name + '.jpg', val)
                 else:
                     raise NotImplementedError
         self.__img_since_last_flush.clear()

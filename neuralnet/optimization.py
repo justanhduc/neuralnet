@@ -474,7 +474,7 @@ def adamax(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8):
 def anneal_learning_rate(lr, t, method='half-life', **kwargs):
     if method not in ('half-life', 'step', 'exponential', 'inverse'):
         raise ValueError('Unknown annealing method.')
-    if not isinstance(lr, theano.gpuarray.type.GpuArraySharedVariable):
+    if not isinstance(lr, T.sharedvar.ScalarSharedVariable):
         raise TypeError('lr must be a shared variable, got %s.' % type(lr))
 
     lr_ = lr.get_value()

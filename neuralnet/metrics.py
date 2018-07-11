@@ -9,7 +9,7 @@ from neuralnet import utils
 
 __all__ = ['manhattan_distance', 'mean_classification_error', 'mean_squared_error', 'msssim',
            'multinoulli_cross_entropy', 'root_mean_squared_error', 'psnr', 'psnr255', 'pearson_correlation',
-           'ssim', 'spearman', 'first_derivative_error', 'huberloss', 'binary_cross_entropy',
+           'ssim', 'spearman', 'first_derivative_error', 'huberloss', 'binary_cross_entropy', 'norm_error',
            'gradient_difference', 'total_variation', 'kld', 'pulling_away', 'vgg16_loss', 'dog_loss', 'log_loss']
 
 
@@ -83,17 +83,26 @@ def gradient_difference(x, y, p):
     return T.mean(diff_h + diff_v)
 
 
-def total_variation(x, type='aniso'):
+def total_variation(x, type='aniso', p=2, depth=3):
     print('Using Total variation regularizer')
     assert x.ndim == 4, 'Input must be a tensor image'
-    if type == 'aniso':
-        del_v = T.sum(T.abs_(x[:, :, 1:, :] - x[:, :, :-1, :]))
-        del_h = T.sum(T.abs_(x[:, :, :, 1:] - x[:, :, :, :-1]))
-        return del_h + del_v
-    elif type == 'iso':
-        del_v = T.sqr(x[:, :, 1:, :] - x[:, :, :-1, :])
-        del_h = T.sqr(x[:, :, :, 1:] - x[:, :, :, :-1])
-        return T.sum(T.sqrt(del_v + del_h))
+    # if type == 'aniso':
+    #     del_v = T.sum(T.abs_(x[:, :, 1:, :] - x[:, :, :-1, :]))
+    #     del_h = T.sum(T.abs_(x[:, :, :, 1:] - x[:, :, :, :-1]))
+    #     return del_h + del_v
+    # elif type == 'iso':
+    #     del_v = T.sqr(x[:, :, 1:, :] - x[:, :, :-1, :])
+    #     del_h = T.sqr(x[:, :, :, 1:] - x[:, :, :, :-1])
+    #     return T.sum(T.sqrt(del_v + del_h))
+    kern_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype='float32')
+    kern_x = utils.make_tensor_kernel_from_numpy((depth, depth), kern_x)
+
+    kern_y = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
+    kern_y = utils.make_tensor_kernel_from_numpy((depth, depth), kern_y)
+    x_grad_x = T.nnet.conv2d(x, kern_x, border_mode='half')
+    x_grad_y = T.nnet.conv2d(x, kern_y, border_mode='half')
+    x_grad = T.sqrt(T.sqr(x_grad_x) + T.sqr(x_grad_y) + 1e-10)
+    return norm_error(x_grad, T.zeros_like(x_grad, 'float32'), p)
 
 
 def pulling_away(x, y=None):

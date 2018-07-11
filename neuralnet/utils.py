@@ -393,7 +393,11 @@ def _meshgrid(height, width):
     return grid
 
 
-def interpolate_bilinear(im, x, y, out_shape, border_mode):
+def interpolate_bilinear(im, x, y, out_shape=None, border_mode='nearest'):
+    if im.ndim != 4:
+        raise TypeError('im should be a 4D Tensor image, got %dD.' % im.ndim)
+
+    out_shape = out_shape if out_shape else T.shape(im)[2:]
     x, y = x.flatten(), y.flatten()
     n, c, h, w = im.shape
     h_out, w_out = out_shape

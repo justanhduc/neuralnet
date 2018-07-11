@@ -24,7 +24,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'IdentityLayer', 'DropoutLayer', 'PoolingLayer', 'InceptionModule1', 'InceptionModule2',
            'InceptionModule3', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'NetworkInNetworkBlock',
            'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer',
-           'set_training_status']
+           'set_training_status', 'AveragePoolingLayer']
 
 
 def validate(func):
@@ -1927,7 +1927,7 @@ class SlicingLayer(Layer):
 
 class ConcatLayer(Layer):
     def __init__(self, input_shapes, axis=1, layer_name='ConcatLayer'):
-        super(ConcatLayer, self).__init__(layer_name=layer_name)
+        super(ConcatLayer, self).__init__(input_shapes, layer_name=layer_name)
         self.input_shapes = tuple(input_shapes)
         self.axis = axis
         self.descriptions = ''.join(('%s Concat Layer: axis %d' % (layer_name, axis), ' '.join([str(x) for x in input_shapes]),
@@ -2437,6 +2437,10 @@ def GlobalAveragePoolingLayer(input_shape, layer_name='GlbAvgPooling'):
 
 def MaxPoolingLayer(input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='MaxPooling'):
     return PoolingLayer(input_shape, ws, ignore_border, stride, pad, 'max', layer_name)
+
+
+def AveragePoolingLayer(input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='AvgPooling'):
+    return PoolingLayer(input_shape, ws, ignore_border, stride, pad, 'average_exc_pad', layer_name)
 
 
 def ConvNormAct(input_shape, num_filters, filter_size, init=HeNormal(gain=1.), no_bias=True, border_mode='half',

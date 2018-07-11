@@ -152,12 +152,87 @@ def meshgrid(*xi, **kwargs):
     return outputs
 
 
+def linspace(start, stop, num, dtype=None):
+    """
+    Return evenly spaced numbers over a specified interval.
+
+    Returns `num` evenly spaced samples, calculated over the
+    interval [`start`, `stop`].
+
+    The endpoint of the interval can optionally be excluded.
+
+    Parameters
+    ----------
+    start : scalar
+        The starting value of the sequence.
+    stop : scalar
+        The end value of the sequence, unless `endpoint` is set to False.
+        In that case, the sequence consists of all but the last of ``num + 1``
+        evenly spaced samples, so that `stop` is excluded.  Note that the step
+        size changes when `endpoint` is False.
+    num : int
+        Number of samples to generate. Default is 50. Must be non-negative.
+    dtype : dtype, optional
+        The type of the output array.  If `dtype` is not given, infer the data
+        type from the other input arguments.
+
+        .. versionadded:: 1.9.0
+
+    Returns
+    -------
+    samples : ndarray
+        There are `num` equally spaced samples in the closed interval
+        ``[start, stop]`` or the half-open interval ``[start, stop)``
+        (depending on whether `endpoint` is True or False).
+    step : float, optional
+        Only returned if `retstep` is True
+
+        Size of spacing between samples.
+
+    """
+    dtype = dtype if dtype else 'float32'
+    div = num - 1
+
+    # Convert float/complex array scalars to float, gh-3504
+    # and make sure one can use variables that have an __array_interface__, gh-6634
+    start = T.cast(start, 'float32')
+    stop = T.cast(stop, 'float32')
+
+    y = T.arange(0, num, dtype=dtype)
+
+    delta = stop - start
+    # In-place multiplication y *= delta/div is faster, but prevents the multiplicant
+    # from overriding what class is produced, and thus prevents, e.g. use of Quantities,
+    # see gh-7142. Hence, we multiply in place only for standard scalar types.
+    if num > 1:
+        step = delta / div
+        if step == 0:
+            # Special handling for denormal numbers, gh-5437
+            y /= div
+            y *= delta
+        else:
+            y *= step
+    else:
+        # 0 and 1 item long sequences have an undefined step
+        step = None
+        # Multiply with delta to allow possible override of output class.
+        y = y * delta
+
+    y += start
+
+    if num > 1:
+        y[-1] = stop
+
+    return y.astype(dtype)
+
+
 if __name__ == '__main__':
     import theano
-    a = T.matrix()
-    c = ifft(fft(a))
-    f = theano.function([a], c)
+    x = T.scalar()
+    y = T.scalar()
+    z = T.scalar()
+    t = linspace(x, y, z)
+    f = theano.function([x, y, z], t)
 
-    a = np.mgrid[:5, :5][0].astype('float32')
-    print(a)
-    print(f(a))
+    print(f(10., 12., 3.))
+    np.linspace()
