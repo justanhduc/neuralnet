@@ -24,7 +24,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'IdentityLayer', 'DropoutLayer', 'PoolingLayer', 'InceptionModule1', 'InceptionModule2',
            'InceptionModule3', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'NetworkInNetworkBlock',
            'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer',
-           'set_training_status', 'AveragePoolingLayer']
+           'set_training_status', 'AveragePoolingLayer', 'WarpingLayer']
 
 
 def validate(func):
@@ -39,6 +39,8 @@ class Layer(metaclass=abc.ABCMeta):
     training_flag = False
 
     def __init__(self, input_shape, layer_name=''):
+        assert isinstance(input_shape, list) or isinstance(input_shape, tuple), \
+            'input_shape must be list or tuple. Received %s' % type(input_shape)
         self.input_shape = tuple(input_shape)
         self.rng = np.random.RandomState(int(time.time()))
         self.params = []
@@ -75,7 +77,8 @@ class Sequential(Layer):
     """
     def __init__(self, layer_list=(), input_shape=None, layer_name='Sequential'):
         assert layer_list or input_shape, 'Either layer_list or input_shape must be specified.'
-        assert isinstance(layer_list, (list, tuple, Sequential)), 'layer_list must be a list or tuple, got %s.' % type(layer_list)
+        assert isinstance(layer_list, (list, tuple, Sequential)), 'layer_list must be a list or tuple, got %s.' % type(
+            layer_list)
         if isinstance(layer_list, (list, tuple)):
             assert all([isinstance(l, Layer) for l in layer_list]), 'All elements of layer_list should be Layer.'
             name_list = [l.layer_name for l in layer_list]
@@ -220,10 +223,9 @@ class DownsamplingLayer(Layer):
 
     def __init__(self, input_shape, factor, kernel_type='gauss1sq2', phase=0, kernel_width=None, support=None, sigma=None,
                  preserve_size=True, layer_name='DownsamplingLayer'):
-        super(DownsamplingLayer, self).__init__(input_shape, layer_name)
-
         assert phase in [0, 0.5], 'phase should be 0 or 0.5'
 
+        super(DownsamplingLayer, self).__init__(input_shape, layer_name)
         if kernel_type == 'lanczos2':
             support = 2
             kernel_width = 4 * factor + 1
@@ -298,8 +300,6 @@ class PoolingLayer(Layer):
         :param mode: {'max', 'sum', 'average_inc_pad', 'average_exc_pad'}
         :param layer_name:
         """
-        assert isinstance(input_shape, list) or isinstance(input_shape, tuple), \
-            'input_shape must be list or tuple. Received %s' % type(input_shape)
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
         assert mode in ('max', 'sum', 'average_inc_pad', 'average_exc_pad'), 'Invalid pooling mode. ' \
                                                                              'Mode should be \'max\', \'sum\', ' \
@@ -422,8 +422,6 @@ class DetailPreservingPoolingLayer(Layer):
 
 class DropoutLayer(Layer):
     def __init__(self, input_shape, drop_prob=0.5, GaussianNoise=False, layer_name='Dropout', **kwargs):
-        assert isinstance(input_shape, list) or isinstance(input_shape, tuple), \
-            'input_shape must be list or tuple. Received %s' % type(input_shape)
         assert len(input_shape) == 2 or len(input_shape) == 4, \
             'input_shape must have 2 or 4 elements. Received %d' % len(input_shape)
 
@@ -461,8 +459,6 @@ class FullyConnectedLayer(Layer):
         :param target:
         :param kwargs:
         """
-        assert isinstance(input_shape, list) or isinstance(input_shape, tuple), \
-            'input_shape must be list or tuple. Received %s' % type(input_shape)
         assert len(input_shape) == 2 or len(input_shape) == 4, \
             'input_shape must have 2 or 4 elements. Received %d' % len(input_shape)
 
@@ -533,10 +529,7 @@ class ConvolutionalLayer(Layer):
         :param target:
         :param kwargs:
         """
-        assert isinstance(input_shape, list) or isinstance(input_shape, tuple), \
-            'input_shape must be list or tuple. Received %s' % type(input_shape)
-        assert len(input_shape) == 2 or len(input_shape) == 4, \
-            'input_shape must have 2 or 4 elements. Received %d' % len(input_shape)
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
         assert isinstance(num_filters, int) and isinstance(filter_size, (int, list, tuple))
         assert isinstance(border_mode, (int, list, tuple, str)), 'border_mode should be either \'int\', ' \
                                                                  '\'list\', \'tuple\' or \'str\', got {}'.format(type(border_mode))
@@ -624,6 +617,8 @@ class ConvolutionalLayer(Layer):
 class PerturbativeLayer(Layer):
     def __init__(self, input_shape, num_filters, init=HeNormal(), noise_level=.1, activation='relu', no_bias=True,
                  layer_name='PerturbativeLayer', **kwargs):
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+
         super(PerturbativeLayer, self).__init__(input_shape, layer_name)
         self.num_filters = num_filters
         self.noise_level = noise_level
@@ -675,6 +670,8 @@ class PerturbativeLayer(Layer):
 class InceptionModule1(Layer):
     def __init__(self, input_shape, num_filters=48, border_mode='half', stride=(1, 1), activation='relu',
                  layer_name='inception_mixed1'):
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+
         super(InceptionModule1, self).__init__(input_shape, layer_name)
         self.border_mode = border_mode
         self.stride = stride
@@ -728,6 +725,8 @@ class InceptionModule1(Layer):
 class InceptionModule2(Layer):
     def __init__(self, input_shape, num_filters=128, filter_size=7, border_mode='half', stride=(1, 1), activation='relu',
                  layer_name='inception_mixed2'):
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+
         super(InceptionModule2, self).__init__(input_shape, layer_name)
         self.filter_size = filter_size
         self.border_mode = border_mode
@@ -795,6 +794,8 @@ class InceptionModule2(Layer):
 class InceptionModule3(Layer):
     def __init__(self, input_shape, num_filters=320, border_mode='half', stride=(1, 1), activation='relu',
                  layer_name='inception_mixed3'):
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+
         super(InceptionModule3, self).__init__(input_shape, layer_name)
         self.border_mode = border_mode
         self.stride = stride
@@ -904,6 +905,7 @@ class TransposedConvolutionalLayer(Layer):
         :param target:
         """
         assert isinstance(num_filters, int) and isinstance(filter_size, (int, list, tuple))
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(TransposedConvolutionalLayer, self).__init__(input_shape, layer_name)
         self.filter_shape = (input_shape[1], num_filters, filter_size[0], filter_size[1]) if isinstance(filter_size, (list, tuple)) \
@@ -995,6 +997,8 @@ class TransposedConvolutionalLayer(Layer):
 class PixelShuffleLayer(Layer):
     def __init__(self, input_shape, num_filters, filter_size, rate=(2, 2), activation='relu', init=HeNormal(gain=1.),
                  biases=True, layer_name='Upsample Conv', **kwargs):
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+
         super(PixelShuffleLayer, self).__init__(input_shape, layer_name)
         self.num_filters = num_filters
         self.filter_size = filter_size
@@ -1046,6 +1050,7 @@ class ResNetBlock(Layer):
         """
         assert downsample or (input_shape[1] == num_filters), 'Cannot have identity branch when input dim changes.'
         assert normalization in (None, 'bn', 'gn')
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(ResNetBlock, self).__init__(input_shape, layer_name)
         self.num_filters = num_filters
@@ -1151,6 +1156,8 @@ class ResNetBottleneckBlock(Layer):
         :param layer_name:
         :param kwargs:
         """
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+
         super(ResNetBottleneckBlock, self).__init__(input_shape, layer_name)
         self.num_filters = num_filters
         self.stride = stride
@@ -1233,6 +1240,7 @@ class NoiseResNetBlock(Layer):
         """
         assert left_branch or (input_shape[1] == num_filters), 'Cannot have identity branch when input dim changes.'
         assert normalization in (None, 'bn', 'gn')
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(NoiseResNetBlock, self).__init__(input_shape, layer_name)
         self.num_filters = num_filters
@@ -1323,6 +1331,7 @@ class RecursiveResNetBlock(Layer):
                  layer_name='RecursiveResBlock', normalization='bn', groups=32, **kwargs):
         assert normalization in (
         None, 'bn', 'gn'), 'normalization must be either None, \'bn\' or \'gn\', got %s.' % normalization
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(RecursiveResNetBlock, self).__init__(input_shape, layer_name)
         self.num_filters = num_filters
@@ -1421,6 +1430,7 @@ class DenseBlock(Layer):
         """
         assert normlization in ('bn', 'gn'), \
             'normalization should be either \'bn\' or \'gn\', got %s' % normlization
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(DenseBlock, self).__init__(tuple(input_shape), layer_name)
         self.transit = transit
@@ -1516,7 +1526,7 @@ class BatchNormLayer(Layer):
         :param running_average_factor: float
         :param axes: 'spatial' or 'per-activation'
         '''
-        super(BatchNormLayer, self).__init__(tuple(input_shape), layer_name)
+        super(BatchNormLayer, self).__init__(input_shape, layer_name)
         self.epsilon = np.float32(epsilon)
         self.running_average_factor = running_average_factor
         self.activation = utils.function[activation]
@@ -1802,6 +1812,8 @@ class TransformerLayer(Layer):
     """
 
     def __init__(self, input_shape, transform_shape, downsample_factor=1, border_mode='nearest', layer_name='Transformer', **kwargs):
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+
         super(TransformerLayer, self).__init__(tuple(input_shape), layer_name)
         self.transform_shape = tuple(transform_shape)
         self.downsample_factor = (downsample_factor, downsample_factor) if isinstance(downsample_factor, int) else tuple(downsample_factor)
@@ -1813,11 +1825,50 @@ class TransformerLayer(Layer):
     def output_shape(self):
         shape = self.input_shape
         factors = self.downsample_factor
-        return tuple(shape[:2] + [None if s is None else int(s // f) for s, f in zip(shape[2:], factors)])
+        return tuple(list(shape[:2]) + [None if s is None else int(s // f) for s, f in zip(shape[2:], factors)])
 
     def get_output(self, inputs):
         input, theta = inputs
         return utils.transform_affine(theta, input, self.downsample_factor, self.border_mode)
+
+
+class WarpingLayer(Layer):
+    def __init__(self, input_shape, border_mode='nearest', layer_name='WarpingLayer'):
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+
+        super(WarpingLayer, self).__init__(input_shape, layer_name)
+        self.border_mode = border_mode
+        self.layer_name = layer_name
+        self.descriptions = '{} Warping layer: bilinear interpolation border mode: {}'.format(layer_name, border_mode)
+
+    def get_output(self, input):
+        image, flow = input
+
+        def meshgrid(height, width):
+            x_t = T.dot(T.ones(shape=[height, 1]),
+                        T.transpose(
+                            T.as_tensor_variable(np.linspace(-1.0, 1.0, width, dtype='float32')).dimshuffle(0, 'x'),
+                            [1, 0]))
+            y_t = T.dot(T.as_tensor_variable(np.linspace(-1.0, 1.0, height, dtype='float32')).dimshuffle(0, 'x'),
+                        T.ones(shape=[1, width]))
+            x_t_flat = T.reshape(x_t, (1, -1))
+            y_t_flat = T.reshape(y_t, (1, -1))
+            grid_x = T.reshape(x_t_flat, [1, height, width])
+            grid_y = T.reshape(y_t_flat, [1, height, width])
+            return grid_x, grid_y
+
+        gx, gy = meshgrid(self.input_shape[2], self.input_shape[3])
+        gx = T.as_tensor_variable(gx, ndim=2).astype('float32').dimshuffle('x', 0, 1)
+        gy = T.as_tensor_variable(gy, ndim=2).astype('float32').dimshuffle('x', 0, 1)
+        x_coor = gx + flow[:, 0]
+        y_coor = gy + flow[:, 1]
+        output = utils.interpolate_bilinear(image, x_coor, y_coor, border_mode=self.border_mode)
+        return output
+
+    @property
+    @validate
+    def output_shape(self):
+        return self.input_shape
 
 
 class IdentityLayer(Layer):
@@ -1839,6 +1890,7 @@ class ResizingLayer(Layer):
             raise NotImplementedError
         if ratio and frac_ratio:
             raise NotImplementedError
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(ResizingLayer, self).__init__(tuple(input_shape), layer_name)
         self.ratio = ratio
@@ -1892,6 +1944,7 @@ class SlicingLayer(Layer):
         :param layer_name:
         '''
         assert isinstance(to_idx, (int, list, tuple)) and isinstance(to_idx, (int, list, tuple)) and isinstance(to_idx, (int, list, tuple))
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(SlicingLayer, self).__init__(tuple(input_shape), layer_name)
         self.from_idx = from_idx
@@ -1928,7 +1981,6 @@ class SlicingLayer(Layer):
 class ConcatLayer(Layer):
     def __init__(self, input_shapes, axis=1, layer_name='ConcatLayer'):
         super(ConcatLayer, self).__init__(input_shapes, layer_name=layer_name)
-        self.input_shapes = tuple(input_shapes)
         self.axis = axis
         self.descriptions = ''.join(('%s Concat Layer: axis %d' % (layer_name, axis), ' '.join([str(x) for x in input_shapes]),
                                      ' -> {}'.format(self.output_shape)))
@@ -1938,14 +1990,15 @@ class ConcatLayer(Layer):
 
     @property
     def output_shape(self):
-        shape = np.array(self.input_shapes)
-        depth = np.sum(shape[:, 1])
-        return (self.input_shapes[0][0], depth, self.input_shapes[0][2], self.input_shapes[0][3])
+        depth = np.sum(self.input_shape, 0)
+        shape = list(self.input_shape[0])
+        shape[self.axis] = depth[self.axis]
+        return tuple(shape)
 
 
 class SumLayer(Layer):
     def __init__(self, input_shape, weight=1., layer_name='SumLayer'):
-        super(SumLayer, self).__init__(tuple(input_shape), layer_name)
+        super(SumLayer, self).__init__(input_shape, layer_name)
         self.weight = weight
         self.descriptions = '{} Sum Layer: weight {}'.format(layer_name, weight)
 
@@ -1955,7 +2008,7 @@ class SumLayer(Layer):
 
     @property
     def output_shape(self):
-        return tuple(self.input_shape[0])
+        return self.input_shape
 
 
 class TransposingLayer(Layer):
@@ -2009,7 +2062,7 @@ class ScalingLayer(Layer):
     (30, 50)
     """
     def __init__(self, input_shape, scales=1, shared_axes='auto', layer_name='ScaleLayer'):
-        super(ScalingLayer, self).__init__(tuple(input_shape), layer_name)
+        super(ScalingLayer, self).__init__(input_shape, layer_name)
         if shared_axes == 'auto':
             # default: share scales over all but the second axis
             shared_axes = (0,) + tuple(range(2, len(self.input_shape)))
@@ -2036,7 +2089,7 @@ class ScalingLayer(Layer):
     @property
     @validate
     def output_shape(self):
-        return tuple(self.input_shape)
+        return self.input_shape
 
 
 class Gate:
@@ -2078,9 +2131,7 @@ class Gate:
         assert isinstance(shape, (list, tuple)), 'shape must be a list or tuple, got %s.' % type(shape)
         assert len(shape) == 2 or len(shape) == 4, 'shape must have 2 or 4 elements, got %d.' % len(shape)
 
-        super(Gate, self).__init__()
         self.shape = shape
-
         hid_shape = tuple([shape[0], shape[0]] + list(shape[2:])) if len(shape) == 4 else (shape[1], shape[1])
         self.W_in = theano.shared(W_in(shape), layer_name+'_W_in')
         self.W_hid = theano.shared(W_hid(hid_shape), layer_name+'_W_hid')
