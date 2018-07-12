@@ -1990,7 +1990,7 @@ class ConcatLayer(Layer):
 
     @property
     def output_shape(self):
-        depth = sum([self.input_shape[i][self.axis] for i in len(self.input_shape)])
+        depth = sum([self.input_shape[i][self.axis] for i in range(len(self.input_shape))])
         shape = list(self.input_shape[0])
         shape[self.axis] = depth
         return tuple(shape)
