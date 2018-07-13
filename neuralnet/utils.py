@@ -758,6 +758,27 @@ def difference_of_gaussian(x, depth, size=21, sigma1=1, sigma2=1.6):
     return x2 - x1
 
 
+def pad(img, mul):
+    h_new = int(np.ceil(img.shape[0] / mul[0])) * mul[0]
+    w_new = int(np.ceil(img.shape[1] / mul[1])) * mul[1]
+
+    new_shape = list(img.shape)
+    new_shape[0], new_shape[1] = h_new, w_new
+    out = np.zeros(new_shape, img.dtype)
+    start_x = (w_new - img.shape[1]) // 2
+    start_y = (h_new - img.shape[0]) // 2
+
+    out[start_y:start_y + img.shape[0], start_x:start_x + img.shape[1]] = img
+    return out
+
+
+def unpad(img, old_shape):
+    start_x = (img.shape[1] - old_shape[1]) // 2
+    start_y = (img.shape[0] - old_shape[0]) // 2
+    out = img[start_y:start_y + old_shape[0], start_x:start_x + old_shape[1]]
+    return out
+
+
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
             'tanh': lambda x, **kwargs: T.tanh(x), 'lrelu': lrelu, 'softmax': lambda x, **kwargs: T.nnet.softmax(x),
             'linear': lambda x, **kwargs: x, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,

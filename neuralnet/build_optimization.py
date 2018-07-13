@@ -65,26 +65,26 @@ class Optimization(utils.ConfigParser):
             raise AttributeError('Some attribute not found')
 
         if method.lower() == 'adadelta':
-            updates = adadelta(cost, trainable, rho, epsilon)
+            self.opt, updates = adadelta(cost, trainable, rho, epsilon)
         elif method.lower() == 'rmsprop':
-            updates = rmsprop(cost, trainable, learning_rate, self.gamma, self.epsilon)
+            self.opt, updates = rmsprop(cost, trainable, learning_rate, self.gamma, self.epsilon)
         elif method.lower() == 'sgdmomentum':
-            updates = sgdmomentum(cost, trainable, learning_rate, momentum, nesterov)
+            self.opt, updates = sgdmomentum(cost, trainable, learning_rate, momentum, nesterov)
         elif method.lower() == 'adagrad':
-            updates = adagrad(cost, trainable, learning_rate, epsilon)
+            self.opt, updates = adagrad(cost, trainable, learning_rate, epsilon)
         elif method.lower() == 'adam':
-            updates = adam(cost, trainable, learning_rate, beta1, beta2, epsilon)
+            self.opt, updates = adam(cost, trainable, learning_rate, beta1, beta2, epsilon)
         elif method.lower() == 'adamax':
-            updates = adamax(cost, trainable, learning_rate, beta1, beta2, epsilon)
+            self.opt, updates = adamax(cost, trainable, learning_rate, beta1, beta2, epsilon)
         elif method.lower() == 'sgd':
-            updates = sgd(cost, trainable, learning_rate)
+            self.opt, updates = sgd(cost, trainable, learning_rate)
         elif method.lower() == 'nadam':
-            updates = nadam(cost, trainable, learning_rate, beta1, beta2, epsilon)
+            self.opt, updates = nadam(cost, trainable, learning_rate, beta1, beta2, epsilon)
         elif method.lower() == 'amsgrad':
-            updates = amsgrad(cost, trainable, learning_rate, beta1, beta2, epsilon, kwargs.get('decay', lambda x, t: x))
+            self.opt, updates = amsgrad(cost, trainable, learning_rate, beta1, beta2, epsilon, kwargs.get('decay', lambda x, t: x))
         else:
             print('No valid optimization method chosen. Use Vanilla SGD instead')
-            updates = sgd(cost, trainable, learning_rate)
+            self.opt, updates = sgd(cost, trainable, learning_rate)
         return updates
 
     def build_regularization(self, params, **kwargs):

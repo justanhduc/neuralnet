@@ -11,6 +11,7 @@ class ResNet(nn.Layer):
                  layer_name='ResNet', **kwargs):
         super(ResNet, self).__init__(input_shape, layer_name)
         self.activation = activation
+        self.custom_block = kwargs.pop('custom_block', None)
         self.kwargs = kwargs
         self.network = nn.Sequential(input_shape=input_shape, layer_name=layer_name)
         self.network.append(nn.ConvNormAct(self.network.input_shape, num_filters, 7, stride=2, activation=activation, **kwargs))
@@ -38,10 +39,11 @@ class ResNet(nn.Layer):
             downsample = True
 
         layers = [block(self.shape, planes, stride, downsample=downsample, activation=self.activation,
-                        layer_name=name + '_0', **self.kwargs)]
+                        layer_name=name + '_0', block=self.custom_block, **self.kwargs)]
         self.shape = layers[-1].output_shape
         for i in range(1, blocks):
-            layers.append(block(self.shape, planes, activation=self.activation, layer_name=name + '_%d' % i, **self.kwargs))
+            layers.append(block(self.shape, planes, activation=self.activation, layer_name=name + '_%d' % i,
+                                block=self.custom_block, **self.kwargs))
         return nn.Sequential(layers, layer_name=name)
 
     def get_output(self, input):

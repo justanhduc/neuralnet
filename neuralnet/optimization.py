@@ -34,7 +34,7 @@ class Optimizer(metaclass=abc.ABCMeta):
 class VanillaSGD(Optimizer):
     def __init__(self, eta):
         super(VanillaSGD, self).__init__(eta)
-        print(('USING VANILLA GRADIENT DESCEND. ETA = %s ' % eta))
+        print(('Using VANILLA GRADIENT DESCEND. ETA = %s ' % eta))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -58,7 +58,7 @@ class AdaDelta(Optimizer):
         super(AdaDelta, self).__init__(0.)
         self.rho = T.as_tensor_variable(np.cast[theano.config.floatX](rho))
         self.epsilon = T.as_tensor_variable(np.cast[theano.config.floatX](epsilon))
-        print(('USING ADADELTA. RHO = %s EPSILON = %s ' % (self.rho, self.epsilon)))
+        print(('Using ADADELTA. RHO = %s EPSILON = %s ' % (self.rho, self.epsilon)))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -88,7 +88,7 @@ class SGDMomentum(Optimizer):
         super(SGDMomentum, self).__init__(lr)
         self.alpha = T.cast(mom, dtype=theano.config.floatX)
         self.nesterov = nesterov
-        print(('USING STOCHASTIC GRADIENT DESCENT MOMENTUM. ETA = %s MOMENTUM = %s NESTEROV = %s'
+        print(('Using STOCHASTIC GRADIENT DESCENT MOMENTUM. ETA = %s MOMENTUM = %s NESTEROV = %s'
               % (lr, mom, nesterov)))
 
     def get_updates(self, params, grads):
@@ -210,7 +210,7 @@ class AdaGrad(Optimizer):
     def __init__(self, eta, epsilon=1e-6):
         super(AdaGrad, self).__init__(eta)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        print(('USING ADAGRAD. ETA = %s ' % eta))
+        print(('Using ADAGRAD. ETA = %s ' % eta))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -233,7 +233,7 @@ class RMSprop(Optimizer):
         super(RMSprop, self).__init__(eta)
         self.gamma = T.cast(gamma, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        print(('USING RMSPROP. ETA = %s GAMMA = %s ' % (eta, gamma)))
+        print(('Using RMSPROP. ETA = %s GAMMA = %s ' % (eta, gamma)))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -257,7 +257,7 @@ class Adam(Optimizer):
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = epsilon
-        print(('USING ADAM. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
+        print(('Using ADAM. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -296,7 +296,7 @@ class AdaMax(Optimizer):
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        print(('USING ADAMAX. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
+        print(('Using ADAMAX. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -335,7 +335,7 @@ class NAdam(Optimizer):
         self.beta2 = T.cast(beta2, 'float32')
         self.epsilon = T.cast(epsilon, 'float32')
         self.decay = decay
-        print('USING NESTEROV ADAM. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2))
+        print('Using NESTEROV ADAM. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -382,7 +382,7 @@ class AMSGrad(Optimizer):
         self.beta2 = T.cast(beta2, 'float32')
         self.epsilon = T.cast(epsilon, 'float32')
         self.decay = decay
-        print('USING AMSGRAD. ALPHA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2))
+        print('Using AMSGRAD. ALPHA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2))
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -420,55 +420,55 @@ class AMSGrad(Optimizer):
 def sgd(cost, params, eta=1e-3):
     grads = T.grad(cost, params)
     sgd_op = VanillaSGD(eta)
-    return sgd_op.get_updates(params, grads)
+    return sgd_op, sgd_op.get_updates(params, grads)
 
 
 def adadelta(cost, params, rho=.95, epsilon=1e-6):
     grads = T.grad(cost, params)
     adadelta_op = AdaDelta(rho, epsilon)
-    return adadelta_op.get_updates(params, grads)
+    return adadelta_op, adadelta_op.get_updates(params, grads)
 
 
 def adam(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8):
     grads = T.grad(cost, params)
     adam_op = Adam(alpha, beta1, beta2, epsilon)
-    return adam_op.get_updates(params, grads)
+    return adam_op, adam_op.get_updates(params, grads)
 
 
 def amsgrad(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x):
     grads = T.grad(cost, params)
     amsgrad_op = AMSGrad(alpha, beta1, beta2, epsilon, decay)
-    return amsgrad_op.get_updates(params, grads)
+    return amsgrad_op, amsgrad_op.get_updates(params, grads)
 
 
 def sgdmomentum(cost, params, lr, mom=.95, nesterov=False):
     grads = T.grad(cost, params)
     sgdmom_op = SGDMomentum(lr, mom, nesterov)
-    return sgdmom_op.get_updates(params, grads)
+    return sgdmom_op, sgdmom_op.get_updates(params, grads)
 
 
 def rmsprop(cost, params, eta=1e-3, gamma=.9, epsilon=1e-6):
     grads = T.grad(cost, params)
     rmsprop_op = RMSprop(eta, gamma, epsilon)
-    return rmsprop_op.get_updates(params, grads)
+    return rmsprop_op, rmsprop_op.get_updates(params, grads)
 
 
 def adagrad(cost, params, eta, epsilon=1e-6):
     grads = T.grad(cost, params)
     adagrad_op = AdaGrad(eta, epsilon)
-    return adagrad_op.get_updates(params, grads)
+    return adagrad_op, adagrad_op.get_updates(params, grads)
 
 
 def nadam(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x):
     grads = T.grad(cost, params)
     nadam_op = NAdam(alpha, beta1, beta2, epsilon, decay)
-    return nadam_op.get_updates(params, grads)
+    return nadam_op, nadam_op.get_updates(params, grads)
 
 
 def adamax(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8):
     grads = T.grad(cost, params)
     adamax_op = AdaMax(alpha, beta1, beta2, epsilon)
-    return adamax_op.get_updates(params, grads)
+    return adamax_op, adamax_op.get_updates(params, grads)
 
 
 def anneal_learning_rate(lr, t, method='half-life', **kwargs):

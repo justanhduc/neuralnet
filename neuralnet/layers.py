@@ -24,7 +24,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'IdentityLayer', 'DropoutLayer', 'PoolingLayer', 'InceptionModule1', 'InceptionModule2',
            'InceptionModule3', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'NetworkInNetworkBlock',
            'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer',
-           'set_training_status', 'AveragePoolingLayer', 'WarpingLayer']
+           'set_training_status', 'AveragePoolingLayer', 'WarpingLayer', 'GroupNormLayer']
 
 
 def validate(func):
@@ -260,10 +260,8 @@ class DownsamplingLayer(Layer):
         self.sigma = sigma
         self.descriptions = '{} Downsampling: factor {} phase {} width {}'.format(layer_name, factor, phase, kernel_width)
         # note that `kernel width` will be different to actual size for phase = 1/2
-        kernel = T.as_tensor_variable(utils.get_kernel(factor, kernel_type_, phase, kernel_width, support=support, sigma=sigma))
-        self.kernel = T.zeros((input_shape[1], input_shape[1], kernel_width, kernel_width), 'float32')
-        for i in range(input_shape[1]):
-            self.kernel = T.set_subtensor(self.kernel[i, i], kernel)
+        kernel = utils.get_kernel(factor, kernel_type_, phase, kernel_width, support=support, sigma=sigma)
+        self.kernel = utils.make_tensor_kernel_from_numpy((input_shape[1], input_shape[1], kernel_width, kernel_width), kernel)
         self.preserve_size = preserve_size
 
         if preserve_size:
@@ -271,7 +269,7 @@ class DownsamplingLayer(Layer):
                 pad = int((kernel_width - 1) / 2.)
             else:
                 pad = int((kernel_width - factor) / 2.)
-            self.padding = lambda x: utils.replication_pad2d(x, pad)
+            self.padding = lambda z: utils.replication_pad2d(z, pad)
 
     def get_output(self, input):
         if self.preserve_size:
@@ -1034,7 +1032,7 @@ class ResNetBlock(Layer):
     upscale_factor = 1
 
     def __init__(self, input_shape, num_filters, stride=(1, 1), dilation=(1, 1), activation='relu', downsample=None,
-                 layer_name='ResBlock', normalization='bn', groups=32, **kwargs):
+                 layer_name='ResBlock', normalization='bn', groups=32, block=None, **kwargs):
         """
 
         :param input_shape:
@@ -1051,16 +1049,21 @@ class ResNetBlock(Layer):
         assert downsample or (input_shape[1] == num_filters), 'Cannot have identity branch when input dim changes.'
         assert normalization in (None, 'bn', 'gn')
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+        assert isinstance(stride, (int, list, tuple))
 
         super(ResNetBlock, self).__init__(input_shape, layer_name)
         self.num_filters = num_filters
-        self.stride = stride
+        self.stride = stride if isinstance(stride, (list, tuple)) else (stride, stride)
         self.dilation = dilation
         self.activation = activation
         self.normalization = normalization
         self.downsample = downsample
         self.groups = groups
         self.upscale_factor = 1
+        self.simple_block = lambda name: block(input_shape=self.input_shape, num_filters=self.num_filters,
+                                               stride=self.stride[0], dilation=self.dilation, activation=self.activation,
+                                               normalization=self.normalization, block_name=name,
+                                               **self.kwargs) if block else self._build_simple_block(name)
         self.kwargs = kwargs
 
         if activation == 'prelu':
@@ -1069,7 +1072,7 @@ class ResNetBlock(Layer):
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
-        self.block = Sequential(self._build_simple_block(block_name=layer_name + '_1'))
+        self.block = Sequential(self.simple_block(layer_name + '_1'))
         self.params += self.block.params
         self.trainable += self.block.trainable
         self.regularizable += self.block.regularizable
@@ -1143,7 +1146,7 @@ class ResNetBottleneckBlock(Layer):
     upscale_factor = 4
 
     def __init__(self, input_shape, num_filters, stride=1, dilation=(1, 1), activation='relu', downsample=False,
-                 upscale_factor=4, layer_name='ResBottleneckBlock', **kwargs):
+                 upscale_factor=4, layer_name='ResBottleneckBlock', normalization='bn', block=None, **kwargs):
         """
 
         :param input_shape:
@@ -1165,9 +1168,14 @@ class ResNetBottleneckBlock(Layer):
         self.dilation = dilation
         self.activation = activation
         self.downsample = downsample
+        self.normalization = normalization
+        self.simple_block = lambda name: block(input_shape=self.input_shape, num_filters=self.num_filters,
+                                               stride=self.stride, dilation=self.dilation, activation=self.activation,
+                                               normalization=self.normalization, block_name=name,
+                                               **self.kwargs) if block else self._build_simple_block(name)
         self.kwargs = kwargs
 
-        self.block = Sequential(self._build_simple_block(block_name=layer_name + '_1', no_bias=True))
+        self.block = Sequential(self.simple_block(layer_name + '_1'))
         self.params += self.block.params
         self.trainable += self.block.trainable
         self.regularizable += self.block.regularizable
@@ -1189,16 +1197,16 @@ class ResNetBottleneckBlock(Layer):
         self.descriptions = '{} ResNet Bottleneck {} -> {} num filters {} stride {} upscale {} dilation {} {}'. \
             format(layer_name, input_shape, self.output_shape, num_filters, stride, upscale_factor, dilation, activation)
 
-    def _build_simple_block(self, block_name, no_bias):
+    def _build_simple_block(self, block_name):
         layers = []
-        layers.append(ConvNormAct(self.input_shape, self.num_filters, 1, stride=self.stride, no_bias=no_bias,
+        layers.append(ConvNormAct(self.input_shape, self.num_filters, 1, stride=self.stride, no_bias=True,
                                   activation=self.activation, layer_name=block_name+'_conv_bn_act_1', **self.kwargs))
 
         layers.append(ConvNormAct(layers[-1].output_shape, self.num_filters, 3, activation=self.activation,
-                                  layer_name=block_name+'_conv_bn_act_2', no_bias=no_bias, **self.kwargs))
+                                  layer_name=block_name+'_conv_bn_act_2', no_bias=True, **self.kwargs))
 
         layers.append(ConvNormAct(layers[-1].output_shape, self.num_filters * self.upscale_factor, 1, stride=1,
-                                  activation='linear', layer_name=block_name+'_conv_bn_act_3', no_bias=no_bias, **self.kwargs))
+                                  activation='linear', layer_name=block_name+'_conv_bn_act_3', no_bias=True, **self.kwargs))
         return layers
 
     def get_output(self, input):
