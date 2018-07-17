@@ -64,13 +64,10 @@ def first_derivative_error(x, y, p=2, depth=3):
     kern_y = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
     kern_y = utils.make_tensor_kernel_from_numpy((depth, depth), kern_y)
 
-    x_grad_x = T.nnet.conv2d(x, kern_x, border_mode='half')
-    x_grad_y = T.nnet.conv2d(x, kern_y, border_mode='half')
-    x_grad = T.sqrt(T.sqr(x_grad_x) + T.sqr(x_grad_y) + 1e-10)
-
-    y_grad_x = T.nnet.conv2d(y, kern_x, border_mode='half')
-    y_grad_y = T.nnet.conv2d(y, kern_y, border_mode='half')
-    y_grad = T.sqrt(T.sqr(y_grad_x) + T.sqr(y_grad_y) + 1e-10)
+    grad_x = T.nnet.conv2d(T.concatenate((x, y), 1), kern_x, border_mode='half')
+    grad_y = T.nnet.conv2d(T.concatenate((x, y), 1), kern_y, border_mode='half')
+    x_grad = T.sqrt(T.sqr(grad_x[:, :depth]) + T.sqr(grad_y[:, :depth]) + 1e-10)
+    y_grad = T.sqrt(T.sqr(grad_x[:, depth:]) + T.sqr(grad_y[:, depth:]) + 1e-10)
     return norm_error(x_grad, y_grad, p)
 
 
@@ -190,9 +187,8 @@ def vgg16_loss(x, y, weight_file, p=2):
 def dog_loss(x, y, size=21, sigma1=1, sigma2=1.6, p=2, **kwargs):
     print('Using Difference of Gaussians loss')
     depth = kwargs.get('depth', 3)
-    x = utils.difference_of_gaussian(x, depth, size, sigma1, sigma2)
-    y = utils.difference_of_gaussian(y, depth, size, sigma1, sigma2)
-    return norm_error(x, y, p)
+    diff = utils.difference_of_gaussian(T.concatenate((x, y), 1), 2*depth, size, sigma1, sigma2)
+    return norm_error(diff[:, :depth], diff[:, depth:], p)
 
 
 def log_loss(x, y, size=9, sigma=1., p=2, **kwargs):
@@ -339,18 +335,36 @@ def psnr255(x, y):
 
 if __name__ == '__main__':
     X = T.tensor4()
-    X_ = utils.rgb2gray(X)
-    kern = utils.laplacian_of_gaussian_kernel(9, 1.)
-    kern = utils.make_tensor_kernel_from_numpy((1, 1), kern)
-    Y = T.nnet.conv2d(X_, kern, border_mode='half')
-    f = theano.function([X], Y)
+    Z = T.tensor4()
+    # kern_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype='float32')
+    # kern_x = utils.make_tensor_kernel_from_numpy((3, 3), kern_x)
+    #
+    # kern_y = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
+    # kern_y = utils.make_tensor_kernel_from_numpy((3, 3), kern_y)
+    #
+    # x_grad_x = T.nnet.conv2d(X, kern_x, border_mode='half')
+    # x_grad_y = T.nnet.conv2d(X, kern_y, border_mode='half')
+    # Y = T.sqrt(T.sqr(x_grad_x) + T.sqr(x_grad_y) + 1e-10)
+    # X_ = utils.rgb2gray(X)
+    Y = dog_loss(X, Z)
+    # kern = utils.make_tensor_kernel_from_numpy((1, 1), kern)
+    # Y = T.nnet.conv2d(X_, kern, border_mode='half')
+    f = theano.function([X, Z], Y)
 
     from scipy import misc
     from matplotlib import pyplot as plt
-    im = misc.imread('E:/DB/Videos/DAVIS/JPEGImages/480p/bear/00000.jpg').astype('float32') / 255.
+    im = misc.imread('E:/Users/Duc/frame_interpolation/utils/Camila Cabello - Havana ft. Young Thug/100.jpg').astype('float32') / 255.
+    im2 = misc.imread('E:/Users/Duc/frame_interpolation/utils/Camila Cabello - Havana ft. Young Thug/200.jpg').astype('float32') / 255.
     im = np.transpose(im[None], (0, 3, 1, 2))
-    res = f(im)
+    im2 = np.transpose(im2[None], (0, 3, 1, 2))
+    res = f(im, im2)
     res = np.squeeze(np.transpose(res[0], (1, 2, 0)))
-    res = (res - np.min(res)) / (np.max(res) - np.min(res))
-    plt.imshow(res, 'gray')
+    res1 = (res[..., :3] - np.min(res[..., :3])) / (np.max(res[..., :3]) - np.min(res[..., :3]))
+    res2 = (res[..., 3:] - np.min(res[..., 3:])) / (np.max(res[..., 3:]) - np.min(res[..., 3:]))
+    from skimage import color
+    # res = color.rgb2gray(res)
+    # misc.imsave('fde.jpg', res)
+    plt.imshow(color.rgb2gray(res1), 'gray')
+    plt.figure()
+    plt.imshow(color.rgb2gray(res2), 'gray')
     plt.show()

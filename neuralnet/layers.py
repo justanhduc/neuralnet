@@ -375,8 +375,8 @@ class DetailPreservingPoolingLayer(Layer):
         self.trainable += [self.alpha_, self.lambda_]
 
         if learn_filter:
-            self.kern = theano.shared(GlorotNormal()((input_shape[1], input_shape[1], 3, 3)), 'down_filter',
-                                      borrow=True)
+            self.kern_vals = GlorotNormal()((input_shape[1], input_shape[1], 3, 3))
+            self.kern = theano.shared(self.kern_vals.copy(), 'down_filter', borrow=True)
             self.params.append(self.kern)
             self.trainable.append(self.kern)
             self.regularizable.append(self.kern)
@@ -416,6 +416,10 @@ class DetailPreservingPoolingLayer(Layer):
     @validate
     def output_shape(self):
         return self.input_shape[:2] + (self.input_shape[2] // self.ws[0], self.input_shape[3] // self.ws[1])
+
+    def reset(self):
+        if self.learn_filter:
+            self.kern.set_value(self.kern_vals.copy())
 
 
 class DropoutLayer(Layer):

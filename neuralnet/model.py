@@ -77,7 +77,7 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
     def reset(self):
         for layer in self.model:
             layer.reset()
-        if hasattr(self, 'opt'):
+        if self.opt:
             self.opt.reset()
 
     def __repr__(self):

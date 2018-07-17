@@ -32,6 +32,7 @@ class Optimization(utils.ConfigParser):
         self.decrease_factor = np.float32(self.config['optimization']['decrease_factor'])
         self.final_learning_rate = self.config['optimization']['final_learning_rate']
         self.last_iter_to_decrease = self.config['optimization']['last_iter_to_decrease']
+        self.opt = None
 
     def build_cost(self, y_pred, y, regularizable=None):
 
