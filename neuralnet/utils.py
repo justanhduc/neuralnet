@@ -560,10 +560,9 @@ def unroll_scan(fn, sequences, outputs_info, non_sequences, n_steps, go_backward
 
 
 def lagrange_interpolation(x, y, u, order):
-    _, w = y.shape
     r = range(order+1)
-    a = [y[i] / reduce(lambda a, b: a*b, [x[i] - x[j] for j in r if j != i]) for i in r]
-    out = T.sum([a[i] * reduce(lambda a, b: a*b, [u - x[j] for j in r if j != i]) for i in r], 0)
+    a = [y[i] / reduce(lambda c, b: c*b, [x[i] - x[j] for j in r if j != i]) for i in r]
+    out = T.sum([a[i] * reduce(lambda c, b: c*b, [u - x[j] for j in r if j != i]) for i in r], 0)
     return out
 
 

@@ -276,7 +276,8 @@ class DownsamplingLayer(Layer):
             x = self.padding(input)
         else:
             x = input
-        out = T.nnet.conv2d(x, self.kernel, subsample=(self.factor, self.factor))
+        out = conv(x, self.kernel, subsample=(self.factor, self.factor),
+                   filter_shape=(self.input_shape[1], self.input_shape[1], self.kernel_width, self.kernel_width))
         return out
 
     @property
@@ -572,7 +573,8 @@ class ConvolutionalLayer(Layer):
                                      'activation: {} '.format(activation)))
 
     def get_output(self, input):
-        output = conv(input=input, filters=self.W, border_mode=self.border_mode, subsample=self.subsample)
+        output = conv(input=input, filters=self.W, border_mode=self.border_mode, subsample=self.subsample,
+                      input_shape=self.input_shape, filter_shape=self.filter_shape)
         if not self.no_bias:
             output += self.b.dimshuffle(('x', 0, 'x', 'x'))
         return self.activation(output, **self.kwargs)
@@ -2582,8 +2584,9 @@ def SoftmaxLayer(input_shape, num_nodes, layer_name='softmax'):
 
 
 if __name__ == '__main__':
+    from neuralnet import model_zoo
     X = T.tensor4('float32')
-    net = resnet50((None, 3, 224, 224), 64, 10)
+    net = model_zoo.resnet50((None, 3, 224, 224), 64, 10)
     Y_ = net(X)
     f = theano.function([X], Y_)
     x = np.random.rand(64, 3, 224, 224).astype('float32')

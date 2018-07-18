@@ -17,11 +17,11 @@ class ResNet(nn.Layer):
         self.network.append(nn.ConvNormAct(self.network.input_shape, num_filters, 7, stride=2, activation=activation, **kwargs))
         if pooling:
             self.network.append(nn.PoolingLayer(self.network.output_shape, (3, 3), stride=(2, 2), pad=1))
-        self.shape = self.network.output_shape
-        self.network.append(self._make_layer(block, num_filters, layers[0], name='block1'))
-        self.network.append(self._make_layer(block, 2 * num_filters, layers[1], stride=2, name='block2'))
-        self.network.append(self._make_layer(block, 4 * num_filters, layers[2], stride=2, name='block3'))
-        self.network.append(self._make_layer(block, 8 * num_filters, layers[3], stride=2, name='block4'))
+        # self.shape = self.network.output_shape
+        self.network.append(self._make_layer(block, self.network.output_shape, num_filters, layers[0], name='block1'))
+        self.network.append(self._make_layer(block, self.network.output_shape, 2 * num_filters, layers[1], stride=2, name='block2'))
+        self.network.append(self._make_layer(block, self.network.output_shape, 4 * num_filters, layers[2], stride=2, name='block3'))
+        self.network.append(self._make_layer(block, self.network.output_shape, 8 * num_filters, layers[3], stride=2, name='block4'))
 
         if fc:
             self.network.append(nn.GlobalAveragePoolingLayer(self.network.output_shape, layer_name='glb_avg_pooling'))
@@ -33,16 +33,16 @@ class ResNet(nn.Layer):
         self.regularizable = list(self.network.regularizable)
         self.descriptions = self.network.descriptions
 
-    def _make_layer(self, block, planes, blocks, stride=1, name=''):
+    def _make_layer(self, block, shape, planes, blocks, stride=1, name=''):
         downsample = None
-        if stride != 1 or self.shape[1] != planes * block.upscale_factor:
+        if stride != 1 or shape[1] != planes * block.upscale_factor:
             downsample = True
 
-        layers = [block(self.shape, planes, stride, downsample=downsample, activation=self.activation,
+        layers = [block(shape, planes, stride, downsample=downsample, activation=self.activation,
                         layer_name=name + '_0', block=self.custom_block, **self.kwargs)]
-        self.shape = layers[-1].output_shape
+
         for i in range(1, blocks):
-            layers.append(block(self.shape, planes, activation=self.activation, layer_name=name + '_%d' % i,
+            layers.append(block(layers[-1].output_shape, planes, activation=self.activation, layer_name=name + '_%d' % i,
                                 block=self.custom_block, **self.kwargs))
         return nn.Sequential(layers, layer_name=name)
 
