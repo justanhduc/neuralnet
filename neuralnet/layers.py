@@ -574,7 +574,7 @@ class ConvolutionalLayer(Layer):
 
     def get_output(self, input):
         output = conv(input=input, filters=self.W, border_mode=self.border_mode, subsample=self.subsample,
-                      input_shape=self.input_shape, filter_shape=self.filter_shape)
+                      filter_shape=self.filter_shape)
         if not self.no_bias:
             output += self.b.dimshuffle(('x', 0, 'x', 'x'))
         return self.activation(output, **self.kwargs)
