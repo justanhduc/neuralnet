@@ -435,8 +435,9 @@ class DropoutLayer(Layer):
         self.descriptions = '{} Dropout Layer: p={:.2f}'.format(layer_name, 1. - drop_prob)
 
     def get_output(self, input):
-        mask = self.srng.normal(input.shape) + 1. if self.GaussianNoise else self.srng.binomial(n=1, p=self.keep_prob, size=input.shape)
-        output_on = mask * input if self.GaussianNoise else input * T.cast(mask, theano.config.floatX)
+        mask = self.srng.normal(input.shape) + 1. if self.GaussianNoise else T.cast(
+            self.srng.binomial(n=1, p=self.keep_prob, size=input.shape), theano.config.floatX)
+        output_on = mask * input
         output_off = input if self.GaussianNoise else input * self.keep_prob
         return output_on if self.training_flag else output_off
 

@@ -10,7 +10,8 @@ from neuralnet import utils
 __all__ = ['manhattan_distance', 'mean_classification_error', 'mean_squared_error', 'msssim',
            'multinoulli_cross_entropy', 'root_mean_squared_error', 'psnr', 'psnr255', 'pearson_correlation',
            'ssim', 'spearman', 'first_derivative_error', 'huberloss', 'binary_cross_entropy', 'norm_error',
-           'gradient_difference', 'total_variation', 'kld', 'pulling_away', 'vgg16_loss', 'dog_loss', 'log_loss']
+           'gradient_difference', 'total_variation', 'kld', 'pulling_away', 'vgg16_loss', 'dog_loss',
+           'log_loss', 'gram_vgg19_loss']
 
 
 def manhattan_distance(y_pred, y):
@@ -104,13 +105,16 @@ def total_variation(x, type='aniso', p=2, depth=3):
 
 def gram_vgg19_loss(x, y, weight_file, p=2):
     if x.ndim != 4 and y.ndim != 4:
-        raise TypeError('x and y should be image tensors.')
-    print('Using VGG16 loss')
+        raise TypeError('x and y must be image tensors.')
+    print('Using Gram matrix VGG19 loss')
     net = VGG19((None, 3, 224, 224), False)
     net.load_weights(weight_file)
+    mean = T.constant(np.array([123.68, 116.779, 103.939], dtype='float32')[None, :, None, None], 'mean')
+    x -= mean
+    y -= mean
     inputs = T.concatenate((x, y))
     out = net(inputs)
-    out_x, out_y = out[:x.shape[0], x.shape[0]:]
+    out_x, out_y = out[:x.shape[0]], out[x.shape[0]:]
     out_x = out_x.flatten(3)
     out_y = out_y.flatten(3)
     gram_x = T.batched_dot(out_x, out_x.dimshuffle(0, 2, 1))
@@ -120,13 +124,15 @@ def gram_vgg19_loss(x, y, weight_file, p=2):
 
 def vgg16_loss(x, y, weight_file, p=2):
     if x.ndim != 4 and y.ndim != 4:
-        raise TypeError('x and y should be image tensors.')
+        raise TypeError('x and y must be image tensors.')
     print('Using VGG16 loss')
+    mean = T.constant(np.array([123.68, 116.779, 103.939], dtype='float32')[None, :, None, None], 'mean')
     net = VGG16((None, 3, 224, 224), False)
     net.load_weights(weight_file)
-    out_x = net(x)
-    out_y = net(y)
-    return norm_error(out_x, out_y, p)
+    x -= mean
+    y -= mean
+    out = net(T.concatenate((x, y)))
+    return norm_error(out[:x.shape[0]], out[x.shape[0]:], p)
 
 
 def pulling_away(x, y=None):
