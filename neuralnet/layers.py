@@ -424,21 +424,22 @@ class DetailPreservingPoolingLayer(Layer):
 
 
 class DropoutLayer(Layer):
-    def __init__(self, input_shape, drop_prob=0.5, GaussianNoise=False, layer_name='Dropout'):
+    def __init__(self, input_shape, drop_prob=0.5, gaussian=False, layer_name='Dropout'):
         assert len(input_shape) == 2 or len(input_shape) == 4, \
             'input_shape must have 2 or 4 elements. Received %d' % len(input_shape)
 
         super(DropoutLayer, self).__init__(input_shape, layer_name)
-        self.GaussianNoise = GaussianNoise
+        self.gaussian = gaussian
         self.srng = theano.sandbox.rng_mrg.MRG_RandomStreams(self.rng.randint(1, int(time.time())))
         self.keep_prob = T.as_tensor_variable(np.float32(1. - drop_prob))
         self.descriptions = '{} Dropout Layer: p={:.2f}'.format(layer_name, 1. - drop_prob)
 
     def get_output(self, input):
-        mask = self.srng.normal(input.shape) + 1. if self.GaussianNoise else T.cast(
-            self.srng.binomial(n=1, p=self.keep_prob, size=input.shape), theano.config.floatX)
-        output_on = mask * input
-        output_off = input if self.GaussianNoise else input * self.keep_prob
+        mask = self.srng.normal(input.shape) + 1. if self.gaussian else self.srng.binomial(n=1, p=self.keep_prob,
+                                                                                           size=input.shape,
+                                                                                           dtype='float32')
+        output_on = input * mask
+        output_off = input if self.gaussian else input * self.keep_prob
         return output_on if self.training_flag else output_off
 
     @property
