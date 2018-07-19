@@ -4,7 +4,7 @@ import theano
 from theano import tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
-from neuralnet.model_zoo import VGG16
+from neuralnet.model_zoo import VGG16, VGG19
 from neuralnet import utils
 
 __all__ = ['manhattan_distance', 'mean_classification_error', 'mean_squared_error', 'msssim',
@@ -102,6 +102,33 @@ def total_variation(x, type='aniso', p=2, depth=3):
     return norm_error(x_grad, T.zeros_like(x_grad, 'float32'), p)
 
 
+def gram_vgg19_loss(x, y, weight_file, p=2):
+    if x.ndim != 4 and y.ndim != 4:
+        raise TypeError('x and y should be image tensors.')
+    print('Using VGG16 loss')
+    net = VGG19((None, 3, 224, 224), False)
+    net.load_weights(weight_file)
+    inputs = T.concatenate((x, y))
+    out = net(inputs)
+    out_x, out_y = out[:x.shape[0], x.shape[0]:]
+    out_x = out_x.flatten(3)
+    out_y = out_y.flatten(3)
+    gram_x = T.batched_dot(out_x, out_x.dimshuffle(0, 2, 1))
+    gram_y = T.batched_dot(out_y, out_y.dimshuffle(0, 2, 1))
+    return norm_error(gram_x, gram_y, p)
+
+
+def vgg16_loss(x, y, weight_file, p=2):
+    if x.ndim != 4 and y.ndim != 4:
+        raise TypeError('x and y should be image tensors.')
+    print('Using VGG16 loss')
+    net = VGG16((None, 3, 224, 224), False)
+    net.load_weights(weight_file)
+    out_x = net(x)
+    out_y = net(y)
+    return norm_error(out_x, out_y, p)
+
+
 def pulling_away(x, y=None):
     if not y:
         if x.ndim != 2:
@@ -171,17 +198,6 @@ def mean_classification_error(p_y_given_x, y, binary_threshold=0.5):
         return T.mean(T.cast(T.neq(y_pred, y), theano.config.floatX))
     else:
         raise NotImplementedError
-
-
-def vgg16_loss(x, y, weight_file, p=2):
-    if x.ndim != 4 and y.ndim != 4:
-        raise TypeError('x and y should be image tensors.')
-    print('Using VGG16 loss')
-    net = VGG16((None, 3, 224, 224), False)
-    net.load_weights(weight_file)
-    out_x = net(x)
-    out_y = net(y)
-    return norm_error(out_x, out_y, p)
 
 
 def dog_loss(x, y, size=21, sigma1=1, sigma2=1.6, p=2, **kwargs):

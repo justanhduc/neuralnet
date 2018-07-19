@@ -148,6 +148,87 @@ class VGG16(nn.Layer):
         print('Pretrained weights loaded successfully!')
 
 
+class VGG19(nn.Layer):
+    def __init__(self, input_shape, fc=True, num_classes=1000, name='vgg19'):
+        super(VGG19, self).__init__(input_shape, name)
+        self.fc = fc
+        self.model = nn.Sequential(input_shape=input_shape, layer_name=name)
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 64, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv1_1'))
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 64, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv1_2'))
+        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool0'))
+
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 128, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv2_1'))
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 128, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv2_2'))
+        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool1'))
+
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 256, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv3_1'))
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 256, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv3_2'))
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 256, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv3_3'))
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 256, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv3_4'))
+        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool2'))
+
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv4_1'))
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv4_2'))
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv4_3'))
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv4_4'))
+        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool3'))
+
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv5_1'))
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv5_2'))
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv5_3'))
+        self.model.append(
+            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv5_4'))
+
+        if fc:
+            self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name+'_maxpool4'))
+            self.model.append(nn.FullyConnectedLayer(self.model.output_shape, 4096, layer_name=name+'_fc1'))
+            self.model.append(nn.FullyConnectedLayer(self.model.output_shape, 4096, layer_name=name+'_fc2'))
+            self.model.append(nn.SoftmaxLayer(self.model.output_shape, num_classes, name+'_softmax'))
+
+        self.params = list(self.model.params)
+        self.trainable = list(self.model.trainable)
+        self.regularizable = list(self.model.regularizable)
+        self.descriptions = self.model.descriptions
+
+    def get_output(self, input):
+        return self.model(input)
+
+    @property
+    def output_shape(self):
+        return self.model.output_shape
+
+    def load_weights(self, filename):
+        f = h5py.File(filename, mode='r')
+
+        filtered_layers = []
+        for layer in self.model:
+            if 'pool' in layer.layer_name:
+                continue
+            filtered_layers.append(layer)
+
+        weight_value_tuples = []
+        for layer in filtered_layers:
+            weight_value_tuples.append((layer.W, f[layer.layer_name[len(self.layer_name)+1:]+'_W']))
+            weight_value_tuples.append((layer.b, f[layer.layer_name[len(self.layer_name)+1:]+'_b']))
+        nn.utils.batch_set_value(weight_value_tuples)
+        print('Pretrained weights loaded successfully!')
+
+
 class DenseNet(nn.Layer):
     def __init__(self, input_shape, fc=True, num_classes=1000, first_output=16, growth_rate=12, num_blocks=3, depth=40,
                  dropout=False, name='DenseNet'):
@@ -204,38 +285,41 @@ def resnet152(input_shape, num_filters, activation='relu', fc=True, pooling=True
 
 
 if __name__ == '__main__':
-    from matplotlib import pyplot as plt
-
-    root = 'E:/Users/Jongyoo/DeepIQA2/'
-    weight_file = root + 'vgg16_weights_tf_dim_ordering_tf_kernels.h5'
-    imagenet_classes_file = root + 'imagenet_classes.txt'
-    image_list = [
-        'ILSVRC2012_val_00000001.JPEG',
-        'ILSVRC2012_val_00000002.JPEG',
-        'ILSVRC2012_val_00000003.JPEG',
-        'ILSVRC2012_val_00000004.JPEG',
-        'ILSVRC2012_val_00000005.JPEG'
-    ]
-
-    X = T.tensor4('input')
-    net = VGG16((None, 3, 224, 224))
+    weight_file = 'C:/Users/justanhduc/Desktop/DeepTextures-master/VGG19_no_flip_caffe.h5'
+    net = VGG19((None, 3, 224, 224), False)
     net.load_weights(weight_file)
-    test = theano.function([X], net(X))
-
-    with open(imagenet_classes_file, 'r') as f:
-        classes = [s.strip() for s in f.readlines()]
-    mean_bgr = np.array([103.939, 116.779, 123.68], dtype='float32')[None, None, :]
-    for fname in image_list:
-        print(fname)
-        rawim, im = nn.utils.prep_image(root+fname, mean_bgr, 'rgb')
-        prob = test(im)[0]
-        print('Theano:')
-        res = sorted(zip(classes, prob), key=lambda t: t[1], reverse=True)[:len(image_list)]
-        for c, p in res:
-            print('  ', c, p)
-
-        plt.figure()
-        plt.imshow(rawim.astype('uint8'))
-        plt.axis('off')
-        plt.show()
-        print('\n')
+    # from matplotlib import pyplot as plt
+    #
+    # root = 'E:/Users/Jongyoo/DeepIQA2/'
+    # weight_file = root + 'vgg16_weights_tf_dim_ordering_tf_kernels.h5'
+    # imagenet_classes_file = root + 'imagenet_classes.txt'
+    # image_list = [
+    #     'ILSVRC2012_val_00000001.JPEG',
+    #     'ILSVRC2012_val_00000002.JPEG',
+    #     'ILSVRC2012_val_00000003.JPEG',
+    #     'ILSVRC2012_val_00000004.JPEG',
+    #     'ILSVRC2012_val_00000005.JPEG'
+    # ]
+    #
+    # X = T.tensor4('input')
+    # net = VGG16((None, 3, 224, 224))
+    # net.load_weights(weight_file)
+    # test = theano.function([X], net(X))
+    #
+    # with open(imagenet_classes_file, 'r') as f:
+    #     classes = [s.strip() for s in f.readlines()]
+    # mean_bgr = np.array([103.939, 116.779, 123.68], dtype='float32')[None, None, :]
+    # for fname in image_list:
+    #     print(fname)
+    #     rawim, im = nn.utils.prep_image(root+fname, mean_bgr, 'rgb')
+    #     prob = test(im)[0]
+    #     print('Theano:')
+    #     res = sorted(zip(classes, prob), key=lambda t: t[1], reverse=True)[:len(image_list)]
+    #     for c, p in res:
+    #         print('  ', c, p)
+    #
+    #     plt.figure()
+    #     plt.imshow(rawim.astype('uint8'))
+    #     plt.axis('off')
+    #     plt.show()
+    #     print('\n')

@@ -424,7 +424,7 @@ class DetailPreservingPoolingLayer(Layer):
 
 
 class DropoutLayer(Layer):
-    def __init__(self, input_shape, drop_prob=0.5, GaussianNoise=False, layer_name='Dropout', **kwargs):
+    def __init__(self, input_shape, drop_prob=0.5, GaussianNoise=False, layer_name='Dropout'):
         assert len(input_shape) == 2 or len(input_shape) == 4, \
             'input_shape must have 2 or 4 elements. Received %d' % len(input_shape)
 
@@ -432,7 +432,6 @@ class DropoutLayer(Layer):
         self.GaussianNoise = GaussianNoise
         self.srng = theano.sandbox.rng_mrg.MRG_RandomStreams(self.rng.randint(1, int(time.time())))
         self.keep_prob = T.as_tensor_variable(np.float32(1. - drop_prob))
-        self.kwargs = kwargs
         self.descriptions = '{} Dropout Layer: p={:.2f}'.format(layer_name, 1. - drop_prob)
 
     def get_output(self, input):
@@ -515,7 +514,7 @@ class FullyConnectedLayer(Layer):
 
 class ConvolutionalLayer(Layer):
     def __init__(self, input_shape, num_filters, filter_size, init=HeNormal(gain=1.), no_bias=True, border_mode='half',
-                 stride=(1, 1), dilation=(1, 1), layer_name='conv', activation='relu', target='dev0', **kwargs):
+                 stride=(1, 1), dilation=(1, 1), layer_name='conv', activation='relu', **kwargs):
         """
 
         :param input_shape:
@@ -546,7 +545,7 @@ class ConvolutionalLayer(Layer):
         self.border_mode = border_mode
         self.subsample = tuple(stride) if isinstance(stride, (tuple, list)) else (stride, stride)
         self.dilation = dilation
-        self.target = target
+        self.filter_flip = kwargs.pop('filter_flip', True)
         self.kwargs = kwargs
 
         self.W_values = init(self.filter_shape)
@@ -574,7 +573,7 @@ class ConvolutionalLayer(Layer):
 
     def get_output(self, input):
         output = conv(input=input, filters=self.W, border_mode=self.border_mode, subsample=self.subsample,
-                      filter_shape=self.filter_shape)
+                      filter_flip=self.filter_flip, filter_shape=self.filter_shape)
         if not self.no_bias:
             output += self.b.dimshuffle(('x', 0, 'x', 'x'))
         return self.activation(output, **self.kwargs)
