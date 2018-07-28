@@ -13,21 +13,12 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
         self.input_shape = (None, self.config['model']['input_shape'][2]) + tuple(
             self.config['model']['input_shape'][:2])
         self.model = layers.Sequential(input_shape=self.input_shape, layer_name=self.config['model']['name'])
-        self.params = []
-        self.trainable = []
-        self.regularizable = []
-        self.idx = 0
 
     def __iter__(self):
-        self.idx = 0
-        return self
+        return self.model.__iter__()
 
     def __next__(self):
-        if len(self.model) == 0 or self.idx == len(self.model):
-            raise StopIteration
-        else:
-            self.idx += 1
-            return self.model[self.idx - 1]
+        return self.model.__next__()
 
     def __len__(self):
         return len(self.model)
@@ -52,14 +43,17 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
     def learn(self, input, gt, **kwargs):
         raise NotImplementedError
 
-    def get_all_params(self):
-        self.params += list(self.model.params)
+    @property
+    def params(self):
+        return self.model.params
 
-    def get_trainable(self):
-        self.trainable += list(self.model.trainable)
+    @property
+    def trainable(self):
+        return self.model.trainable
 
-    def get_regularizable(self):
-        self.regularizable += list(self.model.regularizable)
+    @property
+    def regularizable(self):
+        return self.model.regularizable
 
     def save_params(self):
         numpy.savez(self.param_file, **{p.name: p.get_value() for p in self.params})
@@ -75,8 +69,7 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
         print('Model weights loaded from %s' % self.param_file)
 
     def reset(self):
-        for layer in self.model:
-            layer.reset()
+        self.model.reset()
         if self.opt:
             self.opt.reset()
 

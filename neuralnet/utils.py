@@ -747,7 +747,7 @@ def fspecial_gauss(size, sigma):
     return g / T.sum(g)
 
 
-def difference_of_gaussian(x, depth, size=21, sigma1=1, sigma2=1.6):
+def difference_of_gaussian(x, depth=3, size=21, sigma1=1, sigma2=1.6):
     kern1 = gaussian2(size, sigma1)
     kern2 = gaussian2(size, sigma2)
     kern1 = make_tensor_kernel_from_numpy((depth, depth), kern1)

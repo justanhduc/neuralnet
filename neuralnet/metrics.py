@@ -366,27 +366,27 @@ if __name__ == '__main__':
     #
     # x_grad_x = T.nnet.conv2d(X, kern_x, border_mode='half')
     # x_grad_y = T.nnet.conv2d(X, kern_y, border_mode='half')
-    # Y = T.sqrt(T.sqr(x_grad_x) + T.sqr(x_grad_y) + 1e-10)
+    # Y = T.sqrt(T.sqr(x_grad_x) + T.sqr(x_grad_y))
     # X_ = utils.rgb2gray(X)
-    Y = dog_loss(X, Z)
+    Y = utils.difference_of_gaussian(X)
     # kern = utils.make_tensor_kernel_from_numpy((1, 1), kern)
     # Y = T.nnet.conv2d(X_, kern, border_mode='half')
-    f = theano.function([X, Z], Y)
+    f = theano.function([X], Y)
 
     from scipy import misc
-    from matplotlib import pyplot as plt
+    # from matplotlib import pyplot as plt
     im = misc.imread('E:/Users/Duc/frame_interpolation/utils/Camila Cabello - Havana ft. Young Thug/100.jpg').astype('float32') / 255.
-    im2 = misc.imread('E:/Users/Duc/frame_interpolation/utils/Camila Cabello - Havana ft. Young Thug/200.jpg').astype('float32') / 255.
+    # im2 = misc.imread('E:/Users/Duc/frame_interpolation/utils/Camila Cabello - Havana ft. Young Thug/200.jpg').astype('float32') / 255.
     im = np.transpose(im[None], (0, 3, 1, 2))
-    im2 = np.transpose(im2[None], (0, 3, 1, 2))
-    res = f(im, im2)
+    # im2 = np.transpose(im2[None], (0, 3, 1, 2))
+    res = f(im)
     res = np.squeeze(np.transpose(res[0], (1, 2, 0)))
-    res1 = (res[..., :3] - np.min(res[..., :3])) / (np.max(res[..., :3]) - np.min(res[..., :3]))
-    res2 = (res[..., 3:] - np.min(res[..., 3:])) / (np.max(res[..., 3:]) - np.min(res[..., 3:]))
+    res = (res[..., :3] - np.min(res[..., :3])) / (np.max(res[..., :3]) - np.min(res[..., :3]))
+    # res2 = (res[..., 3:] - np.min(res[..., 3:])) / (np.max(res[..., 3:]) - np.min(res[..., 3:]))
     from skimage import color
-    # res = color.rgb2gray(res)
-    # misc.imsave('fde.jpg', res)
-    plt.imshow(color.rgb2gray(res1), 'gray')
-    plt.figure()
-    plt.imshow(color.rgb2gray(res2), 'gray')
-    plt.show()
+    res = color.rgb2gray(res)
+    misc.imsave('dog.eps', res)
+    # plt.imshow(color.rgb2gray(res1), 'gray')
+    # plt.figure()
+    # plt.imshow(color.rgb2gray(res2), 'gray')
+    # plt.show()

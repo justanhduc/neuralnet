@@ -6,32 +6,25 @@ from theano import tensor as T
 import neuralnet as nn
 
 
-class ResNet(nn.Layer):
+class ResNet(nn.Sequential):
     def __init__(self, input_shape, block, layers, num_filters, activation='relu', fc=True, pooling=True, num_classes=1000,
                  layer_name='ResNet', **kwargs):
-        super(ResNet, self).__init__(input_shape, layer_name)
+        super(ResNet, self).__init__(input_shape=input_shape, layer_name=layer_name)
         self.activation = activation
         self.custom_block = kwargs.pop('custom_block', None)
         self.kwargs = kwargs
-        self.network = nn.Sequential(input_shape=input_shape, layer_name=layer_name)
-        self.network.append(nn.ConvNormAct(self.network.input_shape, num_filters, 7, stride=2, activation=activation, **kwargs))
+        self.append(nn.ConvNormAct(self.input_shape, num_filters, 7, stride=2, activation=activation, **kwargs))
         if pooling:
-            self.network.append(nn.PoolingLayer(self.network.output_shape, (3, 3), stride=(2, 2), pad=1))
-        # self.shape = self.network.output_shape
-        self.network.append(self._make_layer(block, self.network.output_shape, num_filters, layers[0], name='block1'))
-        self.network.append(self._make_layer(block, self.network.output_shape, 2 * num_filters, layers[1], stride=2, name='block2'))
-        self.network.append(self._make_layer(block, self.network.output_shape, 4 * num_filters, layers[2], stride=2, name='block3'))
-        self.network.append(self._make_layer(block, self.network.output_shape, 8 * num_filters, layers[3], stride=2, name='block4'))
+            self.append(nn.PoolingLayer(self.output_shape, (3, 3), stride=(2, 2), pad=1))
+        self.append(self._make_layer(block, self.output_shape, num_filters, layers[0], name='block1'))
+        self.append(self._make_layer(block, self.output_shape, 2 * num_filters, layers[1], stride=2, name='block2'))
+        self.append(self._make_layer(block, self.output_shape, 4 * num_filters, layers[2], stride=2, name='block3'))
+        self.append(self._make_layer(block, self.output_shape, 8 * num_filters, layers[3], stride=2, name='block4'))
 
         if fc:
-            self.network.append(nn.GlobalAveragePoolingLayer(self.network.output_shape, layer_name='glb_avg_pooling'))
-            self.network.append(nn.FullyConnectedLayer(self.network.output_shape, num_classes, activation='softmax',
+            self.append(nn.GlobalAveragePoolingLayer(self.output_shape, layer_name='glb_avg_pooling'))
+            self.append(nn.FullyConnectedLayer(self.output_shape, num_classes, activation='softmax',
                                                        layer_name='output'))
-
-        self.params = list(self.network.params)
-        self.trainable = list(self.network.trainable)
-        self.regularizable = list(self.network.regularizable)
-        self.descriptions = self.network.descriptions
 
     def _make_layer(self, block, shape, planes, blocks, stride=1, name=''):
         downsample = None
@@ -46,71 +39,38 @@ class ResNet(nn.Layer):
                                 block=self.custom_block, **self.kwargs))
         return nn.Sequential(layers, layer_name=name)
 
-    def get_output(self, input):
-        return self.network(input)
 
-    @property
-    def output_shape(self):
-        return self.network.output_shape
-
-
-class VGG16(nn.Layer):
+class VGG16(nn.Sequential):
     def __init__(self, input_shape, fc=True, num_classes=1000, name='vgg16'):
-        super(VGG16, self).__init__(input_shape, name)
+        super(VGG16, self).__init__(input_shape=input_shape, layer_name=name)
         self.fc = fc
-        self.model = nn.Sequential(input_shape=input_shape, layer_name=name)
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 64, 3, no_bias=False, layer_name=name + '_conv1'))
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 64, 3, no_bias=False, layer_name=name + '_conv2'))
-        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool0'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 64, 3, no_bias=False, layer_name=name + '_conv1'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 64, 3, no_bias=False, layer_name=name + '_conv2'))
+        self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool0'))
 
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 128, 3, no_bias=False, layer_name=name + '_conv3'))
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 128, 3, no_bias=False, layer_name=name + '_conv4'))
-        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool1'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 128, 3, no_bias=False, layer_name=name + '_conv3'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 128, 3, no_bias=False, layer_name=name + '_conv4'))
+        self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool1'))
 
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 256, 3, no_bias=False, layer_name=name + '_conv5'))
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 256, 3, no_bias=False, layer_name=name + '_conv6'))
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 256, 3, no_bias=False, layer_name=name + '_conv7'))
-        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool2'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 256, 3, no_bias=False, layer_name=name + '_conv5'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 256, 3, no_bias=False, layer_name=name + '_conv6'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 256, 3, no_bias=False, layer_name=name + '_conv7'))
+        self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool2'))
 
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv8'))
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv9'))
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv10'))
-        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool3'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv8'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv9'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv10'))
+        self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool3'))
 
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv11'))
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv12'))
-        self.model.append(
-            nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv13'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv11'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv12'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, layer_name=name + '_conv13'))
 
         if fc:
-            self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name+'_maxpool4'))
-            self.model.append(nn.FullyConnectedLayer(self.model.output_shape, 4096, layer_name=name+'_fc1'))
-            self.model.append(nn.FullyConnectedLayer(self.model.output_shape, 4096, layer_name=name+'_fc2'))
-            self.model.append(nn.SoftmaxLayer(self.model.output_shape, num_classes, name+'_softmax'))
-
-        self.params = list(self.model.params)
-        self.trainable = list(self.model.trainable)
-        self.regularizable = list(self.model.regularizable)
-        self.descriptions = self.model.descriptions
-
-    def get_output(self, input):
-        return self.model(input)
-
-    @property
-    def output_shape(self):
-        return self.model.output_shape
+            self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name+'_maxpool4'))
+            self.append(nn.FullyConnectedLayer(self.output_shape, 4096, layer_name=name+'_fc1'))
+            self.append(nn.FullyConnectedLayer(self.output_shape, 4096, layer_name=name+'_fc2'))
+            self.append(nn.SoftmaxLayer(self.output_shape, num_classes, name+'_softmax'))
 
     def load_weights(self, filename):
         f = h5py.File(filename, mode='r')
@@ -127,7 +87,7 @@ class VGG16(nn.Layer):
         layer_names = filtered_layer_names
 
         filtered_layers = []
-        for layer in self.model:
+        for layer in self:
             if 'pool' in layer.layer_name:
                 continue
             filtered_layers.append(layer)
@@ -148,75 +108,62 @@ class VGG16(nn.Layer):
         print('Pretrained weights loaded successfully!')
 
 
-class VGG19(nn.Layer):
+class VGG19(nn.Sequential):
     def __init__(self, input_shape, fc=True, num_classes=1000, name='vgg19'):
-        super(VGG19, self).__init__(input_shape, name)
+        super(VGG19, self).__init__(input_shape=input_shape, layer_name=name)
         self.fc = fc
-        self.model = nn.Sequential(input_shape=input_shape, layer_name=name)
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 64, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv1_1'))
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 64, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv1_2'))
-        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool0'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 64, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv1_1'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 64, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv1_2'))
+        self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool0'))
 
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 128, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv2_1'))
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 128, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv2_2'))
-        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool1'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 128, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv2_1'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 128, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv2_2'))
+        self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool1'))
 
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 256, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv3_1'))
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 256, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv3_2'))
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 256, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv3_3'))
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 256, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv3_4'))
-        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool2'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv3_1'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv3_2'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv3_3'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv3_4'))
+        self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool2'))
 
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv4_1'))
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv4_2'))
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv4_3'))
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv4_4'))
-        self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name + '_maxpool3'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv4_1'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv4_2'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv4_3'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv4_4'))
+        self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool3'))
 
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv5_1'))
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv5_2'))
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv5_3'))
-        self.model.append(nn.ConvolutionalLayer(self.model.output_shape, 512, 3, no_bias=False, filter_flip=False,
-                                                layer_name=name + '_conv5_4'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv5_1'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv5_2'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv5_3'))
+        self.append(nn.ConvolutionalLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False,
+                                          layer_name=name + '_conv5_4'))
 
         if fc:
-            self.model.append(nn.MaxPoolingLayer(self.model.output_shape, (2, 2), layer_name=name+'_maxpool4'))
-            self.model.append(nn.FullyConnectedLayer(self.model.output_shape, 4096, layer_name=name+'_fc1'))
-            self.model.append(nn.FullyConnectedLayer(self.model.output_shape, 4096, layer_name=name+'_fc2'))
-            self.model.append(nn.SoftmaxLayer(self.model.output_shape, num_classes, name+'_softmax'))
-
-        self.params = list(self.model.params)
-        self.trainable = list(self.model.trainable)
-        self.regularizable = list(self.model.regularizable)
-        self.descriptions = self.model.descriptions
-
-    def get_output(self, input):
-        return self.model(input)
-
-    @property
-    def output_shape(self):
-        return self.model.output_shape
+            self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name+'_maxpool4'))
+            self.append(nn.FullyConnectedLayer(self.output_shape, 4096, layer_name=name+'_fc1'))
+            self.append(nn.FullyConnectedLayer(self.output_shape, 4096, layer_name=name+'_fc2'))
+            self.append(nn.SoftmaxLayer(self.output_shape, num_classes, name+'_softmax'))
 
     def load_weights(self, filename):
         f = h5py.File(filename, mode='r')
 
         filtered_layers = []
-        for layer in self.model:
+        for layer in self:
             if 'pool' in layer.layer_name:
                 continue
             filtered_layers.append(layer)
@@ -229,39 +176,24 @@ class VGG19(nn.Layer):
         print('Pretrained weights loaded successfully!')
 
 
-class DenseNet(nn.Layer):
+class DenseNet(nn.Sequential):
     def __init__(self, input_shape, fc=True, num_classes=1000, first_output=16, growth_rate=12, num_blocks=3, depth=40,
                  dropout=False, name='DenseNet'):
-        super(DenseNet, self).__init__(input_shape, name)
-
-        self.model = nn.Sequential(input_shape=input_shape, layer_name=name)
-        self.model.append(nn.ConvolutionalLayer(self.input_shape, first_output, 3, activation='linear',
-                                                layer_name=name+'pre_conv'))
+        super(DenseNet, self).__init__(input_shape=input_shape, layer_name=name)
+        self.append(nn.ConvolutionalLayer(self.input_shape, first_output, 3, activation='linear',
+                                          layer_name=name+'pre_conv'))
         n = (depth - 1) // num_blocks
         for b in range(num_blocks):
-            self.model.append(nn.DenseBlock(self.model.output_shape, num_conv_layer=n - 1, growth_rate=growth_rate,
-                                            dropout=dropout, layer_name=name+'dense_block_%d' % b))
+            self.append(nn.DenseBlock(self.output_shape, num_conv_layer=n - 1, growth_rate=growth_rate,
+                                      dropout=dropout, layer_name=name+'dense_block_%d' % b))
             if b < num_blocks - 1:
-                self.model.append(nn.DenseBlock(self.model.output_shape, True, None, None, dropout,
-                                                layer_name=name+'dense_block_transit_%d' % b))
+                self.append(nn.DenseBlock(self.output_shape, True, None, None, dropout,
+                                          layer_name=name+'dense_block_transit_%d' % b))
 
-        self.model.append(nn.BatchNormLayer(self.model.output_shape, layer_name=name+'post_bn'))
+        self.append(nn.BatchNormLayer(self.output_shape, layer_name=name+'post_bn'))
         if fc:
-            self.model.append(
-                nn.GlobalAveragePoolingLayer(input_shape, name+'_glbavgpooling'))
-            self.model.append(nn.SoftmaxLayer(self.model.output_shape, num_classes, name+'_softmax'))
-
-        self.params = list(self.model.params)
-        self.trainable = list(self.model.trainable)
-        self.regularizable = list(self.model.regularizable)
-        self.descriptions = self.model.descriptions
-
-    def get_output(self, input):
-        return self.model(input)
-
-    @property
-    def output_shape(self):
-        return self.model.output_shape
+            self.append(nn.GlobalAveragePoolingLayer(input_shape, name+'_glbavgpooling'))
+            self.append(nn.SoftmaxLayer(self.output_shape, num_classes, name+'_softmax'))
 
 
 def resnet18(input_shape, num_filters, activation='relu', fc=True, pooling=True, num_classes=1000, name='ResNet18', **kwargs):

@@ -35,7 +35,22 @@ def validate(func):
     return func_wrapper
 
 
-class Layer(metaclass=abc.ABCMeta):
+class NetMethod:
+    def get_output(self, input):
+        raise NotImplementedError
+
+    @property
+    def output_shape(self):
+        raise NotImplementedError
+
+    def reset(self):
+        pass
+
+    def __call__(self, *args, **kwargs):
+        return self.get_output(*args, **kwargs)
+
+
+class Layer(NetMethod, metaclass=abc.ABCMeta):
     training_flag = False
 
     def __init__(self, input_shape, layer_name=''):
@@ -52,91 +67,72 @@ class Layer(metaclass=abc.ABCMeta):
     def __str__(self):
         return self.descriptions
 
-    def __call__(self, *args, **kwargs):
-        return self.get_output(*args, **kwargs)
-
-    @abc.abstractmethod
-    def get_output(self, input):
-        return
-
-    @property
-    def output_shape(self):
-        raise NotImplementedError
-
-    def reset(self):
-        pass
-
     @staticmethod
     def set_training_status(training):
         Layer.training_flag = training
 
 
-class Sequential(Layer):
+class Sequential(OrderedDict, NetMethod):
     """
-    Mimicking Pytorch Sequential class
+    Mimicking Pytorch Sequential class but inheriting OrderedDict
     """
     def __init__(self, layer_list=(), input_shape=None, layer_name='Sequential'):
         assert layer_list or input_shape, 'Either layer_list or input_shape must be specified.'
         assert isinstance(layer_list, (list, tuple, Sequential)), 'layer_list must be a list or tuple, got %s.' % type(
             layer_list)
+
+        self.params, self.trainable, self.regularizable = [], [], []
+        self.descriptions = ''
+        self.layer_name = layer_name
+        self.input_shape = tuple(input_shape) if input_shape else layer_list[0].input_shape
         if isinstance(layer_list, (list, tuple)):
-            assert all([isinstance(l, Layer) for l in layer_list]), 'All elements of layer_list should be Layer.'
+            assert all([isinstance(l, (Sequential, Layer)) for l in layer_list]), 'All elements of layer_list should be Layer.'
             name_list = [l.layer_name for l in layer_list]
             for i in range(len(name_list)):
                 name = name_list.pop()
                 if name in name_list:
                     raise ValueError('%s already existed in the network.' % name)
-            self.block = OrderedDict(zip([l.layer_name for l in layer_list], layer_list))
+            super(Sequential, self).__init__(zip([l.layer_name for l in layer_list], layer_list))
         else:
-            assert all([isinstance(l, Layer) for l in layer_list.block]), 'All elements of layer_list should be Layer.'
-            self.block = OrderedDict(layer_list.block)
+            assert all([isinstance(l, (Layer, Sequential)) for l in layer_list.items()]), 'All elements of layer_list should be Layer.'
+            super(Sequential, self).__init__(layer_list)
 
-        super(Sequential, self).__init__(input_shape if input_shape else layer_list[0].input_shape,
-                                         layer_name=layer_name)
-        self.params = [p for layer in layer_list for p in layer.params] if isinstance(layer_list, (list, tuple)) \
-            else layer_list.params
-        self.trainable = [p for layer in layer_list for p in layer.trainable] if isinstance(layer_list, (list, tuple)) \
-            else layer_list.trainable
-        self.regularizable = [p for layer in layer_list for p in layer.regularizable] if isinstance(layer_list, (list, tuple)) \
-            else layer_list.regularizable
-        self.descriptions = ''.join([layer.descriptions + '\n' for layer in layer_list]) if isinstance(layer_list, (list, tuple)) \
-            else layer_list.descriptions
         self.__idx = 0
-        self.__max = len(self.block) - 1
+        self.__max = len(self)
+
+    def __str__(self):
+        return self.descriptions
 
     def __iter__(self):
         self.__idx = 0
-        self.__max = len(self.block) - 1
+        self.__max = len(self)
         return self
 
     def __next__(self):
-        if self.__idx > self.__max:
+        if self.__idx >= self.__max:
             raise StopIteration
         self.__idx += 1
         return self[self.__idx - 1]
 
-    def __len__(self):
-        return len(self.block)
-
     def __getitem__(self, item):
         assert isinstance(item, (int, slice, str)), 'index should be either str, int or slice, got %s.' % type(item)
         if isinstance(item, int):
-            keys = list(self.block.keys())
-            return self.block[keys[item]]
+            keys = list(self.keys())
+            return self[keys[item]]
         elif isinstance(item, slice):
-            keys = list(self.block.keys())
-            return Sequential(self.block[keys[item]], layer_name=self.layer_name)
+            keys = list(self.keys())
+            return Sequential(self[keys[item]], layer_name=self.layer_name)
         else:
-            return self.block[item]
+            return super(Sequential, self).__getitem__(item)
 
     def __setitem__(self, key, value):
         if not isinstance(key, str):
             raise TypeError('key must be a str, got %s.' % type(key))
-        if not isinstance(value, Layer):
+        if not isinstance(value, (Sequential, Layer)):
             raise TypeError('value must be an instance of Layer, got %s.' % type(value))
-        if key in self.block.keys():
+        if key in self.keys():
             raise NameError('key existed.')
-        self.block[key] = value
+        super(Sequential, self).__setitem__(key, value)
         self.params += value.params
         self.trainable += value.trainable
         self.regularizable += value.regularizable
@@ -144,45 +140,53 @@ class Sequential(Layer):
 
     def get_output(self, input):
         out = input
-        for layer in self.block.values():
+        for layer in self.values():
             out = layer(out)
         return out
 
     @property
     def output_shape(self):
-        if self.block:
+        if self:
             return self[-1].output_shape
         else:
             return self.input_shape
 
     def append(self, layer):
-        if not isinstance(layer, Layer):
-            raise TypeError('layer must be an instance of Layer, got %s.' % type(layer))
-        if layer.layer_name in self.block:
+        if not isinstance(layer, (Sequential, Layer)):
+            raise TypeError('layer must be an instance of Layer or Sequential, got %s.' % type(layer))
+        if layer.layer_name in self:
             raise NameError('Name %s already existed.' % layer.layer_name)
-        self.block[layer.layer_name] = layer
-        self.params += layer.params
-        self.trainable += layer.trainable
-        self.regularizable += layer.regularizable
-        self.descriptions += layer.descriptions + '\n'
+        self[layer.layer_name] = layer
+
+    def update(self, other):
+        if other is None:
+            return
+        if isinstance(other, Sequential):
+            for layer in other:
+                if layer.layer_name not in self.keys():
+                    self[layer.layer_name] = layer
+                else:
+                    raise NameError('Name %s already existed.' % layer.layer_name)
+        elif isinstance(other, Layer):
+            if other.layer_name not in self.keys():
+                self[other.layer_name] = other
+            else:
+                raise NameError('Name %s already existed.' % other.layer_name)
+        else:
+            raise TypeError('Cannot update a Sequential instance with a %s instance.' % type(other))
 
     def __add__(self, other):
         assert isinstance(other, Sequential), 'Cannot concatenate a Sequential object with a %s object.' % type(other)
-        res = Sequential(input_shape=tuple(self.input_shape))
+        res = Sequential(input_shape=tuple(self.input_shape), layer_name=self.layer_name)
 
-        for key in self.block.keys():
+        for key in self.keys():
             res[key] = self[key]
 
-        for key in other.block.keys():
+        for key in other.keys():
             res[key] = other[key]
 
-        res.params = self.params + other.params
-        res.trainable = self.trainable + other.trainable
-        res.regularizable = self.regularizable + other.regularizable
-        res.descriptions = self.descriptions + other.descriptions
-        res.layer_name = self.layer_name
         res.__idx = 0
-        res.__max = len(res.block)
+        res.__max = len(res)
         return res
 
     def reset(self):
@@ -1035,7 +1039,7 @@ class PixelShuffleLayer(Layer):
         self.conv.reset()
 
 
-class ResNetBlock(Layer):
+class ResNetBlock(Sequential):
     upscale_factor = 1
 
     def __init__(self, input_shape, num_filters, stride=(1, 1), dilation=(1, 1), activation='relu', downsample=None,
@@ -1058,7 +1062,7 @@ class ResNetBlock(Layer):
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
         assert isinstance(stride, (int, list, tuple))
 
-        super(ResNetBlock, self).__init__(input_shape, layer_name)
+        super(ResNetBlock, self).__init__(input_shape=input_shape, layer_name=layer_name)
         self.num_filters = num_filters
         self.stride = stride if isinstance(stride, (list, tuple)) else (stride, stride)
         self.dilation = dilation
@@ -1079,24 +1083,17 @@ class ResNetBlock(Layer):
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
-        self.block = Sequential(self.simple_block(layer_name + '_1'))
-        self.params += self.block.params
-        self.trainable += self.block.trainable
-        self.regularizable += self.block.regularizable
-
+        self.append(Sequential(self.simple_block(layer_name + '_1'), layer_name=layer_name+'_main'))
         if downsample:
-            self.downsample = Sequential(input_shape=input_shape)
-            self.downsample.append(ConvolutionalLayer(self.input_shape, num_filters, 1, stride=stride,
-                                                      layer_name=layer_name+'_down', activation='linear'))
+            downsample = Sequential(input_shape=input_shape, layer_name=layer_name+'_down')
+            downsample.append(ConvolutionalLayer(self.input_shape, num_filters, 1, stride=stride,
+                                                 layer_name=layer_name+'_down', activation='linear'))
             if self.normalization:
-                self.downsample.append(BatchNormLayer(self.downsample[-1].output_shape, layer_name=layer_name + '_2_bn',
-                                                      activation='linear') if normalization == 'bn'
-                                       else GroupNormLayer(self.downsample[-1].output_shape,
-                                                           layer_name=layer_name + '_down_gn', groups=groups,
-                                                           activation='linear'))
-            self.params += self.downsample.params
-            self.trainable += self.downsample.trainable
-            self.regularizable += self.downsample.regularizable
+                downsample.append(BatchNormLayer(downsample[-1].output_shape, layer_name=layer_name + '_down_bn',
+                                                 activation='linear') if normalization == 'bn'
+                                  else GroupNormLayer(downsample[-1].output_shape, layer_name=layer_name + '_down_gn',
+                                                      groups=groups, activation='linear'))
+            self.append(downsample)
 
         self.descriptions = '{} ResNet Basic Block {} -> {} {} filters stride {} dilation {} {} {}'.\
             format(layer_name, self.input_shape, self.output_shape, num_filters, stride, dilation, activation,
@@ -1126,30 +1123,19 @@ class ResNetBlock(Layer):
 
     def get_output(self, input):
         res = input
-        output = self.block(input)
+        output = self[self.layer_name+'_main'](input)
 
         if self.downsample:
-            res = self.downsample(res)
+            res = self[self.layer_name+'_down'](res)
         return utils.function[self.activation](output + res, **self.kwargs)
 
-    @property
-    @validate
-    def output_shape(self):
-        return self.block[-1].output_shape
-
     def reset(self):
-        for layer in self.block:
-            layer.reset()
-
-        if self.downsample:
-            for layer in self.downsample:
-                layer.reset()
-
+        super(ResNetBlock, self).reset()
         if self.activation == 'prelu':
             self.alpha.set_value(np.float32(.1))
 
 
-class ResNetBottleneckBlock(Layer):
+class ResNetBottleneckBlock(Sequential):
     upscale_factor = 4
 
     def __init__(self, input_shape, num_filters, stride=1, dilation=(1, 1), activation='relu', downsample=False,
@@ -1168,7 +1154,7 @@ class ResNetBottleneckBlock(Layer):
         """
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
-        super(ResNetBottleneckBlock, self).__init__(input_shape, layer_name)
+        super(ResNetBottleneckBlock, self).__init__(input_shape=input_shape, layer_name=layer_name)
         self.num_filters = num_filters
         self.stride = stride
         self.upscale_factor = upscale_factor
@@ -1182,18 +1168,12 @@ class ResNetBottleneckBlock(Layer):
                                                **self.kwargs) if block else self._build_simple_block(name)
         self.kwargs = kwargs
 
-        self.block = Sequential(self.simple_block(layer_name + '_1'))
-        self.params += self.block.params
-        self.trainable += self.block.trainable
-        self.regularizable += self.block.regularizable
-
+        self.append(Sequential(self.simple_block(layer_name + '_1'), layer_name=layer_name + '_main'))
         if downsample:
-            self.downsample = Sequential(input_shape=input_shape)
-            self.downsample.append(ConvNormAct(self.input_shape, num_filters * upscale_factor, 1, stride=stride,
-                                               layer_name=layer_name+'_down', activation='linear', **self.kwargs))
-            self.params += self.downsample.params
-            self.trainable += self.downsample.trainable
-            self.regularizable += self.downsample.regularizable
+            downsample = Sequential(input_shape=input_shape, layer_name=layer_name+'_down')
+            downsample.append(ConvNormAct(self.input_shape, num_filters * upscale_factor, 1, stride=stride,
+                                          layer_name=layer_name+'_down', activation='linear', **self.kwargs))
+            self.append(downsample)
 
         if activation == 'prelu':
             self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
@@ -1218,23 +1198,15 @@ class ResNetBottleneckBlock(Layer):
 
     def get_output(self, input):
         res = input
-        output = self.block(input)
+        output = self[self.layer_name+'_main'](input)
 
         if self.downsample:
-            res = self.downsample(res)
+            res = self[self.layer_name+'_down'](res)
         return utils.function[self.activation](output + res, **self.kwargs)
 
-    @property
-    @validate
-    def output_shape(self):
-        return self.block.output_shape
-
     def reset(self):
-        self.block.reset()
-        if self.downsample:
-            self.downsample.reset()
-
-        if self.activation is 'prelu':
+        super(ResNetBottleneckBlock, self).reset()
+        if self.activation == 'prelu':
             self.alpha.set_value(np.float32(.1))
 
 
@@ -2510,7 +2482,7 @@ def AveragePoolingLayer(input_shape, ws, ignore_border=True, stride=None, pad='v
 
 
 def ConvNormAct(input_shape, num_filters, filter_size, init=HeNormal(gain=1.), no_bias=True, border_mode='half',
-                stride=(1, 1), layer_name='convbnact', activation='relu', dilation=(1, 1), epsilon=1e-4,
+                stride=(1, 1), layer_name='ConvNormAct', activation='relu', dilation=(1, 1), epsilon=1e-4,
                 running_average_factor=1e-1, axes='spatial', no_scale=False, normalization='bn', groups=32, **kwargs):
     assert normalization in ('bn', 'gn'), 'normalization can be either \'bn\' or \'gn\', got %s' % normalization
 
