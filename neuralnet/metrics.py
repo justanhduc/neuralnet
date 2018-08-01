@@ -103,7 +103,7 @@ def total_variation(x, type='aniso', p=2, depth=3):
     return norm_error(x_grad, T.zeros_like(x_grad, 'float32'), p)
 
 
-def gram_vgg19_loss(x, y, weight_file, p=2):
+def gram_vgg19_loss(x, y, weight_file, p=2, low_mem=False):
     if x.ndim != 4 and y.ndim != 4:
         raise TypeError('x and y must be image tensors.')
     print('Using Gram matrix VGG19 loss')
@@ -112,9 +112,13 @@ def gram_vgg19_loss(x, y, weight_file, p=2):
     mean = T.constant(np.array([123.68, 116.779, 103.939], dtype='float32')[None, :, None, None], 'mean')
     x -= mean
     y -= mean
-    inputs = T.concatenate((x, y))
-    out = net(inputs)
-    out_x, out_y = out[:x.shape[0]], out[x.shape[0]:]
+    if low_mem:
+        out_x = net(x)
+        out_y = net(y)
+    else:
+        inputs = T.concatenate((x, y))
+        out = net(inputs)
+        out_x, out_y = out[:x.shape[0]], out[x.shape[0]:]
     out_x = out_x.flatten(3)
     out_y = out_y.flatten(3)
     gram_x = T.batched_dot(out_x, out_x.dimshuffle(0, 2, 1))
@@ -122,7 +126,7 @@ def gram_vgg19_loss(x, y, weight_file, p=2):
     return norm_error(gram_x, gram_y, p)
 
 
-def vgg16_loss(x, y, weight_file, p=2):
+def vgg16_loss(x, y, weight_file, p=2, low_mem=False):
     if x.ndim != 4 and y.ndim != 4:
         raise TypeError('x and y must be image tensors.')
     print('Using VGG16 loss')
@@ -131,8 +135,14 @@ def vgg16_loss(x, y, weight_file, p=2):
     net.load_weights(weight_file)
     x -= mean
     y -= mean
-    out = net(T.concatenate((x, y)))
-    return norm_error(out[:x.shape[0]], out[x.shape[0]:], p)
+    if low_mem:
+        x_out = net(x)
+        y_out = net(y)
+    else:
+        out = net(T.concatenate((x, y)))
+        x_out = out[:x.shape[0]]
+        y_out = out[x.shape[0]:]
+    return norm_error(x_out, y_out, p)
 
 
 def pulling_away(x, y=None):
