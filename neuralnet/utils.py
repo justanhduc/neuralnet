@@ -63,15 +63,23 @@ class DataManager(ConfigParser):
             'batch_size']
         self.shuffle = kwargs.get('shuffle') if kwargs.get('shuffle') else self.config['data'][
             'shuffle'] if config_file else False
-        self.augmentation = kwargs.get('augmentation') if kwargs.get('augmentation') else self.config['data'][
-            'augmentation'] if config_file else False
         self.num_cached = kwargs.get('num_cached') if kwargs.get('num_cached') else self.config['data'][
             'num_cached'] if config_file else 10
+        self.augmentation = kwargs.get('augmentation', None)
         self.dataset = None
         self.data_size = None
         self.placeholders = placeholders
 
     def load_data(self):
+        raise NotImplementedError
+
+    def preprocess(self, *args, **kwargs):
+        """
+        preprocess input tensors and return the processed tensors
+        :param args:
+        :param kwargs:
+        :return:
+        """
         raise NotImplementedError
 
     def augment_minibatches(self, minibatches, *args, **kwargs):
