@@ -496,7 +496,6 @@ class FullyConnectedLayer(Layer):
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
-        self.regularizable.append(self.W)
         self.descriptions = '{} FC: in_shape = {} weight shape = {} -> {} activation: {}'\
             .format(self.layer_name, self.input_shape, (self.input_shape[1], num_nodes), self.output_shape, activation)
 
@@ -1447,8 +1446,7 @@ class DenseBlock(Layer):
             self.trainable += layer.trainable
             self.regularizable += layer.regularizable
         if dropout:
-            block.append(DropoutLayer(block[-1].output_shape, dropout, activation='linear',
-                                      layer_name=layer_name + 'dropout'))
+            block.append(DropoutLayer(block[-1].output_shape, dropout, layer_name=layer_name + 'dropout'))
         return block
 
     def _transition(self, input_shape, dropout, activation, layer_name='transition'):

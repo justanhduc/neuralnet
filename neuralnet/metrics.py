@@ -11,7 +11,7 @@ __all__ = ['manhattan_distance', 'mean_classification_error', 'mean_squared_erro
            'multinoulli_cross_entropy', 'root_mean_squared_error', 'psnr', 'psnr255', 'pearson_correlation',
            'ssim', 'spearman', 'first_derivative_error', 'huberloss', 'binary_cross_entropy', 'norm_error',
            'gradient_difference', 'total_variation', 'kld', 'pulling_away', 'vgg16_loss', 'dog_loss',
-           'log_loss', 'gram_vgg19_loss']
+           'log_loss', 'gram_vgg19_loss', 'l1_reg', 'l2_reg']
 
 
 def manhattan_distance(y_pred, y):
@@ -161,6 +161,18 @@ def pulling_away(x, y=None):
         y_hat = y / T.sqrt(T.sum(T.sqr(y)))
         corr = T.dot(x_hat, y_hat) ** 2.
         return corr / 2.
+
+
+def l2_reg(params):
+    print('Using L2 regularization')
+    l2 = sum([T.sum(p ** 2) for p in params])
+    return l2
+
+
+def l1_reg(params):
+    print('Using L1 regularization')
+    l1 = sum([T.sum(T.abs_(p)) for p in params])
+    return l1
 
 
 def kld(y, y_pred):

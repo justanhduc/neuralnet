@@ -22,8 +22,8 @@ class Training(ConfigParser):
         start_time = time.time()
         print('Compiling %s graph...' % name)
         f = theano.function(inputs, outputs=outputs, mode=mode, updates=updates, givens=givens,
-                               no_default_updates=no_default_updates, accept_inplace=accept_inplace, name=name,
-                               rebuild_strict=rebuild_strict, allow_input_downcast=allow_input_downcast, profile=profile,
-                               on_unused_input=on_unused_input)
+                            no_default_updates=no_default_updates, accept_inplace=accept_inplace, name=name,
+                            rebuild_strict=rebuild_strict, allow_input_downcast=allow_input_downcast, profile=profile,
+                            on_unused_input=on_unused_input)
         print('Compilation took %.2f minutes.' % ((time.time() - start_time) / 60.))
         return f

@@ -96,15 +96,9 @@ class Optimization(utils.ConfigParser):
             raise AttributeError('Some attribute does not exist in config or kwargs')
 
         if reg_type.lower() == 'l2':
-            print('Using L2 regularization')
-            # L2-regularization
-            L2 = sum([T.sum(p ** 2) for p in params if '_W' in p.name])
-            return reg_coeff * L2
+            return reg_coeff * metrics.l2_reg(params)
         elif reg_type.lower() == 'l1':
-            print('Using L1 regularization')
-            # L1-regularization
-            L1 = sum([T.sum(abs(p)) for p in params if '_W' in p.name])
-            return reg_coeff * L1
+            return reg_coeff * metrics.l1_reg(params)
         else:
             raise NotImplementedError('Regularization should be L1 or L2 only')
 

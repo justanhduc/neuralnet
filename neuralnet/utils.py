@@ -136,8 +136,8 @@ class DataManager(ConfigParser):
             self.placeholders.set_value(x, borrow=True)
         else:
             raise TypeError(
-                'placeholders should be a theano shared or list/tuple type and data should be a list, tuple or numpy ndarray, got {} and {}'.format(
-                    type(self.placeholders), type(data)))
+                'placeholders should be a theano shared or list/tuple type and data should be a list, '
+                'tuple or numpy ndarray, got {} and {}'.format(type(self.placeholders), type(data)))
 
     def generator(self):
         num_batches = self.data_size // self.batch_size
@@ -152,7 +152,8 @@ class DataManager(ConfigParser):
             else:
                 raise TypeError('dataset should be a list, tuple or numpy ndarray, got %s.' % type(self.dataset))
         for i in range(num_batches):
-            yield [data[i * self.batch_size:(i + 1) * self.batch_size] for data in dataset] if isinstance(self.dataset, (list, tuple)) else dataset[i * self.batch_size:(i + 1) * self.batch_size]
+            yield [data[i * self.batch_size:(i + 1) * self.batch_size] for data in dataset] \
+                if isinstance(self.dataset, (list, tuple)) else dataset[i * self.batch_size:(i + 1) * self.batch_size]
 
 
 def _progress(items, desc='', total=None, min_delay=0.1):
