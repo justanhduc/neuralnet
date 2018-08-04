@@ -1070,7 +1070,6 @@ class ResNetBlock(Sequential):
         self.normalization = normalization
         self.downsample = downsample
         self.groups = groups
-        self.upscale_factor = 1
         self.simple_block = lambda name: block(input_shape=self.input_shape, num_filters=self.num_filters,
                                                stride=self.stride[0], dilation=self.dilation, activation=self.activation,
                                                normalization=self.normalization, block_name=name,
@@ -1139,7 +1138,7 @@ class ResNetBottleneckBlock(Sequential):
     upscale_factor = 4
 
     def __init__(self, input_shape, num_filters, stride=1, dilation=(1, 1), activation='relu', downsample=False,
-                 upscale_factor=4, layer_name='ResBottleneckBlock', normalization='bn', block=None, **kwargs):
+                 layer_name='ResBottleneckBlock', normalization='bn', block=None, **kwargs):
         """
 
         :param input_shape:
@@ -1157,7 +1156,6 @@ class ResNetBottleneckBlock(Sequential):
         super(ResNetBottleneckBlock, self).__init__(input_shape=input_shape, layer_name=layer_name)
         self.num_filters = num_filters
         self.stride = stride
-        self.upscale_factor = upscale_factor
         self.dilation = dilation
         self.activation = activation
         self.downsample = downsample
@@ -1170,10 +1168,8 @@ class ResNetBottleneckBlock(Sequential):
 
         self.append(Sequential(self.simple_block(layer_name + '_1'), layer_name=layer_name + '_main'))
         if downsample:
-            downsample = Sequential(input_shape=input_shape, layer_name=layer_name+'_down')
-            downsample.append(ConvNormAct(self.input_shape, num_filters * upscale_factor, 1, stride=stride,
-                                          layer_name=layer_name+'_down', activation='linear', **self.kwargs))
-            self.append(downsample)
+            self.append(ConvNormAct(self.input_shape, num_filters * self.upscale_factor, 1, stride=stride,
+                                    layer_name=layer_name+'_down', activation='linear', **self.kwargs))
 
         if activation == 'prelu':
             self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
@@ -1181,19 +1177,19 @@ class ResNetBottleneckBlock(Sequential):
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
-        self.descriptions = '{} ResNet Bottleneck {} -> {} num filters {} stride {} upscale {} dilation {} {}'. \
-            format(layer_name, input_shape, self.output_shape, num_filters, stride, upscale_factor, dilation, activation)
+        self.descriptions = '{} ResNet Bottleneck {} -> {} num filters {} stride {} dilation {} {}'. \
+            format(layer_name, input_shape, self.output_shape, num_filters, stride, dilation, activation)
 
     def _build_simple_block(self, block_name):
         layers = []
-        layers.append(ConvNormAct(self.input_shape, self.num_filters, 1, stride=self.stride, no_bias=True,
-                                  activation=self.activation, layer_name=block_name+'_conv_bn_act_1', **self.kwargs))
+        layers.append(ConvNormAct(self.input_shape, self.num_filters, 1, no_bias=True, activation=self.activation,
+                                  layer_name=block_name+'_conv_bn_act_1', **self.kwargs))
 
         layers.append(ConvNormAct(layers[-1].output_shape, self.num_filters, 3, activation=self.activation,
-                                  layer_name=block_name+'_conv_bn_act_2', no_bias=True, **self.kwargs))
+                                  stride=self.stride, layer_name=block_name+'_conv_bn_act_2', no_bias=True, **self.kwargs))
 
-        layers.append(ConvNormAct(layers[-1].output_shape, self.num_filters * self.upscale_factor, 1, stride=1,
-                                  activation='linear', layer_name=block_name+'_conv_bn_act_3', no_bias=True, **self.kwargs))
+        layers.append(ConvNormAct(layers[-1].output_shape, self.num_filters * self.upscale_factor, 1, activation='linear',
+                                  layer_name=block_name+'_conv_bn_act_3', no_bias=True, **self.kwargs))
         return layers
 
     def get_output(self, input):
