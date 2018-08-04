@@ -55,18 +55,20 @@ class Model(Optimization, Training, metaclass=abc.ABCMeta):
     def regularizable(self):
         return self.model.regularizable
 
-    def save_params(self):
-        numpy.savez(self.param_file, **{p.name: p.get_value() for p in self.params})
-        print('Model weights dumped to %s' % self.param_file)
+    def save_params(self, param_file=None):
+        param_file = param_file if param_file else self.param_file
+        numpy.savez(param_file, **{p.name: p.get_value() for p in self.params})
+        print('Model weights dumped to %s' % param_file)
 
-    def load_params(self):
-        weights = numpy.load(self.param_file)
+    def load_params(self, param_file=None):
+        param_file = param_file if param_file else self.param_file
+        weights = numpy.load(param_file)
         for p in self.params:
             try:
                 p.set_value(weights[p.name])
             except KeyError:
                 KeyError('There is no saved weight for %s' % p.name)
-        print('Model weights loaded from %s' % self.param_file)
+        print('Model weights loaded from %s' % param_file)
 
     def reset(self):
         self.model.reset()
