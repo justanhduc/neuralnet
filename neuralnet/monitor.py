@@ -12,6 +12,7 @@ import pickle as pickle
 from scipy.misc import imsave
 import os
 from shutil import copyfile
+import numbers
 
 from neuralnet import utils, model
 
@@ -69,22 +70,23 @@ class Monitor(utils.ConfigParser):
         prints = []
 
         for name, vals in list(self.__num_since_last_flush.items()):
-            prints.append("{}\t{}".format(name, np.mean(np.array(list(vals.values())), 0)))
             self.__num_since_beginning[name].update(vals)
 
             x_vals = np.sort(list(self.__num_since_beginning[name].keys()))
             plt.clf()
             plt.xlabel('iteration')
             plt.ylabel(name)
-            if isinstance(vals, (list, tuple)):
-                y_vals = [[self.__num_since_beginning[name][x][i] for x in x_vals] for i in range(len(vals))]
-                plt.hold()
-                for ys in y_vals:
-                    plt.plot(x_vals, ys)
-                plt.hold()
+            y_vals = [self.__num_since_beginning[name][x] for x in x_vals]
+            if isinstance(y_vals[0], dict):
+                keys = list(y_vals[0].keys())
+                y_vals = [tuple([y_val[k] for k in keys]) for y_val in y_vals]
+                plot = plt.plot(x_vals, y_vals)
+                plt.legend(plot, keys)
+                prints.append("{}\t{}".format(name,
+                                              np.mean(np.array([[val[k] for k in keys] for val in vals.values()]), 0)))
             else:
-                y_vals = [self.__num_since_beginning[name][x] for x in x_vals]
                 plt.plot(x_vals, y_vals)
+                prints.append("{}\t{}".format(name, np.mean(np.array(list(vals.values())), 0)))
             plt.savefig(self.current_folder + '/' + name.replace(' ', '_')+'.jpg')
         self.__num_since_last_flush.clear()
 
@@ -118,7 +120,8 @@ class Monitor(utils.ConfigParser):
 if __name__ == '__main__':
     mon = Monitor(None)
     for i in range(10):
-        mon.plot('train-valid', (i+1, i))
-        mon.plot('x2', i*2)
-        mon.tick()
+        for j in range(5):
+            mon.plot('train-valid', {'train': i+j+1, 'valid': i-j})
+            mon.plot('x2', (i+j)*2)
+            mon.tick()
         mon.flush()
