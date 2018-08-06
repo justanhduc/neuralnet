@@ -3,8 +3,8 @@ import abc
 
 import neuralnet as nn
 from neuralnet import layers
-from neuralnet import Training
-from neuralnet import Optimization
+from neuralnet.build_training import Training
+from neuralnet.build_optimization import Optimization
 
 
 class Model(Optimization, Training, metaclass=abc.ABCMeta):
