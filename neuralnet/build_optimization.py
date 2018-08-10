@@ -15,23 +15,22 @@ import numpy as np
 class Optimization(utils.ConfigParser):
     def __init__(self, config_file, **kwargs):
         super(Optimization, self).__init__(config_file, **kwargs)
-        self.cost_function = self.config['optimization']['cost_function']
-        self.class_weights = self.config['optimization']['class_weights']
-        self.method = self.config['optimization']['method']
-        self.learning_rate = self.config['optimization']['learning_rate']
-        self.momentum = self.config['optimization']['momentum']
-        self.epsilon = self.config['optimization']['epsilon']
-        self.gamma = self.config['optimization']['gamma']
-        self.rho = self.config['optimization']['rho']
-        self.beta1 = self.config['optimization']['beta1']
-        self.beta2 = self.config['optimization']['beta2']
-        self.nesterov = self.config['optimization']['nesterov']
-        self.reg = self.config['optimization']['regularization']
-        self.reg_type = self.config['optimization']['regularization_type']
-        self.reg_coeff = self.config['optimization']['regularization_coeff']
-        self.decrease_factor = np.float32(self.config['optimization']['decrease_factor'])
-        self.final_learning_rate = self.config['optimization']['final_learning_rate']
-        self.last_iter_to_decrease = self.config['optimization']['last_iter_to_decrease']
+        self.cost_function = self.config['optimization'].get('cost_function', None)
+        self.class_weights = self.config['optimization'].get('class_weights', None)
+        self.method = self.config['optimization'].get('method', 'adam')
+        self.learning_rate = self.config['optimization'].get('learning_rate', 1e-3)
+        self.momentum = self.config['optimization'].get('momentum', .95)
+        self.epsilon = self.config['optimization'].get('epsilon', 1e-8)
+        self.gamma = self.config['optimization'].get('gamma', .9)
+        self.rho = self.config['optimization'].get('rho', .95)
+        self.beta1 = self.config['optimization'].get('beta1', .9)
+        self.beta2 = self.config['optimization'].get('beta2', .99)
+        self.nesterov = self.config['optimization'].get('nesterov', False)
+        self.reg = self.config['optimization'].get('regularization', None)
+        self.reg_coeff = self.config['optimization'].get('regularization_coeff', None)
+        self.annealing_factor = np.float32(self.config['optimization'].get('annealing_factor', .1))
+        self.final_learning_rate = self.config['optimization'].get('final_learning_rate', 1e-3)
+        self.last_iter_to_decrease = self.config['optimization'].get('last_iter_to_decrease', 1e-3)
         self.opt = None
 
     def build_cost(self, y_pred, y, regularizable=None):

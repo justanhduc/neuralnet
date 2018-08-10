@@ -1618,7 +1618,6 @@ class DecorrBatchNormLayer(Layer):
 
         self.descriptions = '{} DecorrelatedBatchNorm Layer: shape: {} -> {} running_average_factor = {:.4f} activation: {}'\
             .format(layer_name, self.input_shape, self.output_shape, self.running_average_factor, activation)
-        DecorrBatchNormLayer.layers.append(self)
 
     def batch_normalization_train(self, input):
         out, _, _, mean_, var_ = T.nnet.bn.batch_normalization_train(input, self.gamma, self.beta, self.axes,
