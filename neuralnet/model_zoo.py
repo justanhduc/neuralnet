@@ -6,14 +6,29 @@ from theano import tensor as T
 import neuralnet as nn
 
 
-class ResNet(nn.Sequential):
+class Net:
+    def save_params(self, param_file, params):
+        np.savez(param_file, **{p.name: p.get_value() for p in params})
+        print('Model weights dumped to %s' % param_file)
+
+    def load_params(self, param_file, params):
+        weights = np.load(param_file)
+        for p in params:
+            try:
+                p.set_value(weights[p.name])
+            except KeyError:
+                KeyError('There is no saved weight for %s' % p.name)
+        print('Model weights loaded from %s' % param_file)
+
+
+class ResNet(nn.Sequential, Net):
     def __init__(self, input_shape, block, layers, num_filters, activation='relu', fc=True, pooling=True, num_classes=1000,
                  layer_name='ResNet', **kwargs):
         super(ResNet, self).__init__(input_shape=input_shape, layer_name=layer_name)
         self.activation = activation
         self.custom_block = kwargs.pop('custom_block', None)
         self.kwargs = kwargs
-        self.append(nn.ConvNormAct(self.input_shape, num_filters, 7, stride=2, activation=activation, **kwargs))
+        self.append(nn.ConvNormAct(self.input_shape, num_filters, 3, stride=1, activation=activation, **kwargs))
         if pooling:
             self.append(nn.PoolingLayer(self.output_shape, (3, 3), stride=(2, 2), pad=1))
         self.append(self._make_layer(block, self.output_shape, num_filters, layers[0], name='block1'))
@@ -40,7 +55,7 @@ class ResNet(nn.Sequential):
         return nn.Sequential(layers, layer_name=name)
 
 
-class VGG16(nn.Sequential):
+class VGG16(nn.Sequential, Net):
     def __init__(self, input_shape, fc=True, num_classes=1000, name='vgg16'):
         super(VGG16, self).__init__(input_shape=input_shape, layer_name=name)
         self.fc = fc
@@ -108,7 +123,7 @@ class VGG16(nn.Sequential):
         print('Pretrained weights loaded successfully!')
 
 
-class VGG19(nn.Sequential):
+class VGG19(nn.Sequential, Net):
     def __init__(self, input_shape, fc=True, num_classes=1000, name='vgg19'):
         super(VGG19, self).__init__(input_shape=input_shape, layer_name=name)
         self.fc = fc
@@ -176,7 +191,7 @@ class VGG19(nn.Sequential):
         print('Pretrained weights loaded successfully!')
 
 
-class DenseNet(nn.Sequential):
+class DenseNet(nn.Sequential, Net):
     def __init__(self, input_shape, fc=True, num_classes=1000, first_output=16, growth_rate=12, num_blocks=3, depth=40,
                  dropout=False, name='DenseNet'):
         super(DenseNet, self).__init__(input_shape=input_shape, layer_name=name)
@@ -185,14 +200,14 @@ class DenseNet(nn.Sequential):
         n = (depth - 1) // num_blocks
         for b in range(num_blocks):
             self.append(nn.DenseBlock(self.output_shape, num_conv_layer=n - 1, growth_rate=growth_rate,
-                                      dropout=dropout, layer_name=name+'dense_block_%d' % b))
+                                      dropout=dropout, layer_name=name+'/dense_block_%d' % b))
             if b < num_blocks - 1:
                 self.append(nn.DenseBlock(self.output_shape, True, None, None, dropout,
-                                          layer_name=name+'dense_block_transit_%d' % b))
+                                          layer_name=name+'/transit_block_%d' % b))
 
-        self.append(nn.BatchNormLayer(self.output_shape, layer_name=name+'post_bn'))
+        self.append(nn.BatchNormLayer(self.output_shape, layer_name=name+'_post_bn'))
         if fc:
-            self.append(nn.GlobalAveragePoolingLayer(input_shape, name+'_glbavgpooling'))
+            self.append(nn.GlobalAveragePoolingLayer(self.output_shape, name+'_glbavgpooling'))
             self.append(nn.SoftmaxLayer(self.output_shape, num_classes, name+'_softmax'))
 
 
