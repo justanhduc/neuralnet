@@ -28,7 +28,7 @@ class ResNet(nn.Sequential, Net):
         self.activation = activation
         self.custom_block = kwargs.pop('custom_block', None)
         self.kwargs = kwargs
-        self.append(nn.ConvNormAct(self.input_shape, num_filters, 3, stride=1, activation=activation, **kwargs))
+        self.append(nn.ConvNormAct(self.input_shape, num_filters, 7, stride=2, activation=activation, **kwargs))
         if pooling:
             self.append(nn.PoolingLayer(self.output_shape, (3, 3), stride=(2, 2), pad=1))
         self.append(self._make_layer(block, self.output_shape, num_filters, layers[0], name='block1'))
@@ -200,14 +200,14 @@ class DenseNet(nn.Sequential, Net):
         n = (depth - 1) // num_blocks
         for b in range(num_blocks):
             self.append(nn.DenseBlock(self.output_shape, num_conv_layer=n - 1, growth_rate=growth_rate,
-                                      dropout=dropout, layer_name=name+'/dense_block_%d' % b))
+                                      dropout=dropout, layer_name=name+'dense_block_%d' % b))
             if b < num_blocks - 1:
                 self.append(nn.DenseBlock(self.output_shape, True, None, None, dropout,
-                                          layer_name=name+'/transit_block_%d' % b))
+                                          layer_name=name+'dense_block_transit_%d' % b))
 
-        self.append(nn.BatchNormLayer(self.output_shape, layer_name=name+'_post_bn'))
+        self.append(nn.BatchNormLayer(self.output_shape, layer_name=name+'post_bn'))
         if fc:
-            self.append(nn.GlobalAveragePoolingLayer(self.output_shape, name+'_glbavgpooling'))
+            self.append(nn.GlobalAveragePoolingLayer(input_shape, name+'_glbavgpooling'))
             self.append(nn.SoftmaxLayer(self.output_shape, num_classes, name+'_softmax'))
 
 
