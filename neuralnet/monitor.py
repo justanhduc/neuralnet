@@ -97,8 +97,12 @@ class Monitor(utils.ConfigParser):
                 if len(val.shape) == 4:
                     for num in range(val.shape[0]):
                         img = val[num]
-                        img = np.squeeze(np.transpose(img, (1, 2, 0)))
-                        imsave(self.current_folder + '/' + name + '_%d.jpg' % num, img)
+                        if img.shape[0] == 3:
+                            img = np.transpose(img, (1, 2, 0))
+                            imsave(self.current_folder + '/' + name + '_%d.jpg' % num, img)
+                        else:
+                            for ch in range(img.shape[0]):
+                                imsave(self.current_folder + '/' + name + '_%d_%d.jpg' % (num, ch), img[ch])
                 elif len(val.shape) == 3 or len(val.shape) == 2:
                     imsave(self.current_folder + '/' + name + '.jpg', val)
                 else:
