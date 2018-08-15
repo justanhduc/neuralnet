@@ -3,7 +3,7 @@ import time
 
 from neuralnet import ConfigParser
 
-__all__ = ['compile', 'Training']
+__all__ = ['compile', 'Training', 'function']
 
 
 class Training(ConfigParser):
@@ -30,3 +30,6 @@ def compile(inputs, outputs=None, mode=None, updates=None, givens=None, no_defau
                         on_unused_input=on_unused_input)
     print('Compilation took %.2f minutes.' % ((time.time() - start_time) / 60.))
     return f
+
+
+function = compile
