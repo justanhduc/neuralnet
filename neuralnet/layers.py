@@ -24,7 +24,8 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'IdentityLayer', 'DropoutLayer', 'PoolingLayer', 'InceptionModule1', 'InceptionModule2',
            'InceptionModule3', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'NetworkInNetworkBlock',
            'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer',
-           'set_training_status', 'AveragePoolingLayer', 'WarpingLayer', 'GroupNormLayer']
+           'set_training_status', 'AveragePoolingLayer', 'WarpingLayer', 'GroupNormLayer', 'UpProjectionUnit',
+           'DownProjectionUnit']
 
 
 def validate(func):
@@ -425,6 +426,70 @@ class DetailPreservingPoolingLayer(Layer):
     def reset(self):
         if self.learn_filter:
             self.kern.set_value(self.kern_vals.copy())
+
+
+class UpProjectionUnit(Sequential):
+    """
+    implementation of the paper "Deep Back Projection Network"
+    """
+
+    def __init__(self, input_shape, filter_size, activation='relu', up_ratio=2, layer_name='UpProjectionUnit'):
+        super(UpProjectionUnit, self).__init__(input_shape=input_shape, layer_name=layer_name)
+
+        self.filter_size = filter_size
+        self.activation = activation
+        self.up_ratio = up_ratio
+
+        self.append(TransposedConvolutionalLayer(self.input_shape, input_shape[1], filter_size,
+                                                 (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
+                                                 activation=activation, layer_name=layer_name + '/deconv1'))
+        self.append(ConvolutionalLayer(self.output_shape, input_shape[1], filter_size, stride=(up_ratio, up_ratio),
+                                       activation=activation, layer_name=layer_name+'/conv'))
+        self.append(TransposedConvolutionalLayer(self.input_shape, input_shape[1], filter_size,
+                                                 (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
+                                                 activation=activation, layer_name=layer_name + '/deconv2'))
+
+        self.descriptions = '{} Up Projection Unit: {} -> {} upsampling by {}'.format(layer_name, input_shape,
+                                                                                      self.output_shape, up_ratio)
+
+    def get_output(self, input):
+        out1 = self[self.layer_name+'/deconv1'](input)
+        out2 = self[self.layer_name+'/conv'](out1)
+        res = out2 - input
+        out2 = self[self.layer_name+'/deconv2'](res)
+        return out2 + out1
+
+
+class DownProjectionUnit(Sequential):
+    """
+    implementation of the paper "Deep Back Projection Network"
+    """
+
+    def __init__(self, input_shape, filter_size, activation='relu', down_ratio=2, layer_name='DownProjectionUnit'):
+        super(DownProjectionUnit, self).__init__(input_shape=input_shape, layer_name=layer_name)
+
+        self.filter_size = filter_size
+        self.activation = activation
+        self.down_ratio = down_ratio
+
+        self.append(ConvolutionalLayer(input_shape,input_shape[1], filter_size, stride=(down_ratio, down_ratio),
+                                       activation=activation, layer_name=layer_name+'/conv1'))
+        self.append(TransposedConvolutionalLayer(self.output_shape, input_shape[1], filter_size,
+                                                 (input_shape[2] * 2, input_shape[3] * 2),
+                                                 stride=(down_ratio, down_ratio), activation=activation,
+                                                 layer_name=layer_name + '/deconv'))
+        self.append(ConvolutionalLayer(self.output_shape, input_shape[1], filter_size, stride=(down_ratio, down_ratio),
+                                       activation=activation, layer_name=layer_name+'/conv2'))
+
+        self.descriptions = '{} Down Projection Unit: {} -> {} downsampling by {}'.format(layer_name, input_shape,
+                                                                                          self.output_shape, down_ratio)
+
+    def get_output(self, input):
+        out1 = self[self.layer_name+'/conv1'](input)
+        out2 = self[self.layer_name+'/deconv'](out1)
+        res = out2 - input
+        out2 = self[self.layer_name+'/conv2'](res)
+        return out2 + out1
 
 
 class DropoutLayer(Layer):
@@ -919,7 +984,7 @@ class TransposedConvolutionalLayer(Layer):
         self.filter_shape = (input_shape[1], num_filters, filter_size[0], filter_size[1]) if isinstance(filter_size, (list, tuple)) \
             else (input_shape[1], num_filters, filter_size, filter_size)
         self.output_shape_tmp = (input_shape[0], num_filters, output_shape[0], output_shape[1]) \
-            if output_shape is not None else output_shape
+            if output_shape is not None else (output_shape,) * 4
         self.padding = padding
         self.stride = stride
         self.activation = utils.function[activation]
@@ -940,10 +1005,8 @@ class TransposedConvolutionalLayer(Layer):
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
-        self.descriptions = '{} Transposed Conv Layer: '.format(layer_name), \
-                            'shape: {} '.format(input_shape), 'filter shape: {} '.format(self.filter_shape), \
-                            '-> {} '.format(self.output_shape), 'padding: {}'.format(self.padding), \
-                            'stride: {}'.format(self.stride), 'activation: {}'.format(activation)
+        self.descriptions = '{} Transposed Conv Layer: {} x {} -> {} padding {} stride {} activation {}'.format(
+            layer_name, input_shape, self.filter_shape, self.output_shape, padding, stride, activation)
 
     def _get_deconv_filter(self):
         """
@@ -967,32 +1030,32 @@ class TransposedConvolutionalLayer(Layer):
         return weights.astype(theano.config.floatX)
 
     def get_output(self, output):
-        if self.padding == 'half':
-            p = (self.filter_shape[2] // 2, self.filter_shape[3] // 2)
-        elif self.padding == 'valid':
-            p = (0, 0)
-        elif self.padding == 'full':
-            p = (self.filter_shape[2] - 1, self.filter_shape[3] - 1)
-        else:
-            raise NotImplementedError
-        if self.output_shape_tmp is None:
-            in_shape = output.shape
-            h = ((in_shape[2] - 1) * self.stride[0]) + self.filter_shape[2] + \
-                T.mod(in_shape[2]+2*p[0]-self.filter_shape[2], self.stride[0]) - 2*p[0]
-            w = ((in_shape[3] - 1) * self.stride[1]) + self.filter_shape[3] + \
-                T.mod(in_shape[3]+2*p[1]-self.filter_shape[3], self.stride[1]) - 2*p[1]
-            self.output_shape_tmp = [self.output_shape_tmp[0], self.filter_shape[1], h, w]
-
-        trans_conv_op = T.nnet.abstract_conv.AbstractConv2d_gradInputs(imshp=self.output_shape_tmp,
+        trans_conv_op = T.nnet.abstract_conv.AbstractConv2d_gradInputs(imshp=self.output_shape,
                                                                        kshp=self.filter_shape, subsample=self.stride,
                                                                        border_mode=self.padding)
-        input = trans_conv_op(self.W, output, self.output_shape_tmp[-2:])
+        input = trans_conv_op(self.W, output, self.output_shape[-2:])
         input = input + self.b.dimshuffle('x', 0, 'x', 'x')
         return self.activation(input, **self.kwargs)
 
     @property
     @validate
     def output_shape(self):
+        if not any(self.output_shape_tmp):
+            if self.padding == 'half':
+                p = (self.filter_shape[2] // 2, self.filter_shape[3] // 2)
+            elif self.padding == 'valid':
+                p = (0, 0)
+            elif self.padding == 'full':
+                p = (self.filter_shape[2] - 1, self.filter_shape[3] - 1)
+            else:
+                raise NotImplementedError
+
+            in_shape = self.input_shape
+            h = ((in_shape[2] - 1) * self.stride[0]) + self.filter_shape[2] + \
+                np.mod(in_shape[2]+2*p[0]-self.filter_shape[2], self.stride[0]) - 2*p[0]
+            w = ((in_shape[3] - 1) * self.stride[1]) + self.filter_shape[3] + \
+                np.mod(in_shape[3]+2*p[1]-self.filter_shape[3], self.stride[1]) - 2*p[1]
+            self.output_shape_tmp = [self.output_shape_tmp[0], self.filter_shape[1], h, w]
         return tuple(self.output_shape_tmp)
 
     def reset(self):
