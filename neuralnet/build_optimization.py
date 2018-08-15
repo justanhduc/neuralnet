@@ -26,7 +26,7 @@ class Optimization(utils.ConfigParser):
         self.beta1 = self.config['optimization'].get('beta1', .9)
         self.beta2 = self.config['optimization'].get('beta2', .99)
         self.nesterov = self.config['optimization'].get('nesterov', False)
-        self.reg = self.config['optimization'].get('regularization', None)
+        self.reg_type = self.config['optimization'].get('regularization', None)
         self.reg_coeff = self.config['optimization'].get('regularization_coeff', None)
         self.annealing_factor = np.float32(self.config['optimization'].get('annealing_factor', .1))
         self.final_learning_rate = self.config['optimization'].get('final_learning_rate', 1e-3)
@@ -65,26 +65,27 @@ class Optimization(utils.ConfigParser):
             raise AttributeError('Some attribute not found')
 
         if method.lower() == 'adadelta':
-            self.opt, updates = adadelta(cost, trainable, rho, epsilon)
+            self.opt, updates = adadelta(cost, trainable, rho, epsilon, return_op=True)
         elif method.lower() == 'rmsprop':
-            self.opt, updates = rmsprop(cost, trainable, learning_rate, self.gamma, self.epsilon)
+            self.opt, updates = rmsprop(cost, trainable, learning_rate, self.gamma, self.epsilon, return_op=True)
         elif method.lower() == 'sgdmomentum':
-            self.opt, updates = sgdmomentum(cost, trainable, learning_rate, momentum, nesterov)
+            self.opt, updates = sgdmomentum(cost, trainable, learning_rate, momentum, nesterov, return_op=True)
         elif method.lower() == 'adagrad':
-            self.opt, updates = adagrad(cost, trainable, learning_rate, epsilon)
+            self.opt, updates = adagrad(cost, trainable, learning_rate, epsilon, return_op=True)
         elif method.lower() == 'adam':
-            self.opt, updates = adam(cost, trainable, learning_rate, beta1, beta2, epsilon)
+            self.opt, updates = adam(cost, trainable, learning_rate, beta1, beta2, epsilon, return_op=True)
         elif method.lower() == 'adamax':
-            self.opt, updates = adamax(cost, trainable, learning_rate, beta1, beta2, epsilon)
+            self.opt, updates = adamax(cost, trainable, learning_rate, beta1, beta2, epsilon, return_op=True)
         elif method.lower() == 'sgd':
-            self.opt, updates = sgd(cost, trainable, learning_rate)
+            self.opt, updates = sgd(cost, trainable, learning_rate, return_op=True)
         elif method.lower() == 'nadam':
-            self.opt, updates = nadam(cost, trainable, learning_rate, beta1, beta2, epsilon)
+            self.opt, updates = nadam(cost, trainable, learning_rate, beta1, beta2, epsilon, return_op=True)
         elif method.lower() == 'amsgrad':
-            self.opt, updates = amsgrad(cost, trainable, learning_rate, beta1, beta2, epsilon, kwargs.get('decay', lambda x, t: x))
+            self.opt, updates = amsgrad(cost, trainable, learning_rate, beta1, beta2, epsilon,
+                                        kwargs.get('decay', lambda x, t: x), return_op=True)
         else:
             print('No valid optimization method chosen. Use Vanilla SGD instead')
-            self.opt, updates = sgd(cost, trainable, learning_rate)
+            self.opt, updates = sgd(cost, trainable, learning_rate, return_op=True)
         return updates
 
     def build_regularization(self, params, **kwargs):

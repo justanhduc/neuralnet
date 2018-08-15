@@ -417,58 +417,78 @@ class AMSGrad(Optimizer):
             param.set_value(param.get_value() * np.float32(0))
 
 
-def sgd(cost, params, eta=1e-3):
+def sgd(cost, params, eta=1e-3, clip_by_norm=False, return_op=False):
     grads = T.grad(cost, params)
+    if clip_by_norm:
+        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
     sgd_op = VanillaSGD(eta)
-    return sgd_op, sgd_op.get_updates(params, grads)
+    return sgd_op, sgd_op.get_updates(params, grads) if return_op else sgd_op.get_updates(params, grads)
 
 
-def adadelta(cost, params, rho=.95, epsilon=1e-6):
+def adadelta(cost, params, rho=.95, epsilon=1e-6, clip_by_norm=False, return_op=False):
     grads = T.grad(cost, params)
+    if clip_by_norm:
+        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
     adadelta_op = AdaDelta(rho, epsilon)
-    return adadelta_op, adadelta_op.get_updates(params, grads)
+    return adadelta_op, adadelta_op.get_updates(params, grads) if return_op else adadelta_op.get_updates(params, grads)
 
 
-def adam(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8):
+def adam(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by_norm=False, return_op=False):
     grads = T.grad(cost, params)
+    if clip_by_norm:
+        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
     adam_op = Adam(alpha, beta1, beta2, epsilon)
-    return adam_op, adam_op.get_updates(params, grads)
+    return adam_op, adam_op.get_updates(params, grads) if return_op else adam_op.get_updates(params, grads)
 
 
-def amsgrad(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x):
+def amsgrad(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x, clip_by_norm=False,
+            return_op=False):
     grads = T.grad(cost, params)
+    if clip_by_norm:
+        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
     amsgrad_op = AMSGrad(alpha, beta1, beta2, epsilon, decay)
-    return amsgrad_op, amsgrad_op.get_updates(params, grads)
+    return amsgrad_op, amsgrad_op.get_updates(params, grads) if return_op else amsgrad_op.get_updates(params, grads)
 
 
-def sgdmomentum(cost, params, lr, mom=.95, nesterov=False):
+def sgdmomentum(cost, params, lr, mom=.95, nesterov=False, clip_by_norm=False, return_op=False):
     grads = T.grad(cost, params)
+    if clip_by_norm:
+        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
     sgdmom_op = SGDMomentum(lr, mom, nesterov)
-    return sgdmom_op, sgdmom_op.get_updates(params, grads)
+    return sgdmom_op, sgdmom_op.get_updates(params, grads) if return_op else sgdmom_op.get_updates(params, grads)
 
 
-def rmsprop(cost, params, eta=1e-3, gamma=.9, epsilon=1e-6):
+def rmsprop(cost, params, eta=1e-3, gamma=.9, epsilon=1e-6, clip_by_norm=False, return_op=False):
     grads = T.grad(cost, params)
+    if clip_by_norm:
+        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
     rmsprop_op = RMSprop(eta, gamma, epsilon)
-    return rmsprop_op, rmsprop_op.get_updates(params, grads)
+    return rmsprop_op, rmsprop_op.get_updates(params, grads) if return_op else rmsprop_op.get_updates(params, grads)
 
 
-def adagrad(cost, params, eta, epsilon=1e-6):
+def adagrad(cost, params, eta, epsilon=1e-6, clip_by_norm=False, return_op=False):
     grads = T.grad(cost, params)
+    if clip_by_norm:
+        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
     adagrad_op = AdaGrad(eta, epsilon)
-    return adagrad_op, adagrad_op.get_updates(params, grads)
+    return adagrad_op, adagrad_op.get_updates(params, grads) if return_op else adagrad_op.get_updates(params, grads)
 
 
-def nadam(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x):
+def nadam(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x, clip_by_norm=False,
+          return_op=False):
     grads = T.grad(cost, params)
+    if clip_by_norm:
+        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
     nadam_op = NAdam(alpha, beta1, beta2, epsilon, decay)
-    return nadam_op, nadam_op.get_updates(params, grads)
+    return nadam_op, nadam_op.get_updates(params, grads) if return_op else nadam_op.get_updates(params, grads)
 
 
-def adamax(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8):
+def adamax(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by_norm=False, return_op=False):
     grads = T.grad(cost, params)
+    if clip_by_norm:
+        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
     adamax_op = AdaMax(alpha, beta1, beta2, epsilon)
-    return adamax_op, adamax_op.get_updates(params, grads)
+    return adamax_op, adamax_op.get_updates(params, grads) if return_op else adamax_op.get_updates(params, grads)
 
 
 def anneal_learning_rate(lr, t, method='half-life', **kwargs):
@@ -500,3 +520,117 @@ def anneal_learning_rate(lr, t, method='half-life', **kwargs):
     else:
         decay = kwargs.pop('decay', .01)
         lr.set_value(np.float32(lr_ * 1. / (1. + decay * t)))
+
+
+def norm_constraint(tensor_var, max_norm, norm_axes=None, epsilon=1e-7):
+    """Max weight norm constraints and gradient clipping
+    This takes a TensorVariable and rescales it so that incoming weight
+    norms are below a specified constraint value. Vectors violating the
+    constraint are rescaled so that they are within the allowed range.
+    Parameters
+    ----------
+    tensor_var : TensorVariable
+        Theano expression for update, gradient, or other quantity.
+    max_norm : scalar
+        This value sets the maximum allowed value of any norm in
+        `tensor_var`.
+    norm_axes : sequence (list or tuple)
+        The axes over which to compute the norm.  This overrides the
+        default norm axes defined for the number of dimensions
+        in `tensor_var`. When this is not specified and `tensor_var` is a
+        matrix (2D), this is set to `(0,)`. If `tensor_var` is a 3D, 4D or
+        5D tensor, it is set to a tuple listing all axes but axis 0. The
+        former default is useful for working with dense layers, the latter
+        is useful for 1D, 2D and 3D convolutional layers.
+        (Optional)
+    epsilon : scalar, optional
+        Value used to prevent numerical instability when dividing by
+        very small or zero norms.
+    Returns
+    -------
+    TensorVariable
+        Input `tensor_var` with rescaling applied to weight vectors
+        that violate the specified constraints.
+    Notes
+    -----
+    When `norm_axes` is not specified, the axes over which the norm is
+    computed depend on the dimensionality of the input variable. If it is
+    2D, it is assumed to come from a dense layer, and the norm is computed
+    over axis 0. If it is 3D, 4D or 5D, it is assumed to come from a
+    convolutional layer and the norm is computed over all trailing axes
+    beyond axis 0. For other uses, you should explicitly specify the axes
+    over which to compute the norm using `norm_axes`.
+    Credits
+    _______
+    Copied from Lasagne
+    """
+    ndim = tensor_var.ndim
+
+    if norm_axes is not None:
+        sum_over = tuple(norm_axes)
+    elif ndim == 2:  # DenseLayer
+        sum_over = (0,)
+    elif ndim in [3, 4, 5]:  # Conv{1,2,3}DLayer
+        sum_over = tuple(range(1, ndim))
+    else:
+        raise ValueError(
+            "Unsupported tensor dimensionality {}."
+            "Must specify `norm_axes`".format(ndim)
+        )
+
+    dtype = np.dtype(theano.config.floatX).type
+    norms = T.sqrt(T.sum(T.sqr(tensor_var), axis=sum_over, keepdims=True))
+    target_norms = T.clip(norms, 0, dtype(max_norm))
+    constrained_output = \
+        (tensor_var * (target_norms / (dtype(epsilon) + norms)))
+
+    return constrained_output
+
+
+def total_norm_constraint(tensor_vars, max_norm, epsilon=1e-7,
+                          return_norm=False):
+    """Rescales a list of tensors based on their combined norm
+    If the combined norm of the input tensors exceeds the threshold then all
+    tensors are rescaled such that the combined norm is equal to the threshold.
+    Scaling the norms of the gradients is often used when training recurrent
+    neural networks [1]_.
+    Parameters
+    ----------
+    tensor_vars : List of TensorVariables.
+        Tensors to be rescaled.
+    max_norm : float
+        Threshold value for total norm.
+    epsilon : scalar, optional
+        Value used to prevent numerical instability when dividing by
+        very small or zero norms.
+    return_norm : bool
+        If true the total norm is also returned.
+    Returns
+    -------
+    tensor_vars_scaled : list of TensorVariables
+        The scaled tensor variables.
+    norm : Theano scalar
+        The combined norms of the input variables prior to rescaling,
+        only returned if ``return_norms=True``.
+    Notes
+    -----
+    The total norm can be used to monitor training.
+    References
+    ----------
+    .. [1] Sutskever, I., Vinyals, O., & Le, Q. V. (2014): Sequence to sequence
+       learning with neural networks. In Advances in Neural Information
+       Processing Systems (pp. 3104-3112).
+    Credits
+    _______
+    Copied from Lasagne
+    """
+    norm = T.sqrt(sum(T.sum(tensor**2) for tensor in tensor_vars))
+    dtype = np.dtype(theano.config.floatX).type
+    target_norm = T.clip(norm, 0, dtype(max_norm))
+    multiplier = target_norm / (dtype(epsilon) + norm)
+    tensor_vars_scaled = [step*multiplier for step in tensor_vars]
+
+    if return_norm:
+        return tensor_vars_scaled, norm
+    else:
+        return tensor_vars_scaled
