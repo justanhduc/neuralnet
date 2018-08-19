@@ -203,7 +203,7 @@ class ActivationLayer(Layer):
         self.descriptions = '{} Activation layer: {}'.format(self.layer_name, activation)
 
         if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), 'alpha')
+            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
             self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
@@ -362,6 +362,8 @@ class PoolingLayer(Layer):
 
 
 class DetailPreservingPoolingLayer(Layer):
+    """Implementation of https://arxiv.org/abs/1804.04076"""
+
     def __init__(self, input_shape, window_size=(2, 2), learn_filter='False', symmetric=True, epsilon=np.sqrt(.001),
                  layer_name='Detail Preserving Pooling Layer'):
         assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[
@@ -409,8 +411,6 @@ class DetailPreservingPoolingLayer(Layer):
         alpha = T.exp(self.alpha_).dimshuffle('x', 0, 'x', 'x')
         lam = T.exp(self.lambda_).dimshuffle('x', 0, 'x', 'x')
 
-        # from theano import printing
-        # down = printing.Print('down')(self.__downsampling(input))
         down = self.__downsampling(input)
         down_up = utils.unpool(down, self.ws)
         W = alpha + self.__penalty(input - down_up, lam)
@@ -433,30 +433,39 @@ class UpProjectionUnit(Sequential):
     implementation of the paper "Deep Back Projection Network"
     """
 
-    def __init__(self, input_shape, filter_size, activation='relu', up_ratio=2, layer_name='UpProjectionUnit'):
+    def __init__(self, input_shape, filter_size, activation='relu', up_ratio=2, learnable=True,
+                 layer_name='UpProjectionUnit'):
         super(UpProjectionUnit, self).__init__(input_shape=input_shape, layer_name=layer_name)
 
         self.filter_size = filter_size
         self.activation = activation
         self.up_ratio = up_ratio
 
-        self.append(TransposedConvolutionalLayer(self.input_shape, input_shape[1], filter_size,
-                                                 (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
-                                                 activation=activation, layer_name=layer_name + '/deconv1'))
+        if learnable:
+            self.append(TransposedConvolutionalLayer(self.input_shape, input_shape[1], filter_size,
+                                                     (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
+                                                     activation=activation, layer_name=layer_name + '/up1'))
+        else:
+            self.append(ResizingLayer(self.input_shape, up_ratio, layer_name=layer_name+'/up1'))
+
         self.append(ConvolutionalLayer(self.output_shape, input_shape[1], filter_size, stride=(up_ratio, up_ratio),
                                        activation=activation, layer_name=layer_name+'/conv'))
-        self.append(TransposedConvolutionalLayer(self.input_shape, input_shape[1], filter_size,
-                                                 (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
-                                                 activation=activation, layer_name=layer_name + '/deconv2'))
+
+        if learnable:
+            self.append(TransposedConvolutionalLayer(self.input_shape, input_shape[1], filter_size,
+                                                     (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
+                                                     activation=activation, layer_name=layer_name + '/up2'))
+        else:
+            self.append(ResizingLayer(self.input_shape, up_ratio, layer_name=layer_name + '/up2'))
 
         self.descriptions = '{} Up Projection Unit: {} -> {} upsampling by {}'.format(layer_name, input_shape,
                                                                                       self.output_shape, up_ratio)
 
     def get_output(self, input):
-        out1 = self[self.layer_name+'/deconv1'](input)
+        out1 = self[self.layer_name+'/up1'](input)
         out2 = self[self.layer_name+'/conv'](out1)
         res = out2 - input
-        out2 = self[self.layer_name+'/deconv2'](res)
+        out2 = self[self.layer_name+'/up2'](res)
         return out2 + out1
 
 
@@ -465,7 +474,8 @@ class DownProjectionUnit(Sequential):
     implementation of the paper "Deep Back Projection Network"
     """
 
-    def __init__(self, input_shape, filter_size, activation='relu', down_ratio=2, layer_name='DownProjectionUnit'):
+    def __init__(self, input_shape, filter_size, activation='relu', down_ratio=2, learnable=True,
+                 layer_name='DownProjectionUnit'):
         super(DownProjectionUnit, self).__init__(input_shape=input_shape, layer_name=layer_name)
 
         self.filter_size = filter_size
@@ -474,10 +484,15 @@ class DownProjectionUnit(Sequential):
 
         self.append(ConvolutionalLayer(input_shape,input_shape[1], filter_size, stride=(down_ratio, down_ratio),
                                        activation=activation, layer_name=layer_name+'/conv1'))
-        self.append(TransposedConvolutionalLayer(self.output_shape, input_shape[1], filter_size,
-                                                 (input_shape[2] * 2, input_shape[3] * 2),
-                                                 stride=(down_ratio, down_ratio), activation=activation,
-                                                 layer_name=layer_name + '/deconv'))
+
+        if learnable:
+            self.append(TransposedConvolutionalLayer(self.output_shape, input_shape[1], filter_size,
+                                                     (input_shape[2] * 2, input_shape[3] * 2),
+                                                     stride=(down_ratio, down_ratio), activation=activation,
+                                                     layer_name=layer_name + '/up'))
+        else:
+            self.append(ResizingLayer(self.output_shape, down_ratio, layer_name=layer_name+'/up'))
+
         self.append(ConvolutionalLayer(self.output_shape, input_shape[1], filter_size, stride=(down_ratio, down_ratio),
                                        activation=activation, layer_name=layer_name+'/conv2'))
 
@@ -486,7 +501,7 @@ class DownProjectionUnit(Sequential):
 
     def get_output(self, input):
         out1 = self[self.layer_name+'/conv1'](input)
-        out2 = self[self.layer_name+'/deconv'](out1)
+        out2 = self[self.layer_name+'/up'](out1)
         res = out2 - input
         out2 = self[self.layer_name+'/conv2'](res)
         return out2 + out1
@@ -544,19 +559,19 @@ class FullyConnectedLayer(Layer):
         self.kwargs = kwargs
 
         self.W_values = init((self.input_shape[1], num_nodes))
-        self.W = theano.shared(value=np.copy(self.W_values), name=self.layer_name + '_W', borrow=True)#, target=self.target)
+        self.W = theano.shared(value=np.copy(self.W_values), name=self.layer_name + '/W', borrow=True)
         self.trainable.append(self.W)
         self.params.append(self.W)
         self.regularizable.append(self.W)
 
         if not self.no_bias:
             self.b_values = np.zeros((num_nodes,), dtype=theano.config.floatX)
-            self.b = theano.shared(value=np.copy(self.b_values), name=self.layer_name + '_b', borrow=True)
+            self.b = theano.shared(value=np.copy(self.b_values), name=self.layer_name + '/b', borrow=True)
             self.trainable.append(self.b)
             self.params.append(self.b)
 
         if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
             self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
@@ -619,18 +634,18 @@ class ConvolutionalLayer(Layer):
         self.kwargs = kwargs
 
         self.W_values = init(self.filter_shape)
-        self.W = theano.shared(np.copy(self.W_values), name=self.layer_name + '_W', borrow=True)
+        self.W = theano.shared(np.copy(self.W_values), name=self.layer_name + '/W', borrow=True)
         self.trainable.append(self.W)
         self.params.append(self.W)
 
         if not self.no_bias:
             self.b_values = np.zeros(self.filter_shape[0], dtype=theano.config.floatX)
-            self.b = theano.shared(np.copy(self.b_values), self.layer_name + '_b', borrow=True)
+            self.b = theano.shared(np.copy(self.b_values), self.layer_name + '/b', borrow=True)
             self.trainable.append(self.b)
             self.params.append(self.b)
 
         if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
             self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
@@ -701,18 +716,18 @@ class PerturbativeLayer(Layer):
 
         self.noise = (2. * T.as_tensor_variable(np.random.rand(*input_shape[1:]).astype('float32')) - 1.) * noise_level
         self.W_values = init((num_filters, input_shape[1]))
-        self.W = theano.shared(self.W_values, layer_name+'_W', borrow=True)
+        self.W = theano.shared(self.W_values, layer_name+'/W', borrow=True)
         self.params += [self.W]
         self.trainable += [self.W]
         self.regularizable += [self.W]
 
         if not no_bias:
-            self.b = theano.shared(np.zeros((num_filters,), 'float32'), layer_name+'_b', borrow=True)
+            self.b = theano.shared(np.zeros((num_filters,), 'float32'), layer_name+'/b', borrow=True)
             self.params += [self.b]
             self.trainable += [self.b]
 
         if activation == 'prelu':
-            self.alpha = theano.shared(.1, layer_name+'_alpha')
+            self.alpha = theano.shared(.1, layer_name+'/alpha')
             self.kwargs['alpha'] = self.alpha
             self.params += [self.alpha]
             self.trainable += [self.alpha]
@@ -752,24 +767,24 @@ class InceptionModule1(Layer):
 
         self.module = [[], [], [], []]
         self.module[0].append(ConvNormAct(input_shape, num_filters, (1, 1), border_mode=border_mode,
-                                          stride=(1, 1), activation=activation, layer_name=layer_name + '_branch1_conv1x1'))
+                                          stride=(1, 1), activation=activation, layer_name=layer_name + '/branch1_conv1x1'))
         self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters * 4 // 3, 3, border_mode=border_mode,
-                                          stride=(1, 1), activation=activation, layer_name=layer_name + '_branch1_conv3x3'))
+                                          stride=(1, 1), activation=activation, layer_name=layer_name + '/branch1_conv3x3'))
         self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters * 4 // 3, 3, border_mode=border_mode,
-                                          stride=stride, activation=activation, layer_name=layer_name + '_branch1_conv3x3'))
+                                          stride=stride, activation=activation, layer_name=layer_name + '/branch1_conv3x3'))
 
         self.module[1].append(ConvNormAct(input_shape, num_filters * 4 // 3, 1, border_mode=border_mode, stride=(1, 1),
-                                          activation=activation, layer_name=layer_name + '_branch2_conv1x1'))
+                                          activation=activation, layer_name=layer_name + '/branch2_conv1x1'))
         self.module[1].append(ConvNormAct(self.module[1][-1].output_shape, num_filters * 2, 3, border_mode=border_mode,
-                                          stride=stride, activation=activation, layer_name=layer_name + '_branch2_conv3x3'))
+                                          stride=stride, activation=activation, layer_name=layer_name + '/branch2_conv3x3'))
 
         self.module[2].append(PoolingLayer(input_shape, (3, 3), stride=stride, mode='average_exc_pad', pad='half',
-                                           ignore_border=True, layer_name=layer_name + '_branch3_pooling'))
+                                           ignore_border=True, layer_name=layer_name + '/branch3_pooling'))
         self.module[2].append(ConvNormAct(self.module[2][-1].output_shape, num_filters * 2 // 3, 1, border_mode=border_mode,
-                                          stride=(1, 1), activation=activation, layer_name=layer_name + '_branch3_conv1x1'))
+                                          stride=(1, 1), activation=activation, layer_name=layer_name + '/branch3_conv1x1'))
 
         self.module[3].append(ConvNormAct(input_shape, num_filters * 4 // 3, 1, border_mode=border_mode, stride=stride,
-                                          activation=activation, layer_name=layer_name + '_branch4_conv1x1'))
+                                          activation=activation, layer_name=layer_name + '/branch4_conv1x1'))
 
         self.descriptions = '{} Inception module 1: {} -> {}'.format(layer_name, input_shape, self.output_shape)
 
@@ -808,37 +823,37 @@ class InceptionModule2(Layer):
 
         self.module = [[], [], [], []]
         self.module[0].append(ConvNormAct(input_shape, num_filters, (1, 1), border_mode=border_mode, stride=(1, 1),
-                                          activation=activation, layer_name=layer_name + '_branch1_conv1x1'))
+                                          activation=activation, layer_name=layer_name + '/branch1_conv1x1'))
         self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters, (filter_size, 1),
                                           border_mode=border_mode, stride=(1, 1), activation=activation,
-                                          layer_name=layer_name + '_branch1_conv7x1_1'))
+                                          layer_name=layer_name + '/branch1_conv7x1_1'))
         self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters, (1, filter_size),
                                           border_mode=border_mode, stride=(1, 1), activation=activation,
-                                          layer_name=layer_name + '_branch1_conv1x7_1'))
+                                          layer_name=layer_name + '/branch1_conv1x7_1'))
         self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters, (filter_size, 1),
                                           border_mode=border_mode, stride=(1, 1), activation=activation,
-                                          layer_name=layer_name + '_branch1_conv7x1_2'))
+                                          layer_name=layer_name + '/branch1_conv7x1_2'))
         self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters * 3 // 2, (1, filter_size),
                                           border_mode=border_mode, stride=stride, activation=activation,
-                                          layer_name=layer_name + '_branch1_conv1x7_2'))
+                                          layer_name=layer_name + '/branch1_conv1x7_2'))
 
         self.module[1].append(ConvNormAct(input_shape, 64, (1, 1), border_mode=border_mode, stride=(1, 1),
-                                          activation=activation, layer_name=layer_name + '_branch2_conv1x1'))
+                                          activation=activation, layer_name=layer_name + '/branch2_conv1x1'))
         self.module[1].append(ConvNormAct(self.module[1][-1].output_shape, num_filters, (filter_size, 1),
                                           border_mode=border_mode, stride=(1, 1), activation=activation,
-                                          layer_name=layer_name + '_branch2_conv7x1'))
+                                          layer_name=layer_name + '/branch2_conv7x1'))
         self.module[1].append(ConvNormAct(self.module[1][-1].output_shape, num_filters * 3 // 2, (1, filter_size),
                                           border_mode=border_mode, stride=stride, activation=activation,
-                                          layer_name=layer_name + '_branch2_conv1x7'))
+                                          layer_name=layer_name + '/branch2_conv1x7'))
 
         self.module[2].append(PoolingLayer(input_shape, (3, 3), stride=stride, mode='average_exc_pad', pad='half',
-                                           ignore_border=True, layer_name=layer_name + '_branch3_pooling'))
+                                           ignore_border=True, layer_name=layer_name + '/branch3_pooling'))
         self.module[2].append(ConvNormAct(self.module[2][-1].output_shape, num_filters * 3 // 2, (1, 1),
                                           border_mode=border_mode, stride=(1, 1), activation=activation,
-                                          layer_name=layer_name + '_branch3_conv1x1'))
+                                          layer_name=layer_name + '/branch3_conv1x1'))
 
         self.module[3].append(ConvNormAct(input_shape, num_filters * 3 // 2, (1, 1), border_mode=border_mode,
-                                          stride=stride, activation=activation, layer_name=layer_name + '_branch4_conv1x1'))
+                                          stride=stride, activation=activation, layer_name=layer_name + '/branch4_conv1x1'))
 
         self.descriptions = '{} Inception module 2: {} -> {}'.format(layer_name, input_shape, self.output_shape)
 
@@ -876,37 +891,37 @@ class InceptionModule3(Layer):
 
         self.module = [[], [], [], []]
         self.module[0].append(ConvNormAct(input_shape, num_filters * 7 // 5, (1, 1), border_mode=border_mode,
-                                          stride=(1, 1), activation=activation, layer_name=layer_name + '_branch1_conv1x1'))
+                                          stride=(1, 1), activation=activation, layer_name=layer_name + '/branch1_conv1x1'))
         self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters * 6 // 5, (3, 3),
                                           border_mode=border_mode, stride=(1, 1), activation=activation,
-                                          layer_name=layer_name + '_branch1_conv3x3'))
+                                          layer_name=layer_name + '/branch1_conv3x3'))
         self.module[0].append([[], []])
         self.module[0][-1][0].append(ConvNormAct(self.module[0][1].output_shape, num_filters * 6 // 5, (3, 1),
                                                  border_mode=border_mode, stride=stride, activation=activation,
-                                                 layer_name=layer_name + '_branch1_conv3x1'))
+                                                 layer_name=layer_name + '/branch1_conv3x1'))
         self.module[0][-1][1].append(ConvNormAct(self.module[0][1].output_shape, num_filters * 6 // 5, (3, 1),
                                                  border_mode=border_mode, stride=stride, activation=activation,
-                                                 layer_name=layer_name + '_branch1_conv1x3'))
+                                                 layer_name=layer_name + '/branch1_conv1x3'))
 
         self.module[1].append(ConvNormAct(input_shape, num_filters * 7 // 5, (1, 1), border_mode=border_mode,
                                           stride=(1, 1), activation=activation,
-                                          layer_name=layer_name + '_branch2_conv1x1'))
+                                          layer_name=layer_name + '/branch2_conv1x1'))
         self.module[1].append([[], []])
         self.module[1][-1][0].append(ConvNormAct(self.module[1][0].output_shape, num_filters * 6 // 5, (3, 1),
                                                  border_mode=border_mode, stride=stride, activation=activation,
-                                                 layer_name=layer_name + '_branch2_conv3x1'))
+                                                 layer_name=layer_name + '/branch2_conv3x1'))
         self.module[1][-1][1].append(ConvNormAct(self.module[1][0].output_shape, num_filters * 6 // 5, (3, 1),
                                                  border_mode=border_mode, stride=stride, activation=activation,
-                                                 layer_name=layer_name + '_branch2_conv1x3'))
+                                                 layer_name=layer_name + '/branch2_conv1x3'))
 
         self.module[2].append(PoolingLayer(input_shape, (3, 3), stride=stride, mode='average_exc_pad', pad='half',
-                                           ignore_border=True, layer_name=layer_name + '_branch3_pooling'))
+                                           ignore_border=True, layer_name=layer_name + '/branch3_pooling'))
         self.module[2].append(ConvNormAct(self.module[2][-1].output_shape, num_filters * 2 // 3, (1, 1),
                                           border_mode=border_mode, stride=(1, 1), activation=activation,
-                                          layer_name=layer_name + '_branch3_conv1x1'))
+                                          layer_name=layer_name + '/branch3_conv1x1'))
 
         self.module[3].append(ConvNormAct(input_shape, num_filters * 4 // 3, (1, 1), border_mode=border_mode, stride=stride,
-                                          activation=activation, layer_name=layer_name + '_branch4_conv1x1'))
+                                          activation=activation, layer_name=layer_name + '/branch4_conv1x1'))
 
         for block in self.module:
             for layer in block:
@@ -960,8 +975,8 @@ class InceptionModule3(Layer):
 
 
 class TransposedConvolutionalLayer(Layer):
-    def __init__(self, input_shape, num_filters, filter_size, output_shape=None, init=HeNormal(gain=1.), layer_name='transconv',
-                 padding='half', stride=(2, 2), activation='relu', target='dev0', **kwargs):
+    def __init__(self, input_shape, num_filters, filter_size, output_shape=None, init=HeNormal(gain=1.),
+                 layer_name='Transconv', padding='half', stride=(2, 2), activation='relu', **kwargs):
         """
 
         :param input_shape:
@@ -988,19 +1003,18 @@ class TransposedConvolutionalLayer(Layer):
         self.padding = padding
         self.stride = stride
         self.activation = utils.function[activation]
-        self.target = target
         self.kwargs = kwargs
 
         self.W_values = init(self.filter_shape)
         self.b_values = np.zeros((self.filter_shape[1],), dtype=theano.config.floatX)
-        self.W = theano.shared(np.copy(self.W_values), self.layer_name + '_W', borrow=True)
-        self.b = theano.shared(np.copy(self.b_values), self.layer_name + '_b', borrow=True)
+        self.W = theano.shared(np.copy(self.W_values), self.layer_name + '/W', borrow=True)
+        self.b = theano.shared(np.copy(self.b_values), self.layer_name + '/b', borrow=True)
         self.params += [self.W, self.b]
         self.trainable += [self.W, self.b]
         self.regularizable.append(self.W)
 
         if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
             self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
@@ -1139,20 +1153,20 @@ class ResNetBlock(Sequential):
         self.kwargs = kwargs
 
         if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
             self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
-        self.append(Sequential(self.simple_block(layer_name + '_1'), layer_name=layer_name+'_main'))
+        self.append(Sequential(self.simple_block(layer_name + '_1'), layer_name=layer_name+'/main'))
         if downsample:
-            downsample = Sequential(input_shape=input_shape, layer_name=layer_name+'_down')
+            downsample = Sequential(input_shape=input_shape, layer_name=layer_name+'/down')
             downsample.append(ConvolutionalLayer(self.input_shape, num_filters, 1, stride=stride,
-                                                 layer_name=layer_name+'_down', activation='linear'))
+                                                 layer_name=layer_name+'/down', activation='linear'))
             if self.normalization:
-                downsample.append(BatchNormLayer(downsample[-1].output_shape, layer_name=layer_name + '_down_bn',
+                downsample.append(BatchNormLayer(downsample[-1].output_shape, layer_name=layer_name + '/down_bn',
                                                  activation='linear') if normalization == 'bn'
-                                  else GroupNormLayer(downsample[-1].output_shape, layer_name=layer_name + '_down_gn',
+                                  else GroupNormLayer(downsample[-1].output_shape, layer_name=layer_name + '/down_gn',
                                                       groups=groups, activation='linear'))
             self.append(downsample)
 
@@ -1162,32 +1176,32 @@ class ResNetBlock(Sequential):
 
     def _build_simple_block(self, block_name):
         block = [ConvolutionalLayer(self.input_shape, self.num_filters, 3, border_mode='half', stride=self.stride,
-                                    dilation=self.dilation, layer_name=block_name + '_conv1', no_bias=True,
+                                    dilation=self.dilation, layer_name=block_name + '/conv1', no_bias=True,
                                     activation='linear')]
 
         if self.normalization:
             block.append(BatchNormLayer(block[-1].output_shape, activation=self.activation,
-                                        layer_name=block_name + '_conv1_bn', **self.kwargs) if self.normalization == 'bn'
+                                        layer_name=block_name + '/conv1_bn', **self.kwargs) if self.normalization == 'bn'
                          else GroupNormLayer(block[-1].output_shape, activation=self.activation,
-                                             layer_name=block_name+'_conv1_gn', groups=self.groups, **self.kwargs))
+                                             layer_name=block_name+'/conv1_gn', groups=self.groups, **self.kwargs))
         else:
-            block.append(ActivationLayer(block[-1].output_shape, self.activation, block_name+'_act1', **self.kwargs))
+            block.append(ActivationLayer(block[-1].output_shape, self.activation, block_name+'/act1', **self.kwargs))
 
         block.append(ConvolutionalLayer(block[-1].output_shape, self.num_filters, 3, border_mode='half', dilation=self.dilation,
-                                        layer_name=block_name + '_conv2', no_bias=True, activation='linear'))
+                                        layer_name=block_name + '/conv2', no_bias=True, activation='linear'))
 
         if self.normalization:
-            block.append(BatchNormLayer(block[-1].output_shape, layer_name=block_name + '_conv2_bn', activation='linear')
+            block.append(BatchNormLayer(block[-1].output_shape, layer_name=block_name + '/conv2_bn', activation='linear')
                          if self.normalization == 'bn' else GroupNormLayer(block[-1].output_shape, activation='linear',
-                                                                           layer_name=block_name + '_conv2_gn', groups=self.groups))
+                                                                           layer_name=block_name + '/conv2_gn', groups=self.groups))
         return block
 
     def get_output(self, input):
         res = input
-        output = self[self.layer_name+'_main'](input)
+        output = self[self.layer_name+'/main'](input)
 
         if self.downsample:
-            res = self[self.layer_name+'_down'](res)
+            res = self[self.layer_name+'/down'](res)
         return utils.function[self.activation](output + res, **self.kwargs)
 
     def reset(self):
@@ -1228,13 +1242,13 @@ class ResNetBottleneckBlock(Sequential):
                                                **self.kwargs) if block else self._build_simple_block(name)
         self.kwargs = kwargs
 
-        self.append(Sequential(self.simple_block(layer_name + '_1'), layer_name=layer_name + '_main'))
+        self.append(Sequential(self.simple_block(layer_name + '_1'), layer_name=layer_name + '/main'))
         if downsample:
             self.append(ConvNormAct(self.input_shape, num_filters * self.upscale_factor, 1, stride=stride,
-                                    layer_name=layer_name+'_down', activation='linear', **self.kwargs))
+                                    layer_name=layer_name+'/down', activation='linear', **self.kwargs))
 
         if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
             self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
@@ -1245,21 +1259,21 @@ class ResNetBottleneckBlock(Sequential):
     def _build_simple_block(self, block_name):
         layers = []
         layers.append(ConvNormAct(self.input_shape, self.num_filters, 1, no_bias=True, activation=self.activation,
-                                  layer_name=block_name+'_conv_bn_act_1', **self.kwargs))
+                                  layer_name=block_name+'/conv_bn_act_1', **self.kwargs))
 
         layers.append(ConvNormAct(layers[-1].output_shape, self.num_filters, 3, activation=self.activation,
-                                  stride=self.stride, layer_name=block_name+'_conv_bn_act_2', no_bias=True, **self.kwargs))
+                                  stride=self.stride, layer_name=block_name+'/conv_bn_act_2', no_bias=True, **self.kwargs))
 
         layers.append(ConvNormAct(layers[-1].output_shape, self.num_filters * self.upscale_factor, 1, activation='linear',
-                                  layer_name=block_name+'_conv_bn_act_3', no_bias=True, **self.kwargs))
+                                  layer_name=block_name+'/conv_bn_act_3', no_bias=True, **self.kwargs))
         return layers
 
     def get_output(self, input):
         res = input
-        output = self[self.layer_name+'_main'](input)
+        output = self[self.layer_name+'/main'](input)
 
         if self.downsample:
-            res = self[self.layer_name+'_down'](res)
+            res = self[self.layer_name+'/down'](res)
         return utils.function[self.activation](output + res, **self.kwargs)
 
     def reset(self):
@@ -1297,12 +1311,12 @@ class NoiseResNetBlock(Layer):
         self.kwargs = kwargs
 
         if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
             self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
-        self.block = list(self._build_simple_block(block_name=layer_name + '_1'))
+        self.block = list(self._build_simple_block(block_name=layer_name + '/1'))
         self.params += [p for layer in self.block for p in layer.params]
         self.trainable += [p for layer in self.block for p in layer.trainable]
         self.regularizable += [p for layer in self.block for p in layer.regularizable]
@@ -1310,11 +1324,11 @@ class NoiseResNetBlock(Layer):
         if self.left_branch:
             self.shortcut = []
             self.shortcut.append(PerturbativeLayer(self.input_shape, self.num_filters, noise_level=self.noise_level,
-                                                   activation=self.activation, no_bias=True, layer_name=layer_name+'_2'))
+                                                   activation=self.activation, no_bias=True, layer_name=layer_name+'/2'))
             if self.normalization:
-                self.shortcut.append(BatchNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '_2_bn',
+                self.shortcut.append(BatchNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '/2_bn',
                                                     activation='linear') if normalization == 'bn'
-                                     else GroupNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '_2_gn',
+                                     else GroupNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '/2_gn',
                                                          groups=groups, activation='linear'))
             self.params += [p for layer in self.shortcut for p in layer.params]
             self.trainable += [p for layer in self.shortcut for p in layer.trainable]
@@ -1330,17 +1344,17 @@ class NoiseResNetBlock(Layer):
 
         if self.normalization:
             block.append(BatchNormLayer(block[-1].output_shape, activation='linear',
-                                        layer_name=block_name + '_noise1_bn', **self.kwargs) if self.normalization == 'bn'
+                                        layer_name=block_name + '/noise1_bn', **self.kwargs) if self.normalization == 'bn'
                          else GroupNormLayer(block[-1].output_shape, activation='linear',
-                                             layer_name=block_name+'_noise1_gn', groups=self.groups, **self.kwargs))
+                                             layer_name=block_name+'/noise1_gn', groups=self.groups, **self.kwargs))
 
         block.append(PerturbativeLayer(block[-1].output_shape, self.num_filters, noise_level=self.noise_level,
-                                       activation=self.activation, no_bias=True, layer_name=self.layer_name+'_noise2'))
+                                       activation=self.activation, no_bias=True, layer_name=self.layer_name+'/noise2'))
 
         if self.normalization:
-            block.append(BatchNormLayer(block[-1].output_shape, layer_name=block_name + '_noise2_bn', activation='linear')
+            block.append(BatchNormLayer(block[-1].output_shape, layer_name=block_name + '/noise2_bn', activation='linear')
                          if self.normalization == 'bn' else GroupNormLayer(block[-1].output_shape, activation='linear',
-                                                                           layer_name=block_name + '_noise2_gn', groups=self.groups))
+                                                                           layer_name=block_name + '/noise2_gn', groups=self.groups))
         return block
 
     def get_output(self, input):
@@ -1388,13 +1402,13 @@ class RecursiveResNetBlock(Layer):
         self.kwargs = kwargs
 
         if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
             self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
         self.first_conv = ConvolutionalLayer(input_shape, num_filters, filter_size, stride=stride,
-                                             layer_name=layer_name+'_first_conv', activation='linear')
+                                             layer_name=layer_name+'/first_conv', activation='linear')
         if normalization:
             self.normalization = lambda shape, name: BatchNormLayer(shape, name, activation='linear') \
                 if normalization == 'bn' else GroupNormLayer(shape, name, groups=groups, activation='linear')
@@ -1412,17 +1426,17 @@ class RecursiveResNetBlock(Layer):
         shape = self.first_conv.output_shape
         block = []
         if self.normalization:
-            block.append(self.normalization(shape, self.layer_name+'_norm1'))
+            block.append(self.normalization(shape, self.layer_name+'/norm1'))
         block += [
-            ActivationLayer(shape, self.activation, self.layer_name + '_act1', **self.kwargs),
-            ConvolutionalLayer(shape, self.num_filters, self.filter_size, layer_name=self.layer_name+'_conv1',
+            ActivationLayer(shape, self.activation, self.layer_name + '/act1', **self.kwargs),
+            ConvolutionalLayer(shape, self.num_filters, self.filter_size, layer_name=self.layer_name+'/conv1',
                                activation='linear')
             ]
         if self.normalization:
-            block.append(self.normalization(shape, self.layer_name+'_norm2'))
+            block.append(self.normalization(shape, self.layer_name+'/norm2'))
         block += [
-            ActivationLayer(shape, self.activation, self.layer_name + '_act2', **self.kwargs),
-            ConvolutionalLayer(shape, self.num_filters, self.filter_size, layer_name=self.layer_name + '_conv2',
+            ActivationLayer(shape, self.activation, self.layer_name + '/act2', **self.kwargs),
+            ConvolutionalLayer(shape, self.num_filters, self.filter_size, layer_name=self.layer_name + '/conv2',
                                activation='linear')
         ]
         return block
@@ -1493,16 +1507,16 @@ class DenseBlock(Layer):
                                            self.activation, self.layer_name)
         else:
             self.block = self._transition(self.input_shape, self.dropout, self.activation,
-                                          self.layer_name + '_transition')
+                                          self.layer_name + '/transition')
 
         self.descriptions = '{} Dense Block: {} -> {} {} conv layers growth rate {} transit {} dropout {} {}'.\
             format(layer_name, input_shape, self.output_shape, num_conv_layer, growth_rate, transit, dropout, activation)
 
     def _bn_act_conv(self, input_shape, num_filters, filter_size, dropout, activation, stride=1, layer_name='bn_re_conv'):
         block = [
-            self.normalization(input_shape, activation=activation, layer_name=layer_name + '_bn', **self.kwargs),
+            self.normalization(input_shape, activation=activation, layer_name=layer_name + '/bn', **self.kwargs),
             ConvolutionalLayer(input_shape, num_filters, filter_size, stride=stride, activation='linear',
-                               layer_name=layer_name + '_conv')
+                               layer_name=layer_name + '/conv')
         ]
         for layer in block:
             self.params += layer.params
@@ -1580,22 +1594,22 @@ class BatchNormLayer(Layer):
         self.kwargs = kwargs
 
         self.gamma_values = np.ones(self.shape, dtype=theano.config.floatX)
-        self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '_gamma', borrow=True)
+        self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '/gamma', borrow=True)
 
         self.beta_values = np.zeros(self.shape, dtype=theano.config.floatX)
-        self.beta = theano.shared(np.copy(self.beta_values), name=layer_name + '_beta', borrow=True)
+        self.beta = theano.shared(np.copy(self.beta_values), name=layer_name + '/beta', borrow=True)
 
         self.running_mean = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                          name=layer_name + '_running_mean', borrow=True)
+                                          name=layer_name + '/running_mean', borrow=True)
         self.running_var = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                         name=layer_name + '_running_var', borrow=True)
+                                         name=layer_name + '/running_var', borrow=True)
 
         self.params += [self.gamma, self.beta, self.running_mean, self.running_var]
         self.trainable += [self.beta] if self. no_scale else [self.beta, self.gamma]
         self.regularizable += [self.gamma] if not self.no_scale else []
 
         if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
             self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
@@ -1665,15 +1679,15 @@ class DecorrBatchNormLayer(Layer):
         self.kwargs = kwargs
 
         self.gamma_values = np.ones(self.shape, dtype=theano.config.floatX)
-        self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '_gamma', borrow=True)
+        self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '/gamma', borrow=True)
 
         self.beta_values = np.zeros(self.shape, dtype=theano.config.floatX)
-        self.beta = theano.shared(np.copy(self.beta_values), name=layer_name + '_beta', borrow=True)
+        self.beta = theano.shared(np.copy(self.beta_values), name=layer_name + '/beta', borrow=True)
 
         self.running_mean = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                          name=layer_name + '_running_mean', borrow=True)
+                                          name=layer_name + '/running_mean', borrow=True)
         self.running_var = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                         name=layer_name + '_running_var', borrow=True)
+                                         name=layer_name + '/running_var', borrow=True)
 
         self.params += [self.gamma, self.beta, self.running_mean, self.running_var]
         self.trainable += [self.beta] if self. no_scale else [self.beta, self.gamma]
@@ -1743,17 +1757,17 @@ class GroupNormLayer(Layer):
         self.activation = utils.function[activation]
         self.kwargs = kwargs
         self.gamma_values = np.ones(self.input_shape[1], dtype=theano.config.floatX)
-        self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '_gamma', borrow=True)
+        self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '/gamma', borrow=True)
 
         self.beta_values = np.zeros(self.input_shape[1], dtype=theano.config.floatX)
-        self.beta = theano.shared(np.copy(self.beta_values), name=layer_name + '_beta', borrow=True)
+        self.beta = theano.shared(np.copy(self.beta_values), name=layer_name + '/beta', borrow=True)
 
         self.params += [self.gamma, self.beta]
         self.trainable += [self.gamma, self.beta]
         self.regularizable += [self.gamma]
 
         if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), layer_name + '_alpha')
+            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
             self.params += [self.alpha]
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
@@ -1806,12 +1820,12 @@ class BatchRenormLayer(Layer):
 
         self.gamma_values = np.ones(self.shape, dtype=theano.config.floatX)
         self.beta_values = np.zeros(self.shape, dtype=theano.config.floatX)
-        self.gamma = theano.shared(self.gamma_values, name=layer_name + '_gamma', borrow=True)
-        self.beta = theano.shared(self.beta_values, name=layer_name + '_beta', borrow=True)
+        self.gamma = theano.shared(self.gamma_values, name=layer_name + '/gamma', borrow=True)
+        self.beta = theano.shared(self.beta_values, name=layer_name + '/beta', borrow=True)
         self.running_mean = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                          name=layer_name + '_running_mean', borrow=True)
+                                          name=layer_name + '/running_mean', borrow=True)
         self.running_var = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                         name=layer_name + '_running_var', borrow=True)
+                                         name=layer_name + '/running_var', borrow=True)
         self.params += [self.gamma, self.beta, self.running_mean, self.running_var]
         self.trainable += [self.gamma, self.beta]
         self.regularizable.append(self.gamma)
@@ -2176,18 +2190,18 @@ class Gate:
 
         self.shape = shape
         hid_shape = tuple([shape[0], shape[0]] + list(shape[2:])) if len(shape) == 4 else (shape[1], shape[1])
-        self.W_in = theano.shared(W_in(shape), layer_name+'_W_in')
-        self.W_hid = theano.shared(W_hid(hid_shape), layer_name+'_W_hid')
+        self.W_in = theano.shared(W_in(shape), layer_name+'/W_in')
+        self.W_hid = theano.shared(W_hid(hid_shape), layer_name+'/W_hid')
         self.params = [self.W_in, self.W_hid]
         self.trainable = [self.W_in, self.W_hid]
         self.regularizable = [self.W_in, self.W_hid]
 
         if W_cell:
-            self.W_cell = theano.shared(W_cell(hid_shape), layer_name+'_W_cell')
+            self.W_cell = theano.shared(W_cell(hid_shape), layer_name+'/W_cell')
             self.params.append(self.W_cell)
             self.trainable.append(self.W_cell)
             self.regularizable.append(self.W_cell)
-        self.b = theano.shared(b(hid_shape[0]), layer_name + '_bias')
+        self.b = theano.shared(b(hid_shape[0]), layer_name + '/bias')
         self.params.append(self.b)
         self.trainable.append(self.b)
         self.activation = utils.function[activation]
@@ -2546,10 +2560,10 @@ def ConvNormAct(input_shape, num_filters, filter_size, init=HeNormal(gain=1.), n
     block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, init, no_bias, border_mode, stride,
                                     dilation, layer_name+'_conv', 'linear', **kwargs))
     if normalization == 'bn':
-        block.append(BatchNormLayer(block.output_shape, layer_name+'_bn', epsilon, running_average_factor, axes,
+        block.append(BatchNormLayer(block.output_shape, layer_name+'/bn', epsilon, running_average_factor, axes,
                                     activation, no_scale, **kwargs))
     else:
-        block.append(GroupNormLayer(input_shape, layer_name+'_gn', groups, epsilon, activation, **kwargs))
+        block.append(GroupNormLayer(input_shape, layer_name+'/gn', groups, epsilon, activation, **kwargs))
     return block
 
 
@@ -2561,11 +2575,11 @@ def StackingConv(input_shape, num_layers, num_filters, filter_size=3, batch_norm
     conv_layer = ConvNormAct if batch_norm else ConvolutionalLayer
     for num in range(num_layers - 1):
         block.append(conv_layer(block.output_shape, num_filters, filter_size, init=init, no_bias=no_bias, border_mode=border_mode,
-                                stride=(1, 1), dilation=dilation, layer_name=layer_name + '_conv_%d' % (num + 1),
+                                stride=(1, 1), dilation=dilation, layer_name=layer_name + '/conv_%d' % (num + 1),
                                 activation=activation, **kwargs))
     block.append(conv_layer(block.output_shape, num_filters, filter_size, init=init, no_bias=no_bias, border_mode=border_mode,
                             dilation=dilation, stride=stride, activation=activation,
-                            layer_name=layer_name + '_conv_%d' % num_layers, **kwargs))
+                            layer_name=layer_name + '/conv_%d' % num_layers, **kwargs))
     return block
 
 
@@ -2577,10 +2591,10 @@ def NetworkInNetworkBlock(input_shape, num_filters, filter_size, num_layers=2, n
 
         block = Sequential(input_shape=input_shape, layer_name=layer_name)
         block.append(ConvolutionalLayer(input_shape, num_filters, filter_size, activation=activation,
-                                        layer_name=layer_name + '_first_conv', **kwargs))
+                                        layer_name=layer_name + '/first_conv', **kwargs))
         for i in range(num_layers):
             block.append(ConvolutionalLayer(block.output_shape, num_nodes[i], 1, activation=activation,
-                                            layer_name=layer_name + '_conv1_%d' % (i + 1), **kwargs))
+                                            layer_name=layer_name + '/conv1_%d' % (i + 1), **kwargs))
         return block
 
 
@@ -2590,9 +2604,9 @@ def MeanPoolConvLayer(input_shape, num_filters, filter_size, activation='relu', 
 
         block = Sequential(input_shape=input_shape, layer_name=layer_name)
         block.append(PoolingLayer(input_shape, ws, stride=ws, ignore_border=True, mode='average_exc_pad',
-                                  layer_name=layer_name+'_meanpool'))
+                                  layer_name=layer_name+'/meanpool'))
         block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, init, no_bias,
-                                        layer_name=layer_name+'_conv', activation=activation, **kwargs))
+                                        layer_name=layer_name+'/conv', activation=activation, **kwargs))
         return block
 
 
@@ -2602,14 +2616,18 @@ def ConvMeanPoolLayer(input_shape, num_filters, filter_size, activation='relu', 
 
         block = Sequential(input_shape=input_shape, layer_name=layer_name)
         block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, init, no_bias,
-                                        layer_name=layer_name + '_conv', activation=activation, **kwargs))
+                                        layer_name=layer_name + '/conv', activation=activation, **kwargs))
         block.append(PoolingLayer(block.output_shape, ws, stride=ws, ignore_border=True, mode='average_exc_pad',
-                                  layer_name=layer_name+'_meanpool'))
+                                  layer_name=layer_name+'/meanpool'))
         return block
 
 
-def SoftmaxLayer(input_shape, num_nodes, layer_name='softmax'):
+def SoftmaxLayer(input_shape, num_nodes, layer_name='Softmax'):
     return FullyConnectedLayer(input_shape, num_nodes, layer_name=layer_name, activation='softmax')
+
+
+def SigmoidLayer(input_shape, layer_name='Sigmoid'):
+    return FullyConnectedLayer(input_shape, 1, layer_name=layer_name, activation='sigmoid')
 
 
 if __name__ == '__main__':
