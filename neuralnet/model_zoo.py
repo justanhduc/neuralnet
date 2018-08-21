@@ -7,13 +7,15 @@ import neuralnet as nn
 
 
 class Net:
-    def save_params(self, param_file, params):
-        np.savez(param_file, **{p.name: p.get_value() for p in params})
+    def save_params(self, param_file=None):
+        param_file = param_file if param_file else self.param_file
+        np.savez(param_file, **{p.name: p.get_value() for p in self.params})
         print('Model weights dumped to %s' % param_file)
 
-    def load_params(self, param_file, params):
+    def load_params(self, param_file=None):
+        param_file = param_file if param_file else self.param_file
         weights = np.load(param_file)
-        for p in params:
+        for p in self.params:
             try:
                 p.set_value(weights[p.name])
             except KeyError:

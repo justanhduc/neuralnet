@@ -40,6 +40,9 @@ class NetMethod:
     def get_output(self, input):
         raise NotImplementedError
 
+    def __str__(self):
+        return self.descriptions
+
     @property
     def output_shape(self):
         raise NotImplementedError
@@ -65,9 +68,6 @@ class Layer(NetMethod, metaclass=abc.ABCMeta):
         self.layer_name = layer_name
         self.descriptions = ''
 
-    def __str__(self):
-        return self.descriptions
-
     @staticmethod
     def set_training_status(training):
         Layer.training_flag = training
@@ -81,13 +81,14 @@ class Sequential(OrderedDict, NetMethod):
         assert layer_list or input_shape, 'Either layer_list or input_shape must be specified.'
         assert isinstance(layer_list, (list, tuple, Sequential)), 'layer_list must be a list or tuple, got %s.' % type(
             layer_list)
+        assert all([isinstance(l, (Sequential, Layer)) for l in
+                    layer_list]), 'All elements of layer_list should be instances of Layer or Sequential.'
 
         self.params, self.trainable, self.regularizable = [], [], []
         self.descriptions = ''
         self.layer_name = layer_name
         self.input_shape = tuple(input_shape) if input_shape else layer_list[0].input_shape
         if isinstance(layer_list, (list, tuple)):
-            assert all([isinstance(l, (Sequential, Layer)) for l in layer_list]), 'All elements of layer_list should be Layer.'
             name_list = [l.layer_name for l in layer_list]
             for i in range(len(name_list)):
                 name = name_list.pop()
@@ -95,14 +96,10 @@ class Sequential(OrderedDict, NetMethod):
                     raise ValueError('%s already existed in the network.' % name)
             super(Sequential, self).__init__(zip([l.layer_name for l in layer_list], layer_list))
         else:
-            assert all([isinstance(l, (Layer, Sequential)) for l in layer_list.items()]), 'All elements of layer_list should be Layer.'
             super(Sequential, self).__init__(layer_list)
 
         self.__idx = 0
         self.__max = len(self)
-
-    def __str__(self):
-        return self.descriptions
 
     def __iter__(self):
         self.__idx = 0
@@ -130,7 +127,7 @@ class Sequential(OrderedDict, NetMethod):
         if not isinstance(key, str):
             raise TypeError('key must be a str, got %s.' % type(key))
         if not isinstance(value, (Sequential, Layer)):
-            raise TypeError('value must be an instance of Layer, got %s.' % type(value))
+            raise TypeError('value must be an instance of Layer or Sequential, got %s.' % type(value))
         if key in self.keys():
             raise NameError('key existed.')
         super(Sequential, self).__setitem__(key, value)
