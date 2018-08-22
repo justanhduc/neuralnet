@@ -505,6 +505,42 @@ class DownProjectionUnit(Sequential):
         return out2 + out1
 
 
+class PixelShuffleLayer(Layer):
+    def __init__(self, input_shape, num_filters, filter_size, rate=(2, 2), activation='linear', init=HeNormal(gain=1.),
+                 biases=True, layer_name='Upsample Conv', **kwargs):
+        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+
+        super(PixelShuffleLayer, self).__init__(input_shape, layer_name)
+        self.num_filters = num_filters
+        self.filter_size = filter_size
+        self.rate = rate
+        self.activation = activation
+        self.biases = biases
+
+        self.shape = (self.input_shape[0], self.input_shape[1], self.input_shape[2]*rate[0], self.input_shape[3]*rate[1])
+        self.conv = ConvolutionalLayer(self.shape, num_filters, filter_size, init=init, activation=self.activation,
+                                       layer_name=self.layer_name, no_bias=not self.biases, **kwargs)
+        self.params += self.conv.params
+        self.trainable += self.conv.trainable
+        self.regularizable += self.conv.regularizable
+        self.descriptions = '{} Upsample Conv: {} -> {}'.format(layer_name, self.input_shape, self.output_shape)
+
+    def get_output(self, input):
+        output = input
+        output = T.concatenate([output for i in range(np.sum(self.rate))], 1)
+        output = T.transpose(output, (0, 2, 3, 1))
+        output = T.reshape(output, (-1, self.shape[2], self.shape[3], self.shape[1]))
+        output = T.transpose(output, (0, 3, 1, 2))
+        return self.conv(output)
+
+    @property
+    def output_shape(self):
+        return (self.shape[0], self.num_filters, self.shape[2], self.shape[3])
+
+    def reset(self):
+        self.conv.reset()
+
+
 class DropoutLayer(Layer):
     def __init__(self, input_shape, drop_prob=0.5, gaussian=False, layer_name='Dropout'):
         assert len(input_shape) == 2 or len(input_shape) == 4, \
@@ -1075,42 +1111,6 @@ class TransposedConvolutionalLayer(Layer):
         self.b.set_value(np.copy(self.b_values))
         if self.activation is utils.function['prelu']:
             self.alpha.set_value(np.float32(.1))
-
-
-class PixelShuffleLayer(Layer):
-    def __init__(self, input_shape, num_filters, filter_size, rate=(2, 2), activation='relu', init=HeNormal(gain=1.),
-                 biases=True, layer_name='Upsample Conv', **kwargs):
-        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
-
-        super(PixelShuffleLayer, self).__init__(input_shape, layer_name)
-        self.num_filters = num_filters
-        self.filter_size = filter_size
-        self.rate = rate
-        self.activation = activation
-        self.biases = biases
-
-        self.shape = (self.input_shape[0], self.input_shape[1], self.input_shape[2]*rate[0], self.input_shape[3]*rate[1])
-        self.conv = ConvolutionalLayer(self.shape, num_filters, filter_size, init=init, activation=self.activation,
-                                       layer_name=self.layer_name, no_bias=not self.biases, **kwargs)
-        self.params += self.conv.params
-        self.trainable += self.conv.trainable
-        self.regularizable += self.conv.regularizable
-        self.descriptions = '{} Upsample Conv: {} -> {}'.format(layer_name, self.input_shape, self.output_shape)
-
-    def get_output(self, input):
-        output = input
-        output = T.concatenate([output for i in range(np.sum(self.rate))], 1)
-        output = T.transpose(output, (0, 2, 3, 1))
-        output = T.reshape(output, (-1, self.shape[2], self.shape[3], self.shape[1]))
-        output = T.transpose(output, (0, 3, 1, 2))
-        return self.conv(output)
-
-    @property
-    def output_shape(self):
-        return (self.shape[0], self.num_filters, self.shape[2], self.shape[3])
-
-    def reset(self):
-        self.conv.reset()
 
 
 class ResNetBlock(Sequential):
@@ -2596,7 +2596,7 @@ def NetworkInNetworkBlock(input_shape, num_filters, filter_size, num_layers=2, n
         return block
 
 
-def MeanPoolConvLayer(input_shape, num_filters, filter_size, activation='relu', ws=(2, 2), init=HeNormal(gain=1.),
+def MeanPoolConvLayer(input_shape, num_filters, filter_size, activation='linear', ws=(2, 2), init=HeNormal(gain=1.),
                       no_bias=False, layer_name='Mean Pool Conv', **kwargs):
         assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[3] // 2, 'Input must have even shape.'
 
@@ -2608,7 +2608,7 @@ def MeanPoolConvLayer(input_shape, num_filters, filter_size, activation='relu', 
         return block
 
 
-def ConvMeanPoolLayer(input_shape, num_filters, filter_size, activation='relu', ws=(2, 2), init=HeNormal(gain=1.),
+def ConvMeanPoolLayer(input_shape, num_filters, filter_size, activation='linear', ws=(2, 2), init=HeNormal(gain=1.),
                       no_bias=False, layer_name='Conv Mean Pool', **kwargs):
         assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[3] // 2, 'Input must have even shape.'
 
