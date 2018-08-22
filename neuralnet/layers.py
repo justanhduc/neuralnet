@@ -1773,14 +1773,20 @@ class GroupNormLayer(Layer):
 
     def get_output(self, input):
         n, c, h, w = T.shape(input)
-        input = T.reshape(input, (n, self.groups, -1, h, w))
-        mean = T.mean(input, (2, 3, 4), keepdims=True)
-        var = T.var(input, (2, 3, 4), keepdims=True)
+        input_ = T.reshape(input, (n, self.groups, -1, h, w))
+        mean = T.mean(input_, (2, 3, 4), keepdims=True)
+        var = T.var(input_, (2, 3, 4), keepdims=True)
         gamma = self.gamma.dimshuffle(('x', 0, 'x', 'x'))
         beta = self.beta.dimshuffle(('x', 0, 'x', 'x'))
-        input = (input - mean) / T.sqrt(var + self.epsilon)
-        input = T.reshape(input, (n, c, h, w))
-        output = gamma * input + beta
+        if self.groups == 1 or self.groups == self.input_shape[1]:
+            mean = T.reshape(mean, (n, self.groups, 1, 1))
+            var = T.reshape(var, (n, self.groups, 1, 1))
+            axes = (1, 2, 3) if self.groups == 1 else (2, 3)
+            output = T.nnet.bn.batch_normalization_test(input, gamma, beta, mean, var, axes, self.epsilon)
+        else:
+            input_ = (input_ - mean) / T.sqrt(var + self.epsilon)
+            input_ = T.reshape(input_, (n, c, h, w))
+            output = gamma * input_ + beta
         return self.activation(output, **self.kwargs)
 
     @property
