@@ -792,6 +792,19 @@ def unpad(img, old_shape):
     return out
 
 
+def depth_to_space(x, upscale_factor):
+    n, c, h, w = x.shape
+    assert c / (upscale_factor ** 2) == c // (upscale_factor ** 2)
+
+    oc = c // (upscale_factor ** 2)
+    oh = h * upscale_factor
+    ow = w * upscale_factor
+
+    z = T.reshape(x, (n, oc, upscale_factor, upscale_factor, h, w))
+    z = z.dimshuffle(0, 1, 4, 2, 5, 3)
+    return T.reshape(z, (n, oc, oh, ow))
+
+
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
             'tanh': lambda x, **kwargs: T.tanh(x), 'lrelu': lrelu, 'softmax': lambda x, **kwargs: T.nnet.softmax(x),
             'linear': lambda x, **kwargs: x, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,
