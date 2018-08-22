@@ -2561,7 +2561,7 @@ def ConvNormAct(input_shape, num_filters, filter_size, init=HeNormal(gain=1.), n
         block.append(BatchNormLayer(block.output_shape, layer_name+'/bn', epsilon, running_average_factor, axes,
                                     activation, no_scale, **kwargs))
     else:
-        block.append(GroupNormLayer(input_shape, layer_name+'/gn', groups, epsilon, activation, **kwargs))
+        block.append(GroupNormLayer(block.output_shape, layer_name+'/gn', groups, epsilon, activation, **kwargs))
     return block
 
 
