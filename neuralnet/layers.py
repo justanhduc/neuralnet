@@ -528,9 +528,7 @@ class PixelShuffleLayer(Layer):
     def get_output(self, input):
         output = input
         output = T.concatenate([output for i in range(np.sum(self.rate))], 1)
-        output = T.transpose(output, (0, 2, 3, 1))
-        output = T.reshape(output, (-1, self.shape[2], self.shape[3], self.shape[1]))
-        output = T.transpose(output, (0, 3, 1, 2))
+        output = utils.depth_to_space(output, self.rate[0])
         return self.conv(output)
 
     @property
