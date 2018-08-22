@@ -506,7 +506,7 @@ class DownProjectionUnit(Sequential):
 
 
 class PixelShuffleLayer(Layer):
-    def __init__(self, input_shape, num_filters, filter_size, rate=(2, 2), activation='linear', init=HeNormal(gain=1.),
+    def __init__(self, input_shape, num_filters, filter_size, rate=2, activation='linear', init=HeNormal(gain=1.),
                  biases=True, layer_name='Upsample Conv', **kwargs):
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
@@ -517,7 +517,7 @@ class PixelShuffleLayer(Layer):
         self.activation = activation
         self.biases = biases
 
-        self.shape = (self.input_shape[0], self.input_shape[1], self.input_shape[2]*rate[0], self.input_shape[3]*rate[1])
+        self.shape = (self.input_shape[0], self.input_shape[1], self.input_shape[2]*rate, self.input_shape[3]*rate)
         self.conv = ConvolutionalLayer(self.shape, num_filters, filter_size, init=init, activation=self.activation,
                                        layer_name=self.layer_name, no_bias=not self.biases, **kwargs)
         self.params += self.conv.params
@@ -527,8 +527,8 @@ class PixelShuffleLayer(Layer):
 
     def get_output(self, input):
         output = input
-        output = T.concatenate([output for i in range(np.sum(self.rate))], 1)
-        output = utils.depth_to_space(output, self.rate[0])
+        output = T.concatenate([output for _ in range(self.rate ** 2)], 1)
+        output = utils.depth_to_space(output, self.rate)
         return self.conv(output)
 
     @property
@@ -1741,8 +1741,8 @@ class DecorrBatchNormLayer(Layer):
 class GroupNormLayer(Layer):
     """
     Implementation of the paper "Group Normalization" - Wu et al.
-    group = 1 -> Insntance Normalization
-    group = input_shape[1] -> Layer Normalization
+    group = 1 -> Layer Normalization
+    group = input_shape[1] -> Instance Normalization
     """
     def __init__(self, input_shape, layer_name='GN', groups=32, epsilon=1e-4, activation='relu', **kwargs):
         assert input_shape[1] / groups == input_shape[1] // groups, 'groups must divide the number of input channels.'
