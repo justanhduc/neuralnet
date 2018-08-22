@@ -8,6 +8,7 @@ import theano
 from theano import tensor as T
 from scipy import misc
 from functools import reduce
+from itertools import cycle
 
 __all__ = ['ConfigParser', 'DataManager']
 thread_lock = threading.Lock()
@@ -61,6 +62,8 @@ class DataManager(ConfigParser):
         self.path = kwargs.get('path') if kwargs.get('path') else self.config['data']['path']
         self.batch_size = kwargs.get('batch_size') if kwargs.get('batch_size') else self.config['training'][
             'batch_size']
+        self.n_epochs = kwargs.get('n_epochs') if kwargs.get('n_epochs') else self.config['training'][
+            'n_epochs']
         self.shuffle = kwargs.get('shuffle') if kwargs.get('shuffle') else self.config['data'][
             'shuffle'] if config_file else False
         self.num_cached = kwargs.get('num_cached') if kwargs.get('num_cached') else self.config['data'][
@@ -85,16 +88,17 @@ class DataManager(ConfigParser):
     def augment_minibatches(self, minibatches, *args, **kwargs):
         raise NotImplementedError
 
-    def get_batches(self, epoch=None, num_epochs=None, show_progress=False, *args, **kwargs):
+    def get_batches(self, epoch=None, show_progress=False, *args, **kwargs):
+        infinite = kwargs.pop('infinite', False)
         batches = self.generator()
         if self.augmentation:
             batches = self.augment_minibatches(batches, *args, **kwargs)
         batches = self.generate_in_background(batches)
-        if epoch and num_epochs:
+        if epoch:
             num_batches = self.data_size // self.batch_size
             if show_progress:
-                batches = _progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, num_epochs), total=num_batches)
-        for b in batches:
+                batches = _progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, self.n_epochs), total=num_batches)
+        for b in cycle(batches) if infinite else batches:
             self.update_input(b)
             yield
 
@@ -142,18 +146,19 @@ class DataManager(ConfigParser):
     def generator(self):
         num_batches = self.data_size // self.batch_size
         dataset = self.dataset
-        if self.shuffle:
-            index = np.arange(0, self.data_size)
-            np.random.shuffle(index)
-            if isinstance(self.dataset, (list, tuple)):
-                dataset = tuple([x[index] for x in self.dataset])
-            elif isinstance(self.dataset, np.ndarray):
-                dataset = self.dataset[index]
-            else:
-                raise TypeError('dataset should be a list, tuple or numpy ndarray, got %s.' % type(self.dataset))
-        for i in range(num_batches):
-            yield [data[i * self.batch_size:(i + 1) * self.batch_size] for data in dataset] \
-                if isinstance(self.dataset, (list, tuple)) else dataset[i * self.batch_size:(i + 1) * self.batch_size]
+        for _ in range(self.n_epochs):
+            if self.shuffle:
+                index = np.arange(0, self.data_size)
+                np.random.shuffle(index)
+                if isinstance(self.dataset, (list, tuple)):
+                    dataset = tuple([x[index] for x in self.dataset])
+                elif isinstance(self.dataset, np.ndarray):
+                    dataset = self.dataset[index]
+                else:
+                    raise TypeError('dataset should be a list, tuple or numpy ndarray, got %s.' % type(self.dataset))
+            for i in range(num_batches):
+                yield [data[i * self.batch_size:(i + 1) * self.batch_size] for data in dataset] \
+                    if isinstance(self.dataset, (list, tuple)) else dataset[i * self.batch_size:(i + 1) * self.batch_size]
 
 
 def _progress(items, desc='', total=None, min_delay=0.1):

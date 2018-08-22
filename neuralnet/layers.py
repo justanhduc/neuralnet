@@ -11,6 +11,7 @@ from theano import tensor as T
 from theano.tensor.nnet import conv2d as conv
 from theano.tensor.signal.pool import pool_2d as pool
 from collections import OrderedDict
+from functools import partial
 
 from neuralnet import utils
 from neuralnet.init import *
@@ -271,7 +272,7 @@ class DownsamplingLayer(Layer):
                 pad = int((kernel_width - 1) / 2.)
             else:
                 pad = int((kernel_width - factor) / 2.)
-            self.padding = lambda z: utils.replication_pad2d(z, pad)
+            self.padding = partial(utils.replication_pad2d, padding=pad)
 
     def get_output(self, input):
         if self.preserve_size:
@@ -1407,8 +1408,8 @@ class RecursiveResNetBlock(Layer):
         self.first_conv = ConvolutionalLayer(input_shape, num_filters, filter_size, stride=stride,
                                              layer_name=layer_name+'/first_conv', activation='linear')
         if normalization:
-            self.normalization = lambda shape, name: BatchNormLayer(shape, name, activation='linear') \
-                if normalization == 'bn' else GroupNormLayer(shape, name, groups=groups, activation='linear')
+            self.normalization = partial(BatchNormLayer, activation='linear') \
+                if normalization == 'bn' else partial(GroupNormLayer, groups=groups, activation='linear')
         else:
             self.normalization = None
 
@@ -2418,7 +2419,7 @@ class ConvLSTMCell(Layer):
     def get_output(self, input):
         input = input.dimshuffle(1, 0, 2, 3, 4)
         seq_len, num_batch, _, _, _ = input.shape
-        conv = lambda x, y: T.nnet.conv2d(x, y, border_mode='half')
+        conv = partial(T.nnet.conv2d, border_mode='half')
 
         def step(input_n, cell_prev, hid_prev, *args):
             It = self.in_gate.activation(conv(input_n, self.in_gate.W_in) + conv(hid_prev, self.in_gate.W_hid) + self.in_gate.b, **self.kwargs)
