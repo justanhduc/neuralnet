@@ -794,8 +794,6 @@ def unpad(img, old_shape):
 
 def depth_to_space(x, upscale_factor):
     n, c, h, w = x.shape
-    assert c / (upscale_factor ** 2) == c // (upscale_factor ** 2)
-
     oc = c // (upscale_factor ** 2)
     oh = h * upscale_factor
     ow = w * upscale_factor
