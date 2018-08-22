@@ -88,19 +88,20 @@ class DataManager(ConfigParser):
     def augment_minibatches(self, minibatches, *args, **kwargs):
         raise NotImplementedError
 
-    def get_batches(self, epoch=None, show_progress=False, *args, **kwargs):
+    def get_batches(self, show_progress=False, *args, **kwargs):
         infinite = kwargs.pop('infinite', False)
-        batches = self.generator()
-        if self.augmentation:
-            batches = self.augment_minibatches(batches, *args, **kwargs)
-        batches = self.generate_in_background(batches)
-        if epoch:
-            num_batches = self.data_size // self.batch_size
-            if show_progress:
-                batches = _progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, self.n_epochs), total=num_batches)
-        for b in cycle(batches) if infinite else batches:
-            self.update_input(b)
-            yield
+        for epoch, _ in enumerate(iter(int, 1)) if infinite else enumerate(range(self.n_epochs)):
+            batches = self.generator()
+            if self.augmentation:
+                batches = self.augment_minibatches(batches, *args, **kwargs)
+            batches = self.generate_in_background(batches)
+            if epoch:
+                num_batches = self.data_size // self.batch_size
+                if show_progress:
+                    batches = _progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, self.n_epochs), total=num_batches)
+            for b in cycle(batches) if infinite else batches:
+                self.update_input(b)
+                yield
 
     def generate_in_background(self, generator):
         """
@@ -146,19 +147,18 @@ class DataManager(ConfigParser):
     def generator(self):
         num_batches = self.data_size // self.batch_size
         dataset = self.dataset
-        for _ in range(self.n_epochs):
-            if self.shuffle:
-                index = np.arange(0, self.data_size)
-                np.random.shuffle(index)
-                if isinstance(self.dataset, (list, tuple)):
-                    dataset = tuple([x[index] for x in self.dataset])
-                elif isinstance(self.dataset, np.ndarray):
-                    dataset = self.dataset[index]
-                else:
-                    raise TypeError('dataset should be a list, tuple or numpy ndarray, got %s.' % type(self.dataset))
-            for i in range(num_batches):
-                yield [data[i * self.batch_size:(i + 1) * self.batch_size] for data in dataset] \
-                    if isinstance(self.dataset, (list, tuple)) else dataset[i * self.batch_size:(i + 1) * self.batch_size]
+        if self.shuffle:
+            index = np.arange(0, self.data_size)
+            np.random.shuffle(index)
+            if isinstance(self.dataset, (list, tuple)):
+                dataset = tuple([x[index] for x in self.dataset])
+            elif isinstance(self.dataset, np.ndarray):
+                dataset = self.dataset[index]
+            else:
+                raise TypeError('dataset should be a list, tuple or numpy ndarray, got %s.' % type(self.dataset))
+        for i in range(num_batches):
+            yield [data[i * self.batch_size:(i + 1) * self.batch_size] for data in dataset] \
+                if isinstance(self.dataset, (list, tuple)) else dataset[i * self.batch_size:(i + 1) * self.batch_size]
 
 
 def _progress(items, desc='', total=None, min_delay=0.1):
