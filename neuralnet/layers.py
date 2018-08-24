@@ -1772,15 +1772,18 @@ class GroupNormLayer(Layer):
             .format(layer_name, self.input_shape, self.output_shape, activation)
 
     def get_output(self, input):
-        n, c, h, w = T.shape(input)
-        gamma = self.gamma.dimshuffle(('x', 0, 'x', 'x'))
-        beta = self.beta.dimshuffle(('x', 0, 'x', 'x'))
-        if self.groups == 1 or self.groups == self.input_shape[1]:
-            axes = (1, 2, 3) if self.groups == 1 else (2, 3)
-            mean = T.mean(input, axes, keepdims=True)
-            var = T.var(input, axes, keepdims=True)
-            output = T.nnet.bn.batch_normalization_test(input, gamma, beta, mean, var, axes, self.epsilon)
+        gamma = self.gamma.dimshuffle('x', 0, 'x', 'x')
+        beta = self.beta.dimshuffle('x', 0, 'x', 'x')
+        if self.groups == 1:
+            input_ = input.dimshuffle(1, 0, 2, 3)
+            ones = T.ones_like(T.mean(input_, (0, 2, 3), keepdims=True), 'float32')
+            zeros = T.zeros_like(T.mean(input_, (0, 2, 3), keepdims=True), 'float32')
+            output, _, _ = T.nnet.bn.batch_normalization_train(input_, ones, zeros, 'spatial', self.epsilon)
+            output = gamma * output.dimshuffle(1, 0, 2, 3) + beta
+        elif self.groups == self.input_shape[1]:
+            output, _, _ = T.nnet.bn.batch_normalization_train(input, gamma, beta, (2, 3))
         else:
+            n, c, h, w = T.shape(input)
             input_ = T.reshape(input, (n, self.groups, -1, h, w))
             mean = T.mean(input_, (2, 3, 4), keepdims=True)
             var = T.var(input_, (2, 3, 4), keepdims=True)
