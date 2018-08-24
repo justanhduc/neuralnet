@@ -12,13 +12,13 @@ import pickle as pickle
 from scipy.misc import imsave
 import os
 from shutil import copyfile
-import numbers
+import visdom
 
 from neuralnet import utils, model
 
 
 class Monitor(utils.ConfigParser):
-    def __init__(self, config_file=None, model_name='my_model', root='results'):
+    def __init__(self, config_file=None, model_name='my_model', root='results', use_visdom=False):
         super(Monitor, self).__init__(config_file)
         self.__num_since_beginning = collections.defaultdict(lambda: {})
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
@@ -50,6 +50,15 @@ class Monitor(utils.ConfigParser):
         os.mkdir(self.current_folder)
         if config_file:
             copyfile(config_file, '%s/network_config.config' % self.current_folder)
+
+        self.use_visdom = use_visdom
+        if use_visdom:
+            self.vis = visdom.Visdom()
+            if not self.vis.check_connection():
+                from subprocess import Popen
+                Popen('visdom')
+            self.vis.close()
+            print('You can navigate to \'localhost:8097\' for visualization')
         print('Result folder: %s' % self.current_folder)
 
     def dump_model(self, network):
@@ -66,14 +75,17 @@ class Monitor(utils.ConfigParser):
     def save_image(self, name, tensor_img, callback=lambda x: x):
         self.__img_since_last_flush[name][self.__iter[0]] = callback(tensor_img)
 
-    def flush(self):
-        prints = []
+    def flush(self, use_visdom_for_plots=None, use_visdom_for_image=None):
+        use_visdom_for_plots = self.use_visdom if use_visdom_for_plots is None else use_visdom_for_plots
+        use_visdom_for_image = self.use_visdom if use_visdom_for_image is None else use_visdom_for_image
 
+        prints = []
         for name, vals in list(self.__num_since_last_flush.items()):
             self.__num_since_beginning[name].update(vals)
 
             x_vals = np.sort(list(self.__num_since_beginning[name].keys()))
-            plt.clf()
+            fig = plt.figure()
+            fig.clf()
             plt.xlabel('iteration')
             plt.ylabel(name)
             y_vals = [self.__num_since_beginning[name][x] for x in x_vals]
@@ -87,7 +99,10 @@ class Monitor(utils.ConfigParser):
             else:
                 plt.plot(x_vals, y_vals)
                 prints.append("{}\t{}".format(name, np.mean(np.array(list(vals.values())), 0)))
-            plt.savefig(self.current_folder + '/' + name.replace(' ', '_')+'.jpg')
+            fig.savefig(self.current_folder + '/' + name.replace(' ', '_')+'.jpg')
+            if use_visdom_for_plots:
+                self.vis.matplot(fig, win=name)
+            plt.close(fig)
         self.__num_since_last_flush.clear()
 
         for name, vals in list(self.__img_since_last_flush.items()):
@@ -95,6 +110,8 @@ class Monitor(utils.ConfigParser):
                 if val.dtype != 'uint8':
                     val = (255.99 * val).astype('uint8')
                 if len(val.shape) == 4:
+                    if use_visdom_for_image:
+                        self.vis.images(val, win=name)
                     for num in range(val.shape[0]):
                         img = val[num]
                         if img.shape[0] == 3:
@@ -104,6 +121,8 @@ class Monitor(utils.ConfigParser):
                             for ch in range(img.shape[0]):
                                 imsave(self.current_folder + '/' + name + '_%d_%d.jpg' % (num, ch), img[ch])
                 elif len(val.shape) == 3 or len(val.shape) == 2:
+                    if use_visdom_for_image:
+                        self.vis.image(val if len(val.shape) == 2 else np.transpose(val, (2, 0, 1)), win=name)
                     imsave(self.current_folder + '/' + name + '.jpg', val)
                 else:
                     raise NotImplementedError
@@ -127,5 +146,6 @@ if __name__ == '__main__':
         for j in range(5):
             mon.plot('train-valid', {'train': i+j+1, 'valid': i-j})
             mon.plot('x2', (i+j)*2)
+            mon.save_image('toy', np.zeros((10, 3, 100, 100), dtype='float32') + i*j/40)
             mon.tick()
         mon.flush()
