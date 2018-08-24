@@ -12,16 +12,22 @@ A high level framework for general purpose neural networks written in Theano.
 
 [Matplotlib](https://matplotlib.org/)
 
+[tqdm](https://github.com/tqdm/tqdm)
+
+[visdom](https://github.com/facebookresearch/visdom)
+
 
 ## Installation
+To install a stable version, use the following command
+
 ```
-pip install --upgrade neuralnet
+pip install neuralnet==0.1.0
 ```
 
 The version in this repo tends to be newer since I am lazy to make a new version available on Pypi when the change is tiny. To install the version in this repo execute
 
 ```
-pip install git+git://github.com/justanhduc/neuralnet.git@master
+pip install git+git://github.com/justanhduc/neuralnet.git@master (--ignore-installed) (--no-deps)
 ```
 
 ## Usages

@@ -4,8 +4,8 @@ import os
 
 AUTHOR = 'DUC NGUYEN'
 MAJOR = 0
-MINOR = 0
-MICRO = '5a'
+MINOR = 1
+MICRO = '0'
 VERSION = '%d.%d.%s' % (MAJOR, MINOR, MICRO)
 
 
@@ -49,7 +49,7 @@ def setup_package():
         ],
         platforms=['Windows', 'Linux'],
         packages=find_packages(exclude=['examples']),
-        install_requires=['theano', 'matplotlib', 'scipy', 'numpy'],
+        install_requires=['theano', 'matplotlib', 'scipy', 'numpy', 'tqdm', 'visdom'],
         project_urls={
             'Bug Reports': 'https://github.com/justanhduc/neuralnet/issues',
             'Source': 'https://github.com/justanhduc/neuralnet/',
