@@ -18,7 +18,8 @@ from neuralnet import utils, model
 
 
 class Monitor(utils.ConfigParser):
-    def __init__(self, config_file=None, model_name='my_model', root='results', use_visdom=False):
+    def __init__(self, config_file=None, model_name='my_model', root='results', use_visdom=False,
+                 disable_visdom_logging=True):
         super(Monitor, self).__init__(config_file)
         self.__num_since_beginning = collections.defaultdict(lambda: {})
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
@@ -53,10 +54,13 @@ class Monitor(utils.ConfigParser):
 
         self.use_visdom = use_visdom
         if use_visdom:
+            if disable_visdom_logging:
+                import logging
+                logging.disable(logging.CRITICAL)
             self.vis = visdom.Visdom()
             if not self.vis.check_connection():
-                from subprocess import Popen
-                Popen('visdom')
+                from subprocess import Popen, PIPE
+                Popen('visdom', stdout=PIPE, stderr=PIPE)
             self.vis.close()
             print('You can navigate to \'localhost:8097\' for visualization')
         print('Result folder: %s' % self.current_folder)
@@ -141,7 +145,7 @@ class Monitor(utils.ConfigParser):
 
 
 if __name__ == '__main__':
-    mon = Monitor(None)
+    mon = Monitor(None, use_visdom=True)
     for i in range(10):
         for j in range(5):
             mon.plot('train-valid', {'train': i+j+1, 'valid': i-j})
