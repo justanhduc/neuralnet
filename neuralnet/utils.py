@@ -8,7 +8,7 @@ import theano
 from theano import tensor as T
 from scipy import misc
 from functools import reduce
-from itertools import cycle
+import pickle as pkl
 
 __all__ = ['ConfigParser', 'DataManager']
 thread_lock = threading.Lock()
@@ -69,9 +69,11 @@ class DataManager(ConfigParser):
         self.num_cached = kwargs.get('num_cached') if kwargs.get('num_cached') else self.config['data'][
             'num_cached'] if config_file else 10
         self.augmentation = kwargs.get('augmentation', None)
+        self.resume = kwargs.get('resume', False)
         self.dataset = None
         self.data_size = None
         self.placeholders = placeholders
+        self.cur_epoch = 0
 
     def load_data(self):
         raise NotImplementedError
@@ -91,16 +93,18 @@ class DataManager(ConfigParser):
     def get_batches(self, show_progress=False, *args, **kwargs):
         infinite = kwargs.pop('infinite', False)
         num_batches = self.data_size // self.batch_size
-        for epoch, _ in enumerate(iter(int, 1)) if infinite else enumerate(range(self.n_epochs)):
+        cur_epoch = self.cur_epoch if self.resume else 0
+        for self.cur_epoch, _ in enumerate(iter(int, 1)) if infinite else enumerate(range(cur_epoch, self.n_epochs)):
             batches = self.generator()
             if self.augmentation:
                 batches = self.augment_minibatches(batches, *args, **kwargs)
             batches = self.generate_in_background(batches)
             if show_progress:
-                batches = _progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, self.n_epochs), total=num_batches)
+                batches = progress(batches, desc='Epoch %d/%d, Batch ' % (self.cur_epoch, self.n_epochs),
+                                   total=num_batches)
             for it, b in enumerate(batches):
                 self.update_input(b)
-                yield epoch * num_batches + it
+                yield self.cur_epoch * num_batches + it
 
     def generate_in_background(self, generator):
         """
@@ -160,7 +164,7 @@ class DataManager(ConfigParser):
                 if isinstance(self.dataset, (list, tuple)) else dataset[i * self.batch_size:(i + 1) * self.batch_size]
 
 
-def _progress(items, desc='', total=None, min_delay=0.1):
+def progress(items, desc='', total=None, min_delay=0.1):
     """
     Returns a generator over `items`, printing the number and percentage of
     items processed and the estimated remaining processing time before yielding
@@ -800,6 +804,11 @@ def depth_to_space(x, upscale_factor):
     z = T.reshape(x, (n, oc, upscale_factor, upscale_factor, h, w))
     z = z.dimshuffle(0, 1, 4, 2, 5, 3)
     return T.reshape(z, (n, oc, oh, ow))
+
+
+def save(obj, file):
+    with open(file, 'wb') as f:
+        pkl.dump(obj, f, pkl.HIGHEST_PROTOCOL)
 
 
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
