@@ -8,6 +8,7 @@ import theano
 from theano import tensor as T
 from scipy import misc
 from functools import reduce
+import cloudpickle as cpkl
 import pickle as pkl
 
 __all__ = ['ConfigParser', 'DataManager']
@@ -110,14 +111,14 @@ class DataManager(ConfigParser):
         """
         Runs a generator in a background thread, caching up to `num_cached` items.
         """
-        queue = Queue(maxsize=self.num_cached)
+        self.queue = Queue(maxsize=self.num_cached)
         sentinel = 'end'
 
         # define producer (putting items into queue)
         def producer():
             for item in generator:
-                queue.put(item)
-            queue.put(sentinel)
+                self.queue.put(item)
+            self.queue.put(sentinel)
 
         # start producer (in a background thread)
         thread = threading.Thread(target=producer)
@@ -125,10 +126,10 @@ class DataManager(ConfigParser):
         thread.start()
 
         # run as consumer (read items from queue, in current thread)
-        item = queue.get()
+        item = self.queue.get()
         while item is not 'end':
             yield item
-            item = queue.get()
+            item = self.queue.get()
 
     def update_input(self, data):
         if isinstance(self.placeholders, (list, tuple)) and isinstance(data, (list, tuple)):
@@ -808,7 +809,7 @@ def depth_to_space(x, upscale_factor):
 
 def save(obj, file):
     with open(file, 'wb') as f:
-        pkl.dump(obj, f, pkl.HIGHEST_PROTOCOL)
+        cpkl.dump(obj, f, pkl.HIGHEST_PROTOCOL)
 
 
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
