@@ -90,18 +90,17 @@ class DataManager(ConfigParser):
 
     def get_batches(self, show_progress=False, *args, **kwargs):
         infinite = kwargs.pop('infinite', False)
+        num_batches = self.data_size // self.batch_size
         for epoch, _ in enumerate(iter(int, 1)) if infinite else enumerate(range(self.n_epochs)):
             batches = self.generator()
             if self.augmentation:
                 batches = self.augment_minibatches(batches, *args, **kwargs)
             batches = self.generate_in_background(batches)
-            if epoch:
-                num_batches = self.data_size // self.batch_size
-                if show_progress:
-                    batches = _progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, self.n_epochs), total=num_batches)
-            for b in cycle(batches) if infinite else batches:
+            if show_progress:
+                batches = _progress(batches, desc='Epoch %d/%d, Batch ' % (epoch, self.n_epochs), total=num_batches)
+            for it, b in enumerate(batches):
                 self.update_input(b)
-                yield
+                yield epoch * num_batches + it
 
     def generate_in_background(self, generator):
         """
