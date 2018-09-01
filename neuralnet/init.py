@@ -8,7 +8,7 @@ import numpy as np
 from .utils import floatX
 
 __all__ = ['HeNormal', 'HeUniform', 'He', 'Constant', 'GlorotNormal', 'Glorot', 'GlorotUniform',
-           'Orthogonal', 'Normal', 'Sparse', 'Uniform']
+           'Orthogonal', 'Normal', 'Sparse', 'Uniform', 'TruncatedNormal']
 
 
 class Initializer(object):
@@ -55,6 +55,27 @@ class Normal(Initializer):
 
     def sample(self, shape):
         return floatX(np.random.normal(self.mean, self.std, size=shape))
+
+
+class TruncatedNormal(Initializer):
+    """Sample initial weights from the Gaussian distribution.
+    Initial weight parameters are sampled from N(mean, std).
+    Behave like Normal except that the range is within 2 std.
+    Parameters
+    ----------
+    std : float
+        Std of initial parameters.
+    mean : float
+        Mean of initial parameters.
+    """
+    def __init__(self, std=0.01, mean=0.0):
+        self.std = std
+        self.mean = mean
+
+    def sample(self, shape):
+        from scipy.stats import truncnorm
+        a, b = (-2. * self.std - self.mean) / self.std, (2. * self.std - self.mean) / self.std
+        return floatX(truncnorm.rvs(a, b, self.mean, self.std, size=shape))
 
 
 class Uniform(Initializer):

@@ -71,10 +71,10 @@ class DataManager(ConfigParser):
             'num_cached'] if config_file else 10
         self.augmentation = kwargs.get('augmentation', None)
         self.resume = kwargs.get('resume', False)
+        self.cur_epoch = kwargs.get('cur_epoch', 0)
         self.dataset = None
         self.data_size = None
         self.placeholders = placeholders
-        self.cur_epoch = 0
 
     def load_data(self):
         raise NotImplementedError
@@ -111,14 +111,14 @@ class DataManager(ConfigParser):
         """
         Runs a generator in a background thread, caching up to `num_cached` items.
         """
-        self.queue = Queue(maxsize=self.num_cached)
+        queue = Queue(maxsize=self.num_cached)
         sentinel = 'end'
 
         # define producer (putting items into queue)
         def producer():
             for item in generator:
-                self.queue.put(item)
-            self.queue.put(sentinel)
+                queue.put(item)
+            queue.put(sentinel)
 
         # start producer (in a background thread)
         thread = threading.Thread(target=producer)
@@ -126,10 +126,10 @@ class DataManager(ConfigParser):
         thread.start()
 
         # run as consumer (read items from queue, in current thread)
-        item = self.queue.get()
+        item = queue.get()
         while item is not 'end':
             yield item
-            item = self.queue.get()
+            item = queue.get()
 
     def update_input(self, data):
         if isinstance(self.placeholders, (list, tuple)) and isinstance(data, (list, tuple)):

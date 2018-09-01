@@ -13,15 +13,17 @@ from collections import OrderedDict
 import abc
 import sys
 
+from .model_zoo import Net
+
 sys.setrecursionlimit(10000)
 __all__ = ['sgd', 'sgdmomentum', 'adadelta', 'adagrad', 'adam', 'adamax', 'nadam', 'rmsprop', 'amsgrad',
            'anneal_learning_rate']
 
 
-class Optimizer(metaclass=abc.ABCMeta):
+class Optimizer(Net, metaclass=abc.ABCMeta):
     def __init__(self, eta):
         self.eta = T.cast(eta, theano.config.floatX)
-        self.accumulations = []
+        self.params = []
 
     @abc.abstractmethod
     def get_updates(self, params, grads):
@@ -69,7 +71,7 @@ class AdaDelta(Optimizer):
                                 broadcastable=param.broadcastable)
             Edelx2_i = theano.shared(np.zeros(param.get_value(borrow=True).shape, dtype=theano.config.floatX),
                                 broadcastable=param.broadcastable)
-            self.accumulations += [Eg2_i, delta_i_prev, Edelx2_i]
+            self.params += [Eg2_i, delta_i_prev, Edelx2_i]
 
             delta_i = T.sqrt(Edelx2_i + self.epsilon) / T.sqrt(Eg2_i + self.epsilon) * grad
             updates[param] = param - delta_i
@@ -79,7 +81,7 @@ class AdaDelta(Optimizer):
         return updates
 
     def reset(self):
-        for param in self.accumulations:
+        for param in self.params:
             param.set_value(param.get_value() * np.float32(0))
 
 
@@ -141,7 +143,7 @@ class SGDMomentum(Optimizer):
             value = param.get_value(borrow=True)
             velocity = theano.shared(np.zeros(value.shape, dtype=value.dtype),
                                      broadcastable=param.broadcastable)
-            self.accumulations.append(velocity)
+            self.params.append(velocity)
 
             x = self.alpha * velocity + updates[param]
             updates[velocity] = x - param
@@ -194,7 +196,7 @@ class SGDMomentum(Optimizer):
             value = param.get_value(borrow=True)
             velocity = theano.shared(np.zeros(value.shape, dtype=value.dtype),
                                      broadcastable=param.broadcastable)
-            self.accumulations.append(velocity)
+            self.params.append(velocity)
 
             x = self.alpha * velocity + updates[param] - param
             updates[velocity] = x
@@ -202,7 +204,7 @@ class SGDMomentum(Optimizer):
         return updates
 
     def reset(self):
-        for param in self.accumulations:
+        for param in self.params:
             param.set_value(param.get_value() * np.float32(0))
 
 
@@ -217,14 +219,14 @@ class AdaGrad(Optimizer):
         for param, grad in zip(params, grads):
             grad_prev = theano.shared(np.zeros(param.get_value(borrow=True).shape, dtype=theano.config.floatX),
                                 broadcastable=param.broadcastable)
-            self.accumulations.append(grad_prev)
+            self.params.append(grad_prev)
 
             updates[grad_prev] = grad_prev + grad**2
             updates[param] = self.eta * grad / T.sqrt(self.epsilon + grad_prev)
         return updates
 
     def reset(self):
-        for param in self.accumulations:
+        for param in self.params:
             param.set_value(param.get_value() * np.float32(0))
 
 
@@ -240,14 +242,14 @@ class RMSprop(Optimizer):
         for param, grad in zip(params, grads):
             grad2_prev = theano.shared(np.zeros(param.get_value(borrow=True).shape, dtype=theano.config.floatX),
                                 broadcastable=param.broadcastable)
-            self.accumulations.append(grad2_prev)
+            self.params.append(grad2_prev)
 
             updates[grad2_prev] = self.gamma * grad2_prev + (1. - self.gamma) * grad ** 2
             updates[param] = param - self.eta * grad / T.sqrt(grad2_prev + self.epsilon)
         return updates
 
     def reset(self):
-        for param in self.accumulations:
+        for param in self.params:
             param.set_value(param.get_value() * np.float32(0))
 
 
@@ -263,7 +265,7 @@ class Adam(Optimizer):
         updates = OrderedDict()
 
         t_prev = theano.shared(np.float32(0.), 'time')
-        self.accumulations.append(t_prev)
+        self.params.append(t_prev)
 
         one = T.constant(1)
         t = t_prev + 1
@@ -272,7 +274,7 @@ class Adam(Optimizer):
             value = param.get_value(borrow=True)
             m_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype), param.name + '_grad_mva', broadcastable=param.broadcastable)
             v_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype), param.name + '_grad_sq_mva', broadcastable=param.broadcastable)
-            self.accumulations += [m_prev, v_prev]
+            self.params += [m_prev, v_prev]
 
             m_t = self.beta1 * m_prev + (one - self.beta1) * g_t
             v_t = self.beta2 * v_prev + (one - self.beta2) * g_t ** 2
@@ -286,7 +288,7 @@ class Adam(Optimizer):
         return updates
 
     def reset(self):
-        for param in self.accumulations:
+        for param in self.params:
             param.set_value(param.get_value() * np.float32(0))
 
 
@@ -301,7 +303,7 @@ class AdaMax(Optimizer):
     def get_updates(self, params, grads):
         updates = OrderedDict()
         t_prev = theano.shared(np.float32(0.))
-        self.accumulations.append(t_prev)
+        self.params.append(t_prev)
 
         one = T.constant(1)
         t = t_prev + 1
@@ -310,7 +312,7 @@ class AdaMax(Optimizer):
             value = param.get_value(borrow=True)
             m_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype), broadcastable=param.broadcastable)
             u_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype), broadcastable=param.broadcastable)
-            self.accumulations += [m_prev, u_prev]
+            self.params += [m_prev, u_prev]
 
             m_t = self.beta1 * m_prev + (one - self.beta1) * g_t
             u_t = T.maximum(self.beta2 * u_prev, abs(g_t))
@@ -324,7 +326,7 @@ class AdaMax(Optimizer):
         return updates
 
     def reset(self):
-        for param in self.accumulations:
+        for param in self.params:
             param.set_value(param.get_value() * np.float32(0))
 
 
@@ -342,14 +344,14 @@ class NAdam(Optimizer):
 
         beta1_acc = theano.shared(1., 'beta1 accumulation')
         t_prev = theano.shared(0, 'time')
-        self.accumulations += [beta1_acc, t_prev]
+        self.params += [beta1_acc, t_prev]
 
         t = t_prev + 1
         for param, g_t in zip(params, grads):
             value = param.get_value(borrow=True)
             m_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
             n_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
-            self.accumulations += [m_prev, n_prev]
+            self.params += [m_prev, n_prev]
 
             beta1_t = self.decay(self.beta1, t)
             beta1_tp1 = self.decay(self.beta1, t+1)
@@ -371,7 +373,7 @@ class NAdam(Optimizer):
         return updates
 
     def reset(self):
-        for param in self.accumulations:
+        for param in self.params:
             param.set_value(param.get_value() * np.float32(0))
 
 
@@ -388,7 +390,7 @@ class AMSGrad(Optimizer):
         updates = OrderedDict()
 
         t_prev = theano.shared(np.float32(0.), 'time step')
-        self.accumulations.append(t_prev)
+        self.params.append(t_prev)
 
         t = t_prev + 1.
         eta_t = self.decay(self.eta, t)
@@ -398,7 +400,7 @@ class AMSGrad(Optimizer):
             m_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
             v_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
             v_hat_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
-            self.accumulations += [m_prev, v_prev, v_hat_prev]
+            self.params += [m_prev, v_prev, v_hat_prev]
 
             m_t = self.beta1 * m_prev + (1. - self.beta1) * g_t
             v_t = self.beta2 * v_prev + (1. - self.beta2) * g_t ** 2
@@ -413,7 +415,7 @@ class AMSGrad(Optimizer):
         return updates
 
     def reset(self):
-        for param in self.accumulations:
+        for param in self.params:
             param.set_value(param.get_value() * np.float32(0))
 
 

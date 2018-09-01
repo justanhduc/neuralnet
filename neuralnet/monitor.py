@@ -18,7 +18,7 @@ from neuralnet import utils, model
 
 
 class Monitor(utils.ConfigParser):
-    def __init__(self, config_file=None, model_name='my_model', root='results', use_visdom=False,
+    def __init__(self, config_file=None, model_name='my_model', root='results', current_folder=None, use_visdom=False,
                  disable_visdom_logging=True):
         super(Monitor, self).__init__(config_file)
         self.__num_since_beginning = collections.defaultdict(lambda: {})
@@ -43,12 +43,15 @@ class Monitor(utils.ConfigParser):
             os.mkdir(self.path)
 
         subfolders = os.listdir(self.path)
-        self.current_folder = self.path + '/run%d' % (len(subfolders) + 1)
-        idx = 1
-        while os.path.exists(self.current_folder):
-            self.current_folder = self.path + '/run%d' % (len(subfolders) + 1 + idx)
-            idx += 1
-        os.mkdir(self.current_folder)
+        if current_folder:
+            self.current_folder = current_folder
+        else:
+            self.current_folder = self.path + '/run%d' % (len(subfolders) + 1)
+            idx = 1
+            while os.path.exists(self.current_folder):
+                self.current_folder = self.path + '/run%d' % (len(subfolders) + 1 + idx)
+                idx += 1
+            os.mkdir(self.current_folder)
         if config_file:
             copyfile(config_file, '%s/network_config.config' % self.current_folder)
 
@@ -142,6 +145,8 @@ class Monitor(utils.ConfigParser):
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [0]
+
+    imwrite = save_image
 
 
 if __name__ == '__main__':
