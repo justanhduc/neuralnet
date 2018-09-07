@@ -19,7 +19,7 @@ from neuralnet import utils, model
 
 class Monitor(utils.ConfigParser):
     def __init__(self, config_file=None, model_name='my_model', root='results', current_folder=None, use_visdom=False,
-                 disable_visdom_logging=True):
+                 server='http://localhost', port=8097, disable_visdom_logging=True):
         super(Monitor, self).__init__(config_file)
         self.__num_since_beginning = collections.defaultdict(lambda: {})
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
@@ -60,12 +60,12 @@ class Monitor(utils.ConfigParser):
             if disable_visdom_logging:
                 import logging
                 logging.disable(logging.CRITICAL)
-            self.vis = visdom.Visdom()
+            self.vis = visdom.Visdom(server=server, port=port)
             if not self.vis.check_connection():
                 from subprocess import Popen, PIPE
                 Popen('visdom', stdout=PIPE, stderr=PIPE)
             self.vis.close()
-            print('You can navigate to \'localhost:8097\' for visualization')
+            print('You can navigate to \'%s:%d\' for visualization' % (server, port))
         print('Result folder: %s' % self.current_folder)
 
     def dump_model(self, network):
