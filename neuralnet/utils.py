@@ -870,6 +870,22 @@ def save(obj, file):
         cpkl.dump(obj, f, pkl.HIGHEST_PROTOCOL)
 
 
+def numpy2shared(numpy_vars, shared_vars):
+    assert isinstance(numpy_vars, (list, tuple)), 'numpy_vars must be a list or tuple of numpy arrays, got %s' % type(
+        numpy_vars)
+    assert isinstance(shared_vars, (list, tuple)), 'shared_vars must be a list or tuple of numpy arrays, got %s' % type(
+        shared_vars)
+
+    return [sv.set_value(nv) for sv, nv in zip(shared_vars, numpy_vars)]
+
+
+def shared2numpy(shared_vars):
+    assert isinstance(shared_vars, (list, tuple)), 'shared_vars must be a list or tuple of numpy arrays, got %s' % type(
+        shared_vars)
+
+    return [sv.get_value() for sv in shared_vars]
+
+
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
             'tanh': lambda x, **kwargs: T.tanh(x), 'lrelu': lrelu, 'softmax': lambda x, **kwargs: T.nnet.softmax(x),
             'linear': lambda x, **kwargs: x, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,

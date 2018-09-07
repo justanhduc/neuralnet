@@ -54,6 +54,7 @@ class Monitor(utils.ConfigParser):
             os.mkdir(self.current_folder)
         if config_file:
             copyfile(config_file, '%s/network_config.config' % self.current_folder)
+        self.dump_files = collections.OrderedDict()
 
         self.use_visdom = use_visdom
         if use_visdom:
@@ -139,6 +140,52 @@ class Monitor(utils.ConfigParser):
             pickle.dump(dict(self.__num_since_beginning), f, pickle.HIGHEST_PROTOCOL)
 
         print("Iteration {}\t{}".format(self.__iter[0], "\t".join(prints)))
+
+    def dump(self, obj, file, keep='latest'):
+        assert isinstance(keep, (str, int)), 'keep must be either an int or str, got %s' % type(keep)
+        if isinstance(keep, str):
+            assert keep == 'latest', 'keep takes only \'latest\' as str value'
+
+        if isinstance(keep, str):
+            with open(file, 'wb') as f:
+                pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+                f.close()
+        else:
+            file_name, ext = os.path.splitext(file)
+            file_name = file_name + '-%d' % self.__iter[0] + ext
+            self.dump_files[self.__iter[0]] = file_name
+            with open(file_name, 'wb') as f:
+                pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+                f.close()
+
+            if len(self.dump_files) > keep:
+                oldest_key = list(self.dump_files.keys())[0]
+                file_name = self.dump_files[oldest_key]
+                if os.path.exists(file_name):
+                    os.remove(file_name)
+                else:
+                    print("The file does not exist")
+                del self.dump_files[oldest_key]
+
+    def load(self, file, version='latest'):
+        assert isinstance(version, (str, int)), 'keep must be either an int or str, got %s' % type(version)
+        if isinstance(version, str):
+            assert version == 'latest', 'keep takes only \'latest\' as str value'
+
+        if isinstance(version, str):
+            with open(file, 'rb') as f:
+                obj = pickle.load(f)
+                f.close()
+        else:
+            file_name = self.dump_files.get(version, None)
+            if file_name is None:
+                print('No file at version %d found' % version)
+                return None
+            else:
+                with open(file_name, 'rb') as f:
+                    obj = pickle.load(f)
+                    f.close()
+        return obj
 
     def reset(self):
         self.__num_since_beginning = collections.defaultdict(lambda: {})
