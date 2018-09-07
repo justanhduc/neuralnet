@@ -141,52 +141,70 @@ class Monitor(utils.ConfigParser):
 
         print("Iteration {}\t{}".format(self.__iter[0], "\t".join(prints)))
 
-    def dump(self, obj, file, keep='latest'):
-        assert isinstance(keep, (str, int)), 'keep must be either an int or str, got %s' % type(keep)
-        if isinstance(keep, str):
-            assert keep == 'latest', 'keep takes only \'latest\' as str value'
+    def dump(self, obj, file, keep=-1):
+        assert isinstance(keep, int), 'keep must be an int, got %s' % type(keep)
 
         file = self.current_folder + '/' + file
-        if isinstance(keep, str):
+        if keep <= 0:
             with open(file, 'wb') as f:
                 pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
                 f.close()
+            print('Object dumped to %s' % file)
         else:
-            file_name, ext = os.path.splitext(file)
-            file_name = file_name + '-%d' % self.__iter[0] + ext
-            self.dump_files[self.__iter[0]] = file_name
+            name, ext = os.path.splitext(file)
+            file_name = name + '-%d' % self.__iter[0] + ext
+
+            if self.dump_files.get(file, None) is None:
+                self.dump_files[file] = []
+            self.dump_files[file].append(self.__iter[0])
+
             with open(file_name, 'wb') as f:
                 pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
                 f.close()
 
-            if len(self.dump_files) > keep:
-                oldest_key = list(self.dump_files.keys())[0]
-                file_name = self.dump_files[oldest_key]
+            if len(self.dump_files[file]) > keep:
+                oldest_key = self.dump_files[file][0]
+                file_name = name + '-%d' % oldest_key + ext
                 if os.path.exists(file_name):
                     os.remove(file_name)
                 else:
-                    print("The file does not exist")
-                del self.dump_files[oldest_key]
+                    print("The oldest saved file does not exist")
+                self.dump_files[file].remove(oldest_key)
+            print('Object dumped to %s' % file_name)
 
-    def load(self, file, version='latest'):
-        assert isinstance(version, (str, int)), 'keep must be either an int or str, got %s' % type(version)
-        if isinstance(version, str):
-            assert version == 'latest', 'keep takes only \'latest\' as str value'
+    def load(self, file, version=-1):
+        assert isinstance(version, int), 'keep must be an int, got %s' % type(version)
 
-        file = self.current_folder + '/' + file
-        if isinstance(version, str):
-            with open(file, 'rb') as f:
-                obj = pickle.load(f)
-                f.close()
-        else:
-            file_name = self.dump_files.get(version, None)
-            if file_name is None:
-                print('No file at version %d found' % version)
-                return None
-            else:
+        full_file = self.current_folder + '/' + file
+        versions = self.dump_files.get(full_file, [])
+        if version <= 0:
+            if len(versions) > 0:
+                latest = versions[-1]
+                name, ext = os.path.splitext(full_file)
+                file_name = name + '-%d' % latest + ext
                 with open(file_name, 'rb') as f:
                     obj = pickle.load(f)
                     f.close()
+            else:
+                with open(full_file, 'rb') as f:
+                    obj = pickle.load(f)
+                    f.close()
+        else:
+            if len(versions) == 0:
+                print('No file named %s found' % file)
+                return None
+            else:
+                name, ext = os.path.splitext(full_file)
+                if version in versions:
+                    file_name = name + '-%d' % version + ext
+                    with open(file_name, 'rb') as f:
+                        obj = pickle.load(f)
+                        f.close()
+                else:
+                    print('No file at version %d found' % version)
+                    return None
+        text = str(version) if version > 0 else 'latest'
+        print('Version \'%s\' loaded' % text)
         return obj
 
     def reset(self):
