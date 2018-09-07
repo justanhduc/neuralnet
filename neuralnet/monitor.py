@@ -146,6 +146,7 @@ class Monitor(utils.ConfigParser):
         if isinstance(keep, str):
             assert keep == 'latest', 'keep takes only \'latest\' as str value'
 
+        file = self.current_folder + '/' + file
         if isinstance(keep, str):
             with open(file, 'wb') as f:
                 pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
@@ -172,6 +173,7 @@ class Monitor(utils.ConfigParser):
         if isinstance(version, str):
             assert version == 'latest', 'keep takes only \'latest\' as str value'
 
+        file = self.current_folder + '/' + file
         if isinstance(version, str):
             with open(file, 'rb') as f:
                 obj = pickle.load(f)
