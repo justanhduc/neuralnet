@@ -18,13 +18,13 @@ from neuralnet import utils, model
 
 
 class Monitor(utils.ConfigParser):
-    def __init__(self, config_file=None, model_name='my_model', root='results', current_folder=None, use_visdom=False,
-                 server='http://localhost', port=8097, disable_visdom_logging=True):
+    def __init__(self, config_file=None, model_name='my_model', root='results', current_folder=None, checkpoint=0,
+                 use_visdom=False, server='http://localhost', port=8097, disable_visdom_logging=True):
         super(Monitor, self).__init__(config_file)
         self.__num_since_beginning = collections.defaultdict(lambda: {})
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
-        self.__iter = [0]
+        self.__iter = [checkpoint]
 
         if self.config:
             self.name = self.config['model']['name']
@@ -145,7 +145,7 @@ class Monitor(utils.ConfigParser):
         assert isinstance(keep, int), 'keep must be an int, got %s' % type(keep)
 
         file = self.current_folder + '/' + file
-        if keep <= 0:
+        if keep < 2:
             with open(file, 'wb') as f:
                 pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
                 f.close()
@@ -161,6 +161,7 @@ class Monitor(utils.ConfigParser):
             with open(file_name, 'wb') as f:
                 pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
                 f.close()
+            print('Object dumped to %s' % file_name)
 
             if len(self.dump_files[file]) > keep:
                 oldest_key = self.dump_files[file][0]
@@ -170,7 +171,6 @@ class Monitor(utils.ConfigParser):
                 else:
                     print("The oldest saved file does not exist")
                 self.dump_files[file].remove(oldest_key)
-            print('Object dumped to %s' % file_name)
 
     def load(self, file, version=-1):
         assert isinstance(version, int), 'keep must be an int, got %s' % type(version)
