@@ -26,7 +26,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'InceptionModule3', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'NetworkInNetworkBlock',
            'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer',
            'set_training_status', 'AveragePoolingLayer', 'WarpingLayer', 'GroupNormLayer', 'UpProjectionUnit',
-           'DownProjectionUnit']
+           'DownProjectionUnit', 'ReflectPaddingConv', 'ReflectLayer', 'NoiseResNetBlock']
 
 
 def validate(func):
@@ -1781,7 +1781,10 @@ class GroupNormLayer(Layer):
             output, _, _ = T.nnet.bn.batch_normalization_train(input_, ones, zeros, 'spatial', self.epsilon)
             output = gamma * output.dimshuffle(1, 0, 2, 3) + beta
         elif self.groups == self.input_shape[1]:
-            output, _, _ = T.nnet.bn.batch_normalization_train(input, gamma, beta, (2, 3))
+            ones = T.ones_like(T.mean(input, (2, 3), keepdims=True), 'float32')
+            zeros = T.zeros_like(T.mean(input, (2, 3), keepdims=True), 'float32')
+            output, _, _ = T.nnet.bn.batch_normalization_train(input, ones, zeros, (2, 3))
+            output = gamma * output + beta
         else:
             n, c, h, w = T.shape(input)
             input_ = T.reshape(input, (n, self.groups, -1, h, w))
@@ -1993,6 +1996,37 @@ class ReshapingLayer(Layer):
                 return tuple(shape)
         else:
             return tuple(self.new_shape)
+
+
+class ReflectLayer(Layer):
+    def __init__(self, input_shape, width, batch_ndim=2, layer_name='ReflectLayer'):
+        super(ReflectLayer, self).__init__(input_shape, layer_name)
+        self.width = width
+        self.batch_ndim = batch_ndim
+        self.descriptions = '{} Reflect layer: width {} no padding before {}'.format(layer_name, width, batch_ndim)
+
+    @property
+    def output_shape(self):
+        output_shape = list(self.input_shape)
+
+        if isinstance(self.width, int):
+            widths = [self.width] * (len(self.input_shape) - self.batch_ndim)
+        else:
+            widths = self.width
+
+        for k, w in enumerate(widths):
+            if output_shape[k + self.batch_ndim] is None:
+                continue
+            else:
+                try:
+                    l, r = w
+                except TypeError:
+                    l = r = w
+                output_shape[k + self.batch_ndim] += l + r
+        return tuple(output_shape)
+
+    def get_output(self, input):
+        return utils.reflect_pad(input, self.width, self.batch_ndim)
 
 
 class SlicingLayer(Layer):
@@ -2585,6 +2619,23 @@ def StackingConv(input_shape, num_layers, num_filters, filter_size=3, batch_norm
     block.append(conv_layer(block.output_shape, num_filters, filter_size, init=init, no_bias=no_bias, border_mode=border_mode,
                             dilation=dilation, stride=stride, activation=activation,
                             layer_name=layer_name + '/conv_%d' % num_layers, **kwargs))
+    return block
+
+
+def ReflectPaddingConv(input_shape, num_filters, filter_size=3, stride=1, activation='relu', use_batchnorm=True,
+                       layer_name='ReflectPaddingConv', **kwargs):
+    assert filter_size % 2 == 1
+    pad_size = filter_size >> 1
+    block = Sequential(input_shape=input_shape, layer_name=layer_name)
+    block.append(ReflectLayer(block.output_shape, pad_size, layer_name=layer_name+'/Reflect'))
+    if use_batchnorm:
+        block.append(
+            ConvNormAct(block.output_shape, num_filters, filter_size, Normal(.02), border_mode=0, stride=stride,
+                        activation=activation, layer_name=layer_name + '/conv_bn_act', normalization='gn',
+                        groups=num_filters))
+    else:
+        block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, Normal(.02), border_mode=0,
+                                        stride=stride, activation=activation, layer_name=layer_name+'/conv'))
     return block
 
 

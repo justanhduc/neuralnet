@@ -17,12 +17,12 @@ from neuralnet import utils, model
 
 
 class Monitor(utils.ConfigParser):
-    def __init__(self, config_file=None, model_name='my_model', root='results', current_folder=None):
+    def __init__(self, config_file=None, model_name='my_model', root='results', current_folder=None, checkpoint=0):
         super(Monitor, self).__init__(config_file)
         self.__num_since_beginning = collections.defaultdict(lambda: {})
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
-        self.__iter = [0]
+        self.__iter = [checkpoint]
 
         if self.config:
             self.name = self.config['model']['name']
@@ -52,6 +52,7 @@ class Monitor(utils.ConfigParser):
             os.mkdir(self.current_folder)
         if config_file:
             copyfile(config_file, '%s/network_config.config' % self.current_folder)
+        self.dump_files = collections.OrderedDict()
         print('Result folder: %s' % self.current_folder)
 
     def dump_model(self, network):
@@ -69,7 +70,6 @@ class Monitor(utils.ConfigParser):
         self.__img_since_last_flush[name][self.__iter[0]] = callback(tensor_img)
 
     def flush(self):
-
         prints = []
         for name, vals in list(self.__num_since_last_flush.items()):
             self.__num_since_beginning[name].update(vals)
@@ -117,6 +117,72 @@ class Monitor(utils.ConfigParser):
             pickle.dump(dict(self.__num_since_beginning), f, pickle.HIGHEST_PROTOCOL)
 
         print("Iteration {}\t{}".format(self.__iter[0], "\t".join(prints)))
+
+    def dump(self, obj, file, keep=-1):
+        assert isinstance(keep, int), 'keep must be an int, got %s' % type(keep)
+
+        file = self.current_folder + '/' + file
+        if keep < 2:
+            with open(file, 'wb') as f:
+                pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+                f.close()
+            print('Object dumped to %s' % file)
+        else:
+            name, ext = os.path.splitext(file)
+            file_name = name + '-%d' % self.__iter[0] + ext
+
+            if self.dump_files.get(file, None) is None:
+                self.dump_files[file] = []
+            self.dump_files[file].append(self.__iter[0])
+
+            with open(file_name, 'wb') as f:
+                pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+                f.close()
+            print('Object dumped to %s' % file_name)
+
+            if len(self.dump_files[file]) > keep:
+                oldest_key = self.dump_files[file][0]
+                file_name = name + '-%d' % oldest_key + ext
+                if os.path.exists(file_name):
+                    os.remove(file_name)
+                else:
+                    print("The oldest saved file does not exist")
+                self.dump_files[file].remove(oldest_key)
+
+    def load(self, file, version=-1):
+        assert isinstance(version, int), 'keep must be an int, got %s' % type(version)
+
+        full_file = self.current_folder + '/' + file
+        versions = self.dump_files.get(full_file, [])
+        if version <= 0:
+            if len(versions) > 0:
+                latest = versions[-1]
+                name, ext = os.path.splitext(full_file)
+                file_name = name + '-%d' % latest + ext
+                with open(file_name, 'rb') as f:
+                    obj = pickle.load(f)
+                    f.close()
+            else:
+                with open(full_file, 'rb') as f:
+                    obj = pickle.load(f)
+                    f.close()
+        else:
+            if len(versions) == 0:
+                print('No file named %s found' % file)
+                return None
+            else:
+                name, ext = os.path.splitext(full_file)
+                if version in versions:
+                    file_name = name + '-%d' % version + ext
+                    with open(file_name, 'rb') as f:
+                        obj = pickle.load(f)
+                        f.close()
+                else:
+                    print('No file at version %d found' % version)
+                    return None
+        text = str(version) if version > 0 else 'latest'
+        print('Version \'%s\' loaded' % text)
+        return obj
 
     def reset(self):
         self.__num_since_beginning = collections.defaultdict(lambda: {})
