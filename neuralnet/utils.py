@@ -10,6 +10,7 @@ from scipy import misc
 from functools import reduce
 import cloudpickle as cpkl
 import pickle as pkl
+from collections import OrderedDict
 
 __all__ = ['ConfigParser', 'DataManager']
 thread_lock = threading.Lock()
@@ -70,8 +71,7 @@ class DataManager(ConfigParser):
         self.num_cached = kwargs.get('num_cached') if kwargs.get('num_cached') else self.config['data'][
             'num_cached'] if config_file else 10
         self.augmentation = kwargs.get('augmentation', None)
-        self.resume = kwargs.get('resume', False)
-        self.cur_epoch = kwargs.get('cur_epoch', 0)
+        self.cur_epoch = kwargs.get('checkpoint', 0)
         self.dataset = None
         self.data_size = None
         self.placeholders = placeholders
@@ -94,8 +94,8 @@ class DataManager(ConfigParser):
     def get_batches(self, show_progress=False, *args, **kwargs):
         infinite = kwargs.pop('infinite', False)
         num_batches = self.data_size // self.batch_size
-        cur_epoch = self.cur_epoch if self.resume else 0
-        for self.cur_epoch, _ in enumerate(iter(int, 1)) if infinite else enumerate(range(cur_epoch, self.n_epochs)):
+        cur_epoch = self.cur_epoch
+        for _, self.cur_epoch in enumerate(iter(int, 1)) if infinite else enumerate(range(cur_epoch, self.n_epochs)):
             batches = self.generator()
             if self.augmentation:
                 batches = self.augment_minibatches(batches, *args, **kwargs)
@@ -875,15 +875,58 @@ def numpy2shared(numpy_vars, shared_vars):
         numpy_vars)
     assert isinstance(shared_vars, (list, tuple)), 'shared_vars must be a list or tuple of numpy arrays, got %s' % type(
         shared_vars)
-
     return [sv.set_value(nv) for sv, nv in zip(shared_vars, numpy_vars)]
 
 
 def shared2numpy(shared_vars):
     assert isinstance(shared_vars, (list, tuple)), 'shared_vars must be a list or tuple of numpy arrays, got %s' % type(
         shared_vars)
+    return [np.array(sv.get_value()) for sv in shared_vars]
 
-    return [sv.get_value() for sv in shared_vars]
+
+def load_batch_checkpoints(files, weights):
+    from itertools import chain
+    weights_np = list(chain(*[pkl.load(open(file, 'rb')) for file in files]))
+    for w_np, w in zip(weights_np, weights):
+        if w.get_value().shape != w_np.shape:
+            raise ValueError('No suitable weights for %s' % w)
+        else:
+            w.set_value(w_np)
+
+
+def lpnormalize(v, p=2, eps=1e-12):
+    return v / ((T.sum(v ** p)) ** np.float32(1. / p) + eps)
+
+
+def max_singular_value(W, u=None, lp=1):
+    """
+    Apply power iteration for the weight parameter
+    """
+    if W.ndim > 2:
+        W = W.flatten(2)
+
+    if u is None:
+        u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype('float32'), 'u')
+    _u = u
+    for _ in range(lp):
+        _v = lpnormalize(T.dot(_u, W))
+        _u = lpnormalize(T.dot(_v, W.T))
+    sigma = T.sum(T.dot(T.dot(_u, W), _v.T))
+    return sigma, _u, _v
+
+
+def spectral_normalize(updates, exceptions=('grad', 'beta', 'gamma', 'alpha')):
+    new_updates = OrderedDict()
+    for key in updates:
+        param = updates[key]
+        if param.ndim < 2 or any(a in key.name for a in exceptions):
+            new_updates[key] = param
+        else:
+            u = theano.shared(np.random.normal(size=(1, key.get_value().shape[0])).astype('float32'), key.name + '/u')
+            sigma, _u, _ = max_singular_value(param, u)
+            new_updates[key] = param / (sigma + 1e-12)
+            new_updates[u] = _u
+    return new_updates
 
 
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
