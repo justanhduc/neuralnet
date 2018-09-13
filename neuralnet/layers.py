@@ -1970,7 +1970,7 @@ class Upsampling(Layer):
             return T.nnet.abstract_conv.bilinear_upsampling(input, ratio=self.ratio) if self.ratio \
                 else T.nnet.abstract_conv.bilinear_upsampling(input, frac_ratio=self.frac_ratio)
         else:
-            return T.repeat(T.repeat(input, 2, 2), 2, 3)
+            return T.repeat(T.repeat(input, self.ratio, 2), self.ratio, 3)
 
     @property
     @validate
