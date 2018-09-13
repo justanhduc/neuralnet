@@ -21,7 +21,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'DenseBlock', 'SumLayer', 'StackingConv', 'ScalingLayer', 'SlicingLayer',
            'PixelShuffleLayer', 'LSTMCell', 'ActivationLayer', 'AttConvLSTMCell', 'ConvMeanPoolLayer',
            'ConcatLayer', 'ConvLSTMCell', 'ConvNormAct', 'MeanPoolConvLayer', 'ReshapingLayer',
-           'RecursiveResNetBlock', 'ResizingLayer', 'ResNetBlock', 'ResNetBottleneckBlock', 'GRUCell',
+           'RecursiveResNetBlock', 'Upsampling', 'ResNetBlock', 'ResNetBottleneckBlock', 'GRUCell',
            'IdentityLayer', 'DropoutLayer', 'PoolingLayer', 'InceptionModule1', 'InceptionModule2',
            'InceptionModule3', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'NetworkInNetworkBlock',
            'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer',
@@ -444,7 +444,7 @@ class UpProjectionUnit(Sequential):
                                                      (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
                                                      activation=activation, layer_name=layer_name + '/up1'))
         else:
-            self.append(ResizingLayer(self.input_shape, up_ratio, layer_name=layer_name+'/up1'))
+            self.append(Upsampling(self.input_shape, up_ratio, layer_name=layer_name + '/up1'))
 
         self.append(ConvolutionalLayer(self.output_shape, input_shape[1], filter_size, stride=(up_ratio, up_ratio),
                                        activation=activation, layer_name=layer_name+'/conv'))
@@ -454,7 +454,7 @@ class UpProjectionUnit(Sequential):
                                                      (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
                                                      activation=activation, layer_name=layer_name + '/up2'))
         else:
-            self.append(ResizingLayer(self.input_shape, up_ratio, layer_name=layer_name + '/up2'))
+            self.append(Upsampling(self.input_shape, up_ratio, layer_name=layer_name + '/up2'))
 
         self.descriptions = '{} Up Projection Unit: {} -> {} upsampling by {}'.format(layer_name, input_shape,
                                                                                       self.output_shape, up_ratio)
@@ -489,7 +489,7 @@ class DownProjectionUnit(Sequential):
                                                      stride=(down_ratio, down_ratio), activation=activation,
                                                      layer_name=layer_name + '/up'))
         else:
-            self.append(ResizingLayer(self.output_shape, down_ratio, layer_name=layer_name+'/up'))
+            self.append(Upsampling(self.output_shape, down_ratio, layer_name=layer_name + '/up'))
 
         self.append(ConvolutionalLayer(self.output_shape, input_shape[1], filter_size, stride=(down_ratio, down_ratio),
                                        activation=activation, layer_name=layer_name+'/conv2'))
@@ -547,16 +547,17 @@ class DropoutLayer(Layer):
         super(DropoutLayer, self).__init__(input_shape, layer_name)
         self.gaussian = gaussian
         self.srng = theano.sandbox.rng_mrg.MRG_RandomStreams(self.rng.randint(1, int(time.time())))
-        self.keep_prob = T.as_tensor_variable(np.float32(1. - drop_prob))
+        self.dropout_prob = drop_prob
         self.descriptions = '{} Dropout Layer: p={:.2f}'.format(layer_name, 1. - drop_prob)
 
     def get_output(self, input):
-        mask = self.srng.normal(input.shape) + 1. if self.gaussian else self.srng.binomial(n=1, p=self.keep_prob,
-                                                                                           size=input.shape,
-                                                                                           dtype='float32')
-        output_on = input * mask
-        output_off = input if self.gaussian else input * self.keep_prob
-        return output_on if self.training_flag else output_off
+        keep_prob = T.constant((1 - self.dropout_prob) if self.training_flag and not self.gaussian else 1, 'keep_prob',
+                               dtype='float32')
+        if self.training_flag:
+            mask = self.srng.normal(input.shape) + 1. if self.gaussian \
+                else self.srng.binomial(n=1, p=keep_prob, size=input.shape, dtype='float32')
+            input = input * mask
+        return input / keep_prob
 
     @property
     @validate
@@ -1949,22 +1950,27 @@ class IdentityLayer(Layer):
         return input
 
 
-class ResizingLayer(Layer):
-    def __init__(self, input_shape, ratio=None, frac_ratio=None, layer_name='Upsampling'):
+class Upsampling(Layer):
+    def __init__(self, input_shape, ratio=None, frac_ratio=None, layer_name='Upsampling', method='bilinear'):
         if ratio != int(ratio):
             raise NotImplementedError
         if ratio and frac_ratio:
             raise NotImplementedError
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+        assert method.lower() in ('bilinear', 'nearest'), 'Unknown %s upsampling method.' % method
 
-        super(ResizingLayer, self).__init__(tuple(input_shape), layer_name)
+        super(Upsampling, self).__init__(tuple(input_shape), layer_name)
         self.ratio = ratio
         self.frac_ratio = frac_ratio
+        self.method = method.lower()
         self.descriptions = '{} x{} Resizing Layer {} -> {}'.format(layer_name, self.ratio, self.input_shape, self.output_shape)
 
     def get_output(self, input):
-        return T.nnet.abstract_conv.bilinear_upsampling(input, ratio=self.ratio) if self.ratio \
-            else T.nnet.abstract_conv.bilinear_upsampling(input, frac_ratio=self.frac_ratio)
+        if self.method == 'bilinear':
+            return T.nnet.abstract_conv.bilinear_upsampling(input, ratio=self.ratio) if self.ratio \
+                else T.nnet.abstract_conv.bilinear_upsampling(input, frac_ratio=self.frac_ratio)
+        else:
+            return T.repeat(T.repeat(input, 2, 2), 2, 3)
 
     @property
     @validate

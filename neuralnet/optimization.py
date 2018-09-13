@@ -494,7 +494,7 @@ def adamax(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by
 
 
 def anneal_learning_rate(lr, t, method='half-life', **kwargs):
-    if method not in ('half-life', 'step', 'exponential', 'inverse'):
+    if method not in ('half-life', 'step', 'exponential', 'inverse', 'linear'):
         raise ValueError('Unknown annealing method.')
     if not isinstance(lr, T.sharedvar.ScalarSharedVariable):
         raise TypeError('lr must be a shared variable, got %s.' % type(lr))
@@ -519,6 +519,12 @@ def anneal_learning_rate(lr, t, method='half-life', **kwargs):
     elif method == 'exponential':
         decay = kwargs.pop('decay', 1e-4)
         lr.set_value(np.float32(lr_ * np.exp(-decay * t)))
+    elif method == 'linear':
+        num_iters = kwargs.pop('num_iters', None)
+        if num_iters is None:
+            raise ValueError('num_iters must be provided.')
+
+        lr.set_value(np.float32(lr_ * (1 - t / num_iters)))
     else:
         decay = kwargs.pop('decay', .01)
         lr.set_value(np.float32(lr_ * 1. / (1. + decay * t)))
