@@ -11,7 +11,7 @@ from functools import reduce
 import cloudpickle as cpkl
 import pickle as pkl
 from collections import OrderedDict
-import warnings
+import logging
 
 from . import __version__
 
@@ -29,8 +29,7 @@ def deprecated(version=None, message=None):
 
     def deprecated_decorator(func):
         def wrapper(*args, **kwargs):
-            warnings.simplefilter('default')
-            warnings.warn(message, DeprecationWarning, stacklevel=2)
+            logging.warning(message)
             func(*args, **kwargs)
         return wrapper
     return deprecated_decorator
