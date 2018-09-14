@@ -11,9 +11,29 @@ from functools import reduce
 import cloudpickle as cpkl
 import pickle as pkl
 from collections import OrderedDict
+import warnings
+
+from . import __version__
 
 __all__ = ['ConfigParser', 'DataManager']
 thread_lock = threading.Lock()
+
+
+def deprecated(version=None, message=None):
+    if version is None:
+        version = __version__
+
+    ms = 'This function is deprecated since version %s. ' % version
+    if message is not None:
+        message = ms + message
+
+    def deprecated_decorator(func):
+        def wrapper(*args, **kwargs):
+            warnings.simplefilter('default')
+            warnings.warn(message, DeprecationWarning, stacklevel=2)
+            func(*args, **kwargs)
+        return wrapper
+    return deprecated_decorator
 
 
 class Thread(threading.Thread):
@@ -934,10 +954,3 @@ function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **k
             'linear': lambda x, **kwargs: x, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,
             'sin': lambda x, **kwargs: T.sin(x), 'cos': lambda x, **kwargs: T.cos(x), 'swish': swish, 'selu': selu,
             'prelu': prelu}
-
-
-if __name__ == '__main__':
-    x = T.tensor4()
-    y = unpool(x, (2, 2))
-    f = theano.function([x], y)
-    print(f(np.random.rand(2, 64, 120, 160).astype('float32')).shape)

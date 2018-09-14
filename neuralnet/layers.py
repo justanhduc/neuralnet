@@ -26,7 +26,8 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'InceptionModule3', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'NetworkInNetworkBlock',
            'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer',
            'set_training_status', 'AveragePoolingLayer', 'WarpingLayer', 'GroupNormLayer', 'UpProjectionUnit',
-           'DownProjectionUnit', 'ReflectPaddingConv', 'ReflectLayer', 'NoiseResNetBlock']
+           'DownProjectionUnit', 'ReflectPaddingConv', 'ReflectLayer', 'NoiseResNetBlock', 'set_training_on',
+           'set_training_off']
 
 
 def validate(func):
@@ -72,6 +73,10 @@ class Layer(NetMethod, metaclass=abc.ABCMeta):
     @staticmethod
     def set_training_status(training):
         Layer.training_flag = training
+
+
+set_training_on = partial(Layer.set_training_status, True)
+set_training_off = partial(Layer.set_training_status, False)
 
 
 class Sequential(OrderedDict, NetMethod):
@@ -196,7 +201,7 @@ class Sequential(OrderedDict, NetMethod):
 class ActivationLayer(Layer):
     def __init__(self, input_shape, activation='relu', layer_name='Activation', **kwargs):
         super(ActivationLayer, self).__init__(input_shape, layer_name)
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.kwargs = kwargs
         self.descriptions = '{} Activation layer: {}'.format(self.layer_name, activation)
 
@@ -586,7 +591,7 @@ class FullyConnectedLayer(Layer):
         in_shape = tuple(input_shape) if len(input_shape) == 2 else (input_shape[0], np.prod(input_shape[1:]))
         super(FullyConnectedLayer, self).__init__(in_shape, layer_name)
         self.num_nodes = num_nodes
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.no_bias = no_bias
         self.keep_dims = keep_dims
         self.kwargs = kwargs
@@ -659,7 +664,7 @@ class ConvolutionalLayer(Layer):
         self.filter_shape = (num_filters, input_shape[1], filter_size[0], filter_size[1]) if isinstance(filter_size, (list, tuple)) \
             else (num_filters, input_shape[1], filter_size, filter_size)
         self.no_bias = no_bias
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.border_mode = border_mode
         self.subsample = tuple(stride) if isinstance(stride, (tuple, list)) else (stride, stride)
         self.dilation = dilation
@@ -743,7 +748,7 @@ class PerturbativeLayer(Layer):
         super(PerturbativeLayer, self).__init__(input_shape, layer_name)
         self.num_filters = num_filters
         self.noise_level = noise_level
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.no_bias = no_bias
         self.kwargs = kwargs
 
@@ -1035,7 +1040,7 @@ class TransposedConvolutionalLayer(Layer):
             if output_shape is not None else (output_shape,) * 4
         self.padding = padding
         self.stride = stride
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.kwargs = kwargs
 
         self.W_values = init(self.filter_shape)
@@ -1584,7 +1589,7 @@ class BatchNormLayer(Layer):
         super(BatchNormLayer, self).__init__(input_shape, layer_name)
         self.epsilon = np.float32(epsilon)
         self.running_average_factor = running_average_factor
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.no_scale = no_scale
         self.axes = (0,) + tuple(range(2, len(input_shape))) if axes == 'spatial' else (0,)
         self.shape = (self.input_shape[1],) if axes == 'spatial' else self.input_shape[1:]
@@ -1669,7 +1674,7 @@ class DecorrBatchNormLayer(Layer):
         super(DecorrBatchNormLayer, self).__init__(input_shape, layer_name)
         self.epsilon = np.float32(epsilon)
         self.running_average_factor = running_average_factor
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.no_scale = no_scale
         self.axes = (0,) #+ tuple(range(2, len(input_shape)))
         self.shape = (self.input_shape[1],)
@@ -1751,7 +1756,7 @@ class GroupNormLayer(Layer):
         super(GroupNormLayer, self).__init__(tuple(input_shape), layer_name)
         self.groups = groups
         self.epsilon = np.float32(epsilon)
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.kwargs = kwargs
         self.gamma_values = np.ones(self.input_shape[1], dtype=theano.config.floatX)
         self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '/gamma', borrow=True)
@@ -1821,7 +1826,7 @@ class BatchRenormLayer(Layer):
         super(BatchRenormLayer, self).__init__(tuple(input_shape), layer_name)
         self.epsilon = epsilon
         self.running_average_factor = running_average_factor
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.r_max = theano.shared(np.float32(r_max), name=layer_name + 'rmax')
         self.d_max = theano.shared(np.float32(d_max), name=layer_name + 'dmax')
         self.axes = (0,) + tuple(range(2, len(input_shape))) if axes == 'spatial' else (0,)
@@ -2249,7 +2254,7 @@ class Gate:
         self.b = theano.shared(b(hid_shape[0]), layer_name + '/bias')
         self.params.append(self.b)
         self.trainable.append(self.b)
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
 
 
 class LSTMCell(Layer):
@@ -2277,7 +2282,7 @@ class LSTMCell(Layer):
         self.learn_init = learn_init
         self.grad_step = grad_step
         self.grad_clip = grad_clip
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.kwargs = kwargs
 
         n_in = self.input_shape[-1]
@@ -2437,7 +2442,7 @@ class ConvLSTMCell(Layer):
         self.learn_init = learn_init
         self.grad_step = grad_step
         self.grad_clip = grad_clip
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.kwargs = kwargs
 
         n_in = self.input_shape[-1]
@@ -2504,7 +2509,7 @@ class AttConvLSTMCell(Layer):
         self.learn_init = learn_init
         self.grad_step = grad_step
         self.grad_clip = grad_clip
-        self.activation = utils.function[activation]
+        self.activation = utils.function[activation] if not callable(activation) else activation
         self.kwargs = kwargs
 
         self.in_gate = Gate(filter_shape, W_cell=False, layer_name='in_gate')
@@ -2580,6 +2585,7 @@ class AttConvLSTMCell(Layer):
         return X[-1]
 
 
+@utils.deprecated(message='Please use \'set_training_on\' and \'set_training_off\' instead.')
 def set_training_status(training):
     Layer.set_training_status(training)
 
@@ -2690,14 +2696,3 @@ def SoftmaxLayer(input_shape, num_nodes, layer_name='Softmax'):
 
 def SigmoidLayer(input_shape, layer_name='Sigmoid'):
     return FullyConnectedLayer(input_shape, 1, layer_name=layer_name, activation='sigmoid')
-
-
-if __name__ == '__main__':
-    from neuralnet import model_zoo
-    X = T.tensor4('float32')
-    net = model_zoo.resnet50((None, 3, 224, 224), 64, 10)
-    Y_ = net(X)
-    f = theano.function([X], Y_)
-    x = np.random.rand(64, 3, 224, 224).astype('float32')
-    y = f(x)
-    print(y.shape)
