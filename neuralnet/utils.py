@@ -934,7 +934,7 @@ def max_singular_value(W, u=None, lp=1):
     return sigma, _u, _v
 
 
-def spectral_normalize(updates, exceptions=('grad', 'beta', 'gamma', 'alpha')):
+def spectral_normalize(updates, exceptions=('grad', 'beta', 'gamma', 'velo')):
     new_updates = OrderedDict()
     for key in updates:
         param = updates[key]
