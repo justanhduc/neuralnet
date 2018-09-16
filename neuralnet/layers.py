@@ -27,7 +27,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer',
            'set_training_status', 'AveragePoolingLayer', 'WarpingLayer', 'GroupNormLayer', 'UpProjectionUnit',
            'DownProjectionUnit', 'ReflectPaddingConv', 'ReflectLayer', 'NoiseResNetBlock', 'set_training_on',
-           'set_training_off']
+           'set_training_off', 'PreprocessingLayer']
 
 
 def validate(func):
@@ -196,6 +196,27 @@ class Sequential(OrderedDict, NetMethod):
     def reset(self):
         for layer in self:
             layer.reset()
+
+
+class PreprocessingLayer(Layer):
+    def __init__(self, input_shape, function, layer_name='Preprocessing Layer', **kwargs):
+        assert callable(function), 'The provided function must be callable.'
+
+        super(PreprocessingLayer, self).__init__(input_shape, layer_name)
+        self.function = function
+        self.kwargs = kwargs
+        self.descriptions = '{} Preprocessing Layer'
+
+    def get_output(self, input):
+        return self.function(input, **self.kwargs)
+
+    @property
+    def output_shape(self):
+        x = T.zeros((1,)+self.input_shape[1:])
+        y = self(x)
+        f = theano.function([], y)
+        shape = f().shape
+        return (None,) + tuple(shape[1:])
 
 
 class ActivationLayer(Layer):
