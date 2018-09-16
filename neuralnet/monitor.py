@@ -13,6 +13,7 @@ from scipy.misc import imsave
 import os
 from shutil import copyfile
 import visdom
+import time
 
 from neuralnet import utils, model
 
@@ -25,6 +26,7 @@ class Monitor(utils.ConfigParser):
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [checkpoint]
+        self.__timer = 0.
 
         if self.config:
             self.name = self.config['model']['name']
@@ -76,6 +78,9 @@ class Monitor(utils.ConfigParser):
 
     def tick(self):
         self.__iter[0] += 1
+
+    def start(self):
+        self.__timer = time.time()
 
     def plot(self, name, value):
         self.__num_since_last_flush[name][self.__iter[0]] = value
@@ -139,7 +144,8 @@ class Monitor(utils.ConfigParser):
         with open(self.current_folder + '/log.pkl', 'wb') as f:
             pickle.dump(dict(self.__num_since_beginning), f, pickle.HIGHEST_PROTOCOL)
 
-        print("Iteration {}\t{}".format(self.__iter[0], "\t".join(prints)))
+        print("Elapsed time {:.2f}min \t Iteration {}\t{}".format((time.time() - self.__timer) / 60., self.__iter[0],
+                                                                  "\t".join(prints)))
 
     def dump(self, obj, file, keep=-1):
         assert isinstance(keep, int), 'keep must be an int, got %s' % type(keep)
@@ -212,16 +218,6 @@ class Monitor(utils.ConfigParser):
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [0]
+        self.__timer = 0.
 
     imwrite = save_image
-
-
-if __name__ == '__main__':
-    mon = Monitor(None, use_visdom=True)
-    for i in range(10):
-        for j in range(5):
-            mon.plot('train-valid', {'train': i+j+1, 'valid': i-j})
-            mon.plot('x2', (i+j)*2)
-            mon.save_image('toy', np.zeros((10, 3, 100, 100), dtype='float32') + i*j/40)
-            mon.tick()
-        mon.flush()
