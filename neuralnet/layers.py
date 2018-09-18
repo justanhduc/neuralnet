@@ -636,6 +636,7 @@ class FullyConnectedLayer(Layer):
             .format(self.layer_name, self.input_shape, (self.input_shape[1], num_nodes), self.output_shape, activation)
 
     def get_output(self, input):
+        input = T.unbroadcast(input, 0)
         output = T.dot(input.flatten(2), self.W) + self.b if not self.no_bias else T.dot(input.flatten(2), self.W)
         return self.activation(output, **self.kwargs) if self.keep_dims else T.squeeze(self.activation(output, **self.kwargs))
 
