@@ -98,6 +98,13 @@ class DataManager(ConfigParser):
     def load_data(self):
         raise NotImplementedError
 
+    def __iter__(self):
+        for i in self.get_batches():
+            yield i
+
+    def __len__(self):
+        return self.data_size
+
     def preprocess(self, *args, **kwargs):
         """
         preprocess input tensors and return the processed tensors
@@ -707,13 +714,13 @@ def replication_pad2d(input, padding):
     return output
 
 
-def reflect_pad(x, width, batch_ndim=1):
+def reflect_pad(x, padding, batch_ndim=2):
     """
     Pad a tensor with a constant value.
     Parameters
     ----------
     x : tensor
-    width : int, iterable of int, or iterable of tuple
+    padding : int, iterable of int, or iterable of tuple
         Padding width. If an int, pads each axis symmetrically with the same
         amount in the beginning and end. If an iterable of int, defines the
         symmetric padding width separately for each axis. If an iterable of
@@ -731,10 +738,10 @@ def reflect_pad(x, width, batch_ndim=1):
     output_shape = list(input_shape)
     indices = [slice(None) for _ in output_shape]
 
-    if isinstance(width, int):
-        widths = [width] * (input_ndim - batch_ndim)
+    if isinstance(padding, int):
+        widths = [padding] * (input_ndim - batch_ndim)
     else:
-        widths = width
+        widths = padding
 
     for k, w in enumerate(widths):
         try:
@@ -748,20 +755,20 @@ def reflect_pad(x, width, batch_ndim=1):
     out = T.zeros(output_shape)
 
     # Vertical Reflections
-    out = T.set_subtensor(out[:, :, :width, width:-width],
-                          x[:, :, width:0:-1, :])  # out[:,:,:width,width:-width] = x[:,:,width:0:-1,:]
-    out = T.set_subtensor(out[:, :, -width:, width:-width],
-                          x[:, :, -2:-(2 + width):-1, :])  # out[:,:,-width:,width:-width] = x[:,:,-2:-(2+width):-1,:]
+    out = T.set_subtensor(out[:, :, :padding, padding:-padding],
+                          x[:, :, padding:0:-1, :])  # out[:,:,:width,width:-width] = x[:,:,width:0:-1,:]
+    out = T.set_subtensor(out[:, :, -padding:, padding:-padding],
+                          x[:, :, -2:-(2 + padding):-1, :])  # out[:,:,-width:,width:-width] = x[:,:,-2:-(2+width):-1,:]
 
     # Place X in out
     # out = T.set_subtensor(out[tuple(indices)], x) # or, alternative, out[width:-width,width:-width] = x
-    out = T.set_subtensor(out[:, :, width:-width, width:-width], x)  # out[:,:,width:-width,width:-width] = x
+    out = T.set_subtensor(out[:, :, padding:-padding, padding:-padding], x)  # out[:,:,width:-width,width:-width] = x
 
     # Horizontal reflections
-    out = T.set_subtensor(out[:, :, :, :width],
-                          out[:, :, :, (2 * width):width:-1])  # out[:,:,:,:width] = out[:,:,:,(2*width):width:-1]
-    out = T.set_subtensor(out[:, :, :, -width:], out[:, :, :, -(width + 2):-(
-                2 * width + 2):-1])  # out[:,:,:,-width:] = out[:,:,:,-(width+2):-(2*width+2):-1]
+    out = T.set_subtensor(out[:, :, :, :padding],
+                          out[:, :, :, (2 * padding):padding:-1])  # out[:,:,:,:width] = out[:,:,:,(2*width):width:-1]
+    out = T.set_subtensor(out[:, :, :, -padding:], out[:, :, :, -(padding + 2):-(
+            2 * padding + 2):-1])  # out[:,:,:,-width:] = out[:,:,:,-(width+2):-(2*width+2):-1]
     return out
 
 
@@ -946,6 +953,18 @@ def spectral_normalize(updates, exceptions=('grad', 'beta', 'gamma', 'velo')):
             new_updates[key] = param / (sigma + 1e-12)
             new_updates[u] = _u
     return new_updates
+
+
+def make_one_hot(label, dim):
+    num = label.shape[0]
+    one_hot = T.zeros((num, dim), 'float32')
+    one_hot = T.set_subtensor(one_hot[T.arange(num), label], 1.)
+    return one_hot
+
+
+def placeholder(shape, dtype='float32', name=None, borrow=None):
+    x = theano.shared(np.zeros(shape, dtype), name, borrow=borrow)
+    return x
 
 
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),

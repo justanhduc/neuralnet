@@ -27,7 +27,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer',
            'set_training_status', 'AveragePoolingLayer', 'WarpingLayer', 'GroupNormLayer', 'UpProjectionUnit',
            'DownProjectionUnit', 'ReflectPaddingConv', 'ReflectLayer', 'NoiseResNetBlock', 'set_training_on',
-           'set_training_off', 'PreprocessingLayer']
+           'set_training_off', 'PreprocessingLayer', 'AdaptiveInstanceNorm2DLayer']
 
 
 def validate(func):
@@ -125,7 +125,9 @@ class Sequential(OrderedDict, NetMethod):
             return self[keys[item]]
         elif isinstance(item, slice):
             keys = list(self.keys())
-            return Sequential(self[keys[item]], layer_name=self.layer_name)
+            keys = keys[item]
+            sl = [self[k] for k in keys]
+            return Sequential(sl, layer_name=self.layer_name)
         else:
             return super(Sequential, self).__getitem__(item)
 
@@ -205,7 +207,7 @@ class PreprocessingLayer(Layer):
         super(PreprocessingLayer, self).__init__(input_shape, layer_name)
         self.function = function
         self.kwargs = kwargs
-        self.descriptions = '{} Preprocessing Layer'
+        self.descriptions = '{} Preprocessing Layer'.format(layer_name)
 
     def get_output(self, input):
         return self.function(input, **self.kwargs)
@@ -368,20 +370,15 @@ class PoolingLayer(Layer):
     @validate
     def output_shape(self):
         size = list(self.input_shape)
-        if np.mod(size[2], self.ws[0]):
-            size[2] -= np.mod(size[2], self.ws[0])
-        if np.mod(size[3], self.ws[1]):
-            size[3] -= np.mod(size[3], self.ws[1])
-
         size[2] = (size[2] + 2 * self.pad[0] - self.ws[0]) // self.stride[0] + 1
         size[3] = (size[3] + 2 * self.pad[1] - self.ws[1]) // self.stride[1] + 1
 
-        if np.mod(self.input_shape[2], self.ws[0]):
+        if np.mod(self.input_shape[2], self.stride[0]):
             if not self.ignore_border:
-                size[2] += np.mod(self.input_shape[2], self.ws[0])
-        if np.mod(self.input_shape[3], self.ws[1]):
+                size[2] += np.mod(self.input_shape[2], self.stride[0])
+        if np.mod(self.input_shape[3], self.stride[1]):
             if not self.ignore_border:
-                size[3] += np.mod(self.input_shape[3], self.ws[1])
+                size[3] += np.mod(self.input_shape[3], self.stride[1])
         return tuple(size)
 
 
@@ -1894,6 +1891,25 @@ class BatchRenormLayer(Layer):
     def reset(self):
         self.gamma.set_value(self.gamma_values)
         self.beta.set_value(self.beta_values)
+
+
+class AdaptiveInstanceNorm2DLayer(Layer):
+    def __init__(self, input_shape, epsilon=1e-5, layer_name='Adaptive Instance Norm'):
+        super(AdaptiveInstanceNorm2DLayer, self).__init__(input_shape, layer_name)
+        self.epsilon = epsilon
+        self.descriptions = '{} Adaptive Instance Norm layer'.format(layer_name)
+
+    def get_output(self, input):
+        assert isinstance(input, (list, tuple)), 'input must be a list or tuple of input images and normalization params.'
+        input, params = input
+        scale = params[:, :self.input_shape[1]].dimshuffle(0, 1, 'x', 'x')
+        bias = params[:, self.input_shape[1]:].dimshuffle(0, 1, 'x', 'x')
+        output, _, _ = T.nnet.bn.batch_normalization_train(input, scale, bias, (2, 3))
+        return output
+
+    @property
+    def output_shape(self):
+        return self.input_shape
 
 
 class TransformerLayer(Layer):

@@ -26,7 +26,7 @@ class Monitor(utils.ConfigParser):
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [checkpoint]
-        self.__timer = 0.
+        self.__timer = time.time()
 
         if self.config:
             self.name = self.config['model']['name']
@@ -71,16 +71,19 @@ class Monitor(utils.ConfigParser):
             print('You can navigate to \'%s:%d\' for visualization' % (server, port))
         print('Result folder: %s' % self.current_folder)
 
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.__tick()
+
     def dump_model(self, network):
         assert isinstance(network, model.Model), 'network must be an instance of Model, got {}.'.format(type(network))
         with open('%s/network.txt' % self.current_folder, 'w') as outfile:
             outfile.write("\n".join(str(x) for x in network))
 
-    def tick(self):
+    def __tick(self):
         self.__iter[0] += 1
-
-    def start(self):
-        self.__timer = time.time()
 
     def plot(self, name, value):
         self.__num_since_last_flush[name][self.__iter[0]] = value
