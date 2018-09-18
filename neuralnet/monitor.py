@@ -75,14 +75,15 @@ class Monitor(utils.ConfigParser):
         pass
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.__tick()
+        self.flush()
+        self.tick()
 
     def dump_model(self, network):
         assert isinstance(network, model.Model), 'network must be an instance of Model, got {}.'.format(type(network))
         with open('%s/network.txt' % self.current_folder, 'w') as outfile:
             outfile.write("\n".join(str(x) for x in network))
 
-    def __tick(self):
+    def tick(self):
         self.__iter[0] += 1
 
     def plot(self, name, value):
