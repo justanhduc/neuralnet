@@ -105,6 +105,10 @@ class DataManager(ConfigParser):
     def __len__(self):
         return self.data_size
 
+    def __getitem__(self, item):
+        assert isinstance(item, (int, slice)), 'item must be an int or slice, got %s.' % type(item)
+        return self.dataset[item]
+
     def preprocess(self, *args, **kwargs):
         """
         preprocess input tensors and return the processed tensors
@@ -176,7 +180,7 @@ class DataManager(ConfigParser):
 
     def generator(self):
         num_batches = self.data_size // self.batch_size
-        dataset = self.dataset
+        dataset = list(self.dataset) if isinstance(self.dataset, (list, tuple)) else np.copy(self.dataset)
         if self.shuffle:
             index = np.arange(0, self.data_size)
             np.random.shuffle(index)
@@ -941,18 +945,11 @@ def max_singular_value(W, u=None, lp=1):
     return sigma, _u, _v
 
 
-def spectral_normalize(updates, exceptions=('grad', 'beta', 'gamma', 'velo')):
-    new_updates = OrderedDict()
-    for key in updates:
-        param = updates[key]
-        if param.ndim < 2 or any(a in key.name for a in exceptions):
-            new_updates[key] = param
-        else:
-            u = theano.shared(np.random.normal(size=(1, key.get_value().shape[0])).astype('float32'), key.name + '/u')
-            sigma, _u, _ = max_singular_value(param, u)
-            new_updates[key] = param / (sigma + 1e-12)
-            new_updates[u] = _u
-    return new_updates
+def spectral_normalize(W, u=None):
+    u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype('float32'), 'u') if u is None else u
+    sigma, _u, _ = max_singular_value(W, u)
+    W /= (sigma + 1e-12)
+    return (W, _u) if u else (W, _u, u)
 
 
 def make_one_hot(label, dim):
