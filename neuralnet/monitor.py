@@ -27,7 +27,7 @@ class Monitor(utils.ConfigParser):
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [checkpoint]
         self.__timer = time.time()
-        self.valid_freq = valid_freq if config_file else self.config['training']['validation_frequency']
+        self.valid_freq = self.config['training']['validation_frequency'] if config_file else valid_freq
 
         if self.config:
             self.name = self.config['model']['name']
