@@ -12,7 +12,6 @@ import pickle as pickle
 from scipy.misc import imsave
 import os
 from shutil import copyfile
-import visdom
 import time
 
 from neuralnet import utils, model

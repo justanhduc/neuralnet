@@ -22,7 +22,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'IdentityLayer', 'DropoutLayer', 'InceptionModule1', 'InceptionModule2', 'InceptionModule3',
            'NetworkInNetworkBlock', 'SoftmaxLayer', 'TransposingLayer', 'set_training_status', 'WarpingLayer',
            'NoiseResNetBlock', 'set_training_on', 'set_training_off', 'PreprocessingLayer', 'Conv2DLayer',
-           'Deconv2DLayer', 'FCLayer']
+           'Deconv2DLayer', 'FCLayer', 'SqueezeAndExcitationBlock']
 
 
 class NetMethod:
