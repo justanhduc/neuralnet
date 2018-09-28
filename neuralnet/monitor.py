@@ -20,14 +20,14 @@ from neuralnet import utils, model
 
 class Monitor(utils.ConfigParser):
     def __init__(self, config_file=None, model_name='my_model', root='results', current_folder=None, checkpoint=0,
-                 use_visdom=False, server='http://localhost', port=8097, disable_visdom_logging=True, valid_freq=1):
+                 use_visdom=False, server='http://localhost', port=8097, disable_visdom_logging=True, valid_freq=None):
         super(Monitor, self).__init__(config_file)
         self.__num_since_beginning = collections.defaultdict(lambda: {})
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [checkpoint]
         self.__timer = time.time()
-        self.valid_freq = valid_freq
+        self.valid_freq = valid_freq if config_file else self.config['training']['validation_frequency']
 
         if self.config:
             self.name = self.config['model']['name']
