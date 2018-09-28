@@ -9,7 +9,6 @@ import theano
 import numpy as np
 from theano import tensor as T
 from theano.tensor.nnet import conv2d as conv
-from theano.tensor.signal.pool import pool_2d as pool
 from collections import OrderedDict
 from functools import partial
 
@@ -17,25 +16,13 @@ from neuralnet import utils
 from neuralnet.init import *
 
 __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', 'TransformerLayer',
-           'TransposedConvolutionalLayer', 'BatchNormLayer', 'BatchRenormLayer', 'DecorrBatchNormLayer',
-           'DenseBlock', 'SumLayer', 'StackingConv', 'ScalingLayer', 'SlicingLayer',
-           'PixelShuffleLayer', 'LSTMCell', 'ActivationLayer', 'AttConvLSTMCell', 'ConvMeanPoolLayer',
-           'ConcatLayer', 'ConvLSTMCell', 'ConvNormAct', 'MeanPoolConvLayer', 'ReshapingLayer',
-           'RecursiveResNetBlock', 'Upsampling', 'ResNetBlock', 'ResNetBottleneckBlock', 'GRUCell',
-           'IdentityLayer', 'DropoutLayer', 'PoolingLayer', 'InceptionModule1', 'InceptionModule2',
-           'InceptionModule3', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'NetworkInNetworkBlock',
-           'GlobalAveragePoolingLayer', 'MaxPoolingLayer', 'SoftmaxLayer', 'TransposingLayer',
-           'set_training_status', 'AveragePoolingLayer', 'WarpingLayer', 'GroupNormLayer', 'UpProjectionUnit',
-           'DownProjectionUnit', 'ReflectPaddingConv', 'ReflectLayer', 'NoiseResNetBlock', 'set_training_on',
-           'set_training_off', 'PreprocessingLayer', 'AdaptiveInstanceNorm2DLayer']
-
-
-def validate(func):
-    """make sure output shape is a list of ints"""
-    def func_wrapper(self):
-        out = [int(x) if x is not None else x for x in func(self)]
-        return tuple(out)
-    return func_wrapper
+           'TransposedConvolutionalLayer', 'DenseBlock', 'SumLayer', 'StackingConv', 'ScalingLayer',
+           'SlicingLayer', 'LSTMCell', 'ActivationLayer', 'AttConvLSTMCell', 'ConcatLayer', 'ConvLSTMCell',
+           'ConvNormAct', 'RecursiveResNetBlock', 'ResNetBlock', 'ResNetBottleneckBlock', 'GRUCell',
+           'IdentityLayer', 'DropoutLayer', 'InceptionModule1', 'InceptionModule2', 'InceptionModule3',
+           'NetworkInNetworkBlock', 'SoftmaxLayer', 'TransposingLayer', 'set_training_status', 'WarpingLayer',
+           'NoiseResNetBlock', 'set_training_on', 'set_training_off', 'PreprocessingLayer', 'Conv2DLayer',
+           'Deconv2DLayer', 'FCLayer']
 
 
 class NetMethod:
@@ -214,11 +201,11 @@ class PreprocessingLayer(Layer):
 
     @property
     def output_shape(self):
-        x = T.zeros((1,)+self.input_shape[1:])
-        y = self(x)
-        f = theano.function([], y)
-        shape = f().shape
-        return (None,) + tuple(shape[1:])
+        input_shape = (0 if s is None else s for s in self.input_shape)
+        X = theano.tensor.alloc(0, *input_shape)
+        output_shape = self.function(X, **self.kwargs).shape.eval()
+        output_shape = tuple(s if s else None for s in output_shape)
+        return output_shape
 
 
 class ActivationLayer(Layer):
@@ -246,322 +233,6 @@ class ActivationLayer(Layer):
             self.alpha.set_value(np.float32(.1))
 
 
-class DownsamplingLayer(Layer):
-    """
-    Original Pytorch code: https://github.com/DmitryUlyanov/deep-image-prior/blob/master/models/downsampler.py
-    http://www.realitypixels.com/turk/computergraphics/ResamplingFilters.pdf
-    """
-
-    def __init__(self, input_shape, factor, kernel_type='gauss1sq2', phase=0, kernel_width=None, support=None, sigma=None,
-                 preserve_size=True, layer_name='DownsamplingLayer'):
-        assert phase in [0, 0.5], 'phase should be 0 or 0.5'
-
-        super(DownsamplingLayer, self).__init__(input_shape, layer_name)
-        if kernel_type == 'lanczos2':
-            support = 2
-            kernel_width = 4 * factor + 1
-            kernel_type_ = 'lanczos'
-
-        elif kernel_type == 'lanczos3':
-            support = 3
-            kernel_width = 6 * factor + 1
-            kernel_type_ = 'lanczos'
-
-        elif kernel_type == 'gauss12':
-            kernel_width = 7
-            sigma = 1 / 2
-            kernel_type_ = 'gauss'
-
-        elif kernel_type == 'gauss1sq2':
-            kernel_width = 9
-            sigma = 1. / np.sqrt(2)
-            kernel_type_ = 'gauss'
-
-        elif kernel_type in ['lanczos', 'gauss', 'box']:
-            kernel_type_ = kernel_type
-
-        else:
-            assert False, 'Wrong kernel name.'
-
-        self.factor = factor
-        self.kernel_type = kernel_type
-        self.phase = phase
-        self.kernel_width = kernel_width
-        self.support = support
-        self.sigma = sigma
-        self.descriptions = '{} Downsampling: factor {} phase {} width {}'.format(layer_name, factor, phase, kernel_width)
-        # note that `kernel width` will be different to actual size for phase = 1/2
-        kernel = utils.get_kernel(factor, kernel_type_, phase, kernel_width, support=support, sigma=sigma)
-        self.kernel = utils.make_tensor_kernel_from_numpy((input_shape[1], input_shape[1], kernel_width, kernel_width), kernel)
-        self.preserve_size = preserve_size
-
-        if preserve_size:
-            if kernel_width % 2 == 1:
-                pad = int((kernel_width - 1) / 2.)
-            else:
-                pad = int((kernel_width - factor) / 2.)
-            self.padding = partial(utils.replication_pad2d, padding=pad)
-
-    def get_output(self, input):
-        if self.preserve_size:
-            x = self.padding(input)
-        else:
-            x = input
-        out = conv(x, self.kernel, subsample=(self.factor, self.factor),
-                   filter_shape=(self.input_shape[1], self.input_shape[1], self.kernel_width, self.kernel_width))
-        return out
-
-    @property
-    @validate
-    def output_shape(self):
-        return tuple(self.input_shape[:2]) + tuple([s//self.factor for s in self.input_shape[2:]])
-
-
-class PoolingLayer(Layer):
-    def __init__(self, input_shape, window_size=(2, 2), ignore_border=True, stride=(2, 2), pad='valid', mode='max',
-                 layer_name='Pooling'):
-        """
-
-        :param input_shape:
-        :param window_size:
-        :param ignore_border:
-        :param stride:
-        :param pad:
-        :param mode: {'max', 'sum', 'average_inc_pad', 'average_exc_pad'}
-        :param layer_name:
-        """
-        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
-        assert mode in ('max', 'sum', 'average_inc_pad', 'average_exc_pad'), 'Invalid pooling mode. ' \
-                                                                             'Mode should be \'max\', \'sum\', ' \
-                                                                             '\'average_inc_pad\' or \'average_exc_pad\', ' \
-                                                                             'got %s' % mode
-
-        super(PoolingLayer, self).__init__(input_shape, layer_name)
-        self.ws = window_size
-        self.ignore_border = ignore_border
-        self.stride = stride if stride else tuple(window_size)
-        self.mode = mode
-        if isinstance(pad, (list, tuple)):
-            self.pad = tuple(pad)
-        elif isinstance(pad, int):
-            self.pad = (pad, pad)
-        elif isinstance(pad, str):
-            if pad == 'half':
-                self.pad = (window_size[0] // 2, window_size[1] // 2)
-            elif pad == 'valid':
-                self.pad = (0, 0)
-            elif pad == 'full':
-                self.pad = (window_size[0] - 1, window_size[1] - 1)
-            else:
-                raise NotImplementedError
-        else:
-            raise TypeError
-
-        if self.pad != (0, 0):
-            self.ignore_border = True
-
-        self.descriptions = ''.join(('{} {} PoolingLayer: size: {}'.format(layer_name, mode, window_size),
-                                     ' stride: {}'.format(stride), ' {} -> {}'.format(input_shape, self.output_shape)))
-
-    def get_output(self, input):
-        return pool(input, self.ws, self.ignore_border, self.stride, self.pad, self.mode)
-
-    @property
-    @validate
-    def output_shape(self):
-        size = list(self.input_shape)
-        size[2] = (size[2] + 2 * self.pad[0] - self.ws[0]) // self.stride[0] + 1
-        size[3] = (size[3] + 2 * self.pad[1] - self.ws[1]) // self.stride[1] + 1
-
-        if np.mod(self.input_shape[2], self.stride[0]):
-            if not self.ignore_border:
-                size[2] += np.mod(self.input_shape[2], self.stride[0])
-        if np.mod(self.input_shape[3], self.stride[1]):
-            if not self.ignore_border:
-                size[3] += np.mod(self.input_shape[3], self.stride[1])
-        return tuple(size)
-
-
-class DetailPreservingPoolingLayer(Layer):
-    """Implementation of https://arxiv.org/abs/1804.04076"""
-
-    def __init__(self, input_shape, window_size=(2, 2), learn_filter='False', symmetric=True, epsilon=np.sqrt(.001),
-                 layer_name='Detail Preserving Pooling Layer'):
-        assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[
-            3] // 2, 'Input must have even rows and columns.'
-        assert isinstance(window_size, (list, tuple, int)), 'window_size must be a list, tuple, or int, got %s.' % type(
-            window_size)
-
-        super(DetailPreservingPoolingLayer, self).__init__(input_shape, layer_name)
-        self.ws = tuple(window_size) if isinstance(window_size, (list, tuple)) else (window_size, window_size)
-        self.learn_filter = learn_filter
-        self.symmetric = symmetric
-        self.epsilon_sqr = np.float32(epsilon ** 2)
-        self.alpha_ = theano.shared(np.zeros((input_shape[1],), 'float32'), 'alpha_', borrow=True)
-        self.lambda_ = theano.shared(np.zeros((input_shape[1],), 'float32'), 'lambda_', borrow=True)
-
-        self.params += [self.alpha_, self.lambda_]
-        self.trainable += [self.alpha_, self.lambda_]
-
-        if learn_filter:
-            self.kern_vals = GlorotNormal()((input_shape[1], input_shape[1], 3, 3))
-            self.kern = theano.shared(self.kern_vals.copy(), 'down_filter', borrow=True)
-            self.params.append(self.kern)
-            self.trainable.append(self.kern)
-            self.regularizable.append(self.kern)
-        else:
-            gauss_filter = T.as_tensor_variable(np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]], 'float32') / 16.)
-            self.kern = T.zeros((self.input_shape[1], self.input_shape[1], 3, 3), 'float32')
-            for i in range(self.input_shape[1]):
-                self.kern = T.set_subtensor(self.kern[i, i], gauss_filter)
-        self.descriptions = '{} Detail Preserving Pooling Layer: {} -> {}'.format(layer_name, input_shape,
-                                                                                  self.output_shape)
-
-    def __downsampling(self, input):
-        output = pool(input, self.ws, True, mode='average_exc_pad')
-        output = T.nnet.conv2d(output, self.kern, border_mode='half')
-        return output
-
-    def __penalty(self, x, lam):
-        if self.symmetric:
-            return T.exp(lam / 2. * T.log(x ** 2. + self.epsilon_sqr))
-        else:
-            return T.exp(lam / 2. * T.log(T.maximum(0., x) ** 2. + self.epsilon_sqr))
-
-    def get_output(self, input):
-        alpha = T.exp(self.alpha_).dimshuffle('x', 0, 'x', 'x')
-        lam = T.exp(self.lambda_).dimshuffle('x', 0, 'x', 'x')
-
-        down = self.__downsampling(input)
-        down_up = utils.unpool(down, self.ws)
-        W = alpha + self.__penalty(input - down_up, lam)
-        output = pool(input * W, self.ws, True, mode='average_exc_pad')
-        weight = 1. / pool(W, self.ws, True, mode='average_exc_pad')
-        return output * weight
-
-    @property
-    @validate
-    def output_shape(self):
-        return self.input_shape[:2] + (self.input_shape[2] // self.ws[0], self.input_shape[3] // self.ws[1])
-
-    def reset(self):
-        if self.learn_filter:
-            self.kern.set_value(self.kern_vals.copy())
-
-
-class UpProjectionUnit(Sequential):
-    """
-    implementation of the paper "Deep Back Projection Network"
-    """
-
-    def __init__(self, input_shape, filter_size, activation='relu', up_ratio=2, learnable=True,
-                 layer_name='UpProjectionUnit'):
-        super(UpProjectionUnit, self).__init__(input_shape=input_shape, layer_name=layer_name)
-
-        self.filter_size = filter_size
-        self.activation = activation
-        self.up_ratio = up_ratio
-
-        if learnable:
-            self.append(TransposedConvolutionalLayer(self.input_shape, input_shape[1], filter_size,
-                                                     (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
-                                                     activation=activation, layer_name=layer_name + '/up1'))
-        else:
-            self.append(Upsampling(self.input_shape, up_ratio, layer_name=layer_name + '/up1'))
-
-        self.append(ConvolutionalLayer(self.output_shape, input_shape[1], filter_size, stride=(up_ratio, up_ratio),
-                                       activation=activation, layer_name=layer_name+'/conv'))
-
-        if learnable:
-            self.append(TransposedConvolutionalLayer(self.input_shape, input_shape[1], filter_size,
-                                                     (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
-                                                     activation=activation, layer_name=layer_name + '/up2'))
-        else:
-            self.append(Upsampling(self.input_shape, up_ratio, layer_name=layer_name + '/up2'))
-
-        self.descriptions = '{} Up Projection Unit: {} -> {} upsampling by {}'.format(layer_name, input_shape,
-                                                                                      self.output_shape, up_ratio)
-
-    def get_output(self, input):
-        out1 = self[self.layer_name+'/up1'](input)
-        out2 = self[self.layer_name+'/conv'](out1)
-        res = out2 - input
-        out2 = self[self.layer_name+'/up2'](res)
-        return out2 + out1
-
-
-class DownProjectionUnit(Sequential):
-    """
-    implementation of the paper "Deep Back Projection Network"
-    """
-
-    def __init__(self, input_shape, filter_size, activation='relu', down_ratio=2, learnable=True,
-                 layer_name='DownProjectionUnit'):
-        super(DownProjectionUnit, self).__init__(input_shape=input_shape, layer_name=layer_name)
-
-        self.filter_size = filter_size
-        self.activation = activation
-        self.down_ratio = down_ratio
-
-        self.append(ConvolutionalLayer(input_shape,input_shape[1], filter_size, stride=(down_ratio, down_ratio),
-                                       activation=activation, layer_name=layer_name+'/conv1'))
-
-        if learnable:
-            self.append(TransposedConvolutionalLayer(self.output_shape, input_shape[1], filter_size,
-                                                     (input_shape[2] * 2, input_shape[3] * 2),
-                                                     stride=(down_ratio, down_ratio), activation=activation,
-                                                     layer_name=layer_name + '/up'))
-        else:
-            self.append(Upsampling(self.output_shape, down_ratio, layer_name=layer_name + '/up'))
-
-        self.append(ConvolutionalLayer(self.output_shape, input_shape[1], filter_size, stride=(down_ratio, down_ratio),
-                                       activation=activation, layer_name=layer_name+'/conv2'))
-
-        self.descriptions = '{} Down Projection Unit: {} -> {} downsampling by {}'.format(layer_name, input_shape,
-                                                                                          self.output_shape, down_ratio)
-
-    def get_output(self, input):
-        out1 = self[self.layer_name+'/conv1'](input)
-        out2 = self[self.layer_name+'/up'](out1)
-        res = out2 - input
-        out2 = self[self.layer_name+'/conv2'](res)
-        return out2 + out1
-
-
-class PixelShuffleLayer(Layer):
-    def __init__(self, input_shape, num_filters, filter_size, rate=2, activation='linear', init=HeNormal(gain=1.),
-                 biases=True, layer_name='Upsample Conv', **kwargs):
-        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
-
-        super(PixelShuffleLayer, self).__init__(input_shape, layer_name)
-        self.num_filters = num_filters
-        self.filter_size = filter_size
-        self.rate = rate
-        self.activation = activation
-        self.biases = biases
-
-        self.shape = (self.input_shape[0], self.input_shape[1], self.input_shape[2]*rate, self.input_shape[3]*rate)
-        self.conv = ConvolutionalLayer(self.shape, num_filters, filter_size, init=init, activation=self.activation,
-                                       layer_name=self.layer_name, no_bias=not self.biases, **kwargs)
-        self.params += self.conv.params
-        self.trainable += self.conv.trainable
-        self.regularizable += self.conv.regularizable
-        self.descriptions = '{} Upsample Conv: {} -> {}'.format(layer_name, self.input_shape, self.output_shape)
-
-    def get_output(self, input):
-        output = input
-        output = T.concatenate([output for _ in range(self.rate ** 2)], 1)
-        output = utils.depth_to_space(output, self.rate)
-        return self.conv(output)
-
-    @property
-    def output_shape(self):
-        return (self.shape[0], self.num_filters, self.shape[2], self.shape[3])
-
-    def reset(self):
-        self.conv.reset()
-
-
 class DropoutLayer(Layer):
     def __init__(self, input_shape, drop_prob=0.5, gaussian=False, layer_name='Dropout'):
         assert len(input_shape) == 2 or len(input_shape) == 4, \
@@ -583,13 +254,13 @@ class DropoutLayer(Layer):
         return input / keep_prob
 
     @property
-    @validate
+    @utils.validate
     def output_shape(self):
         return tuple(self.input_shape)
 
 
 class FullyConnectedLayer(Layer):
-    def __init__(self, input_shape, num_nodes, init=HeNormal(gain=1.), no_bias=False, layer_name='fc',
+    def __init__(self, input_shape, num_nodes, init=HeNormal(gain=1.), no_bias=False, layer_name='FC Layer',
                  activation='relu', keep_dims=False, **kwargs):
         """
 
@@ -638,12 +309,13 @@ class FullyConnectedLayer(Layer):
     def get_output(self, input):
         input = T.unbroadcast(input, 0)
         output = T.dot(input.flatten(2), self.W) + self.b if not self.no_bias else T.dot(input.flatten(2), self.W)
-        return self.activation(output, **self.kwargs) if self.keep_dims else T.squeeze(self.activation(output, **self.kwargs))
+        return self.activation(output, **self.kwargs) if self.keep_dims else T.squeeze(
+            self.activation(output, **self.kwargs))
 
     @property
-    @validate
+    @utils.validate
     def output_shape(self):
-        return (self.input_shape[0], self.num_nodes // self.kwargs.get('maxout_size', 4)) if self.activation is 'maxout' \
+        return (self.input_shape[0], self.num_nodes // self.kwargs.get('maxout_size')) if self.activation is 'maxout' \
             else (self.input_shape[0], self.num_nodes)
 
     def reset(self):
@@ -654,9 +326,12 @@ class FullyConnectedLayer(Layer):
             self.alpha.set_value(np.float32(.1))
 
 
+FCLayer = FullyConnectedLayer
+
+
 class ConvolutionalLayer(Layer):
     def __init__(self, input_shape, num_filters, filter_size, init=HeNormal(gain=1.), no_bias=True, border_mode='half',
-                 stride=(1, 1), dilation=(1, 1), layer_name='conv', activation='relu', **kwargs):
+                 stride=(1, 1), dilation=(1, 1), layer_name='Conv2D Layer', activation='relu', **kwargs):
         """
 
         :param input_shape:
@@ -680,8 +355,8 @@ class ConvolutionalLayer(Layer):
         assert isinstance(stride, (int, list, tuple))
 
         super(ConvolutionalLayer, self).__init__(input_shape, layer_name)
-        self.filter_shape = (num_filters, input_shape[1], filter_size[0], filter_size[1]) if isinstance(filter_size, (list, tuple)) \
-            else (num_filters, input_shape[1], filter_size, filter_size)
+        self.filter_shape = (num_filters, input_shape[1], filter_size[0], filter_size[1]) if isinstance(filter_size, (
+            list, tuple)) else (num_filters, input_shape[1], filter_size, filter_size)
         self.no_bias = no_bias
         self.activation = utils.function[activation] if not callable(activation) else activation
         self.border_mode = border_mode
@@ -721,7 +396,7 @@ class ConvolutionalLayer(Layer):
         return self.activation(output, **self.kwargs)
 
     @property
-    @validate
+    @utils.validate
     def output_shape(self):
         size = list(self.input_shape)
         assert len(size) == 4, "Shape must consist of 4 elements only"
@@ -748,7 +423,8 @@ class ConvolutionalLayer(Layer):
         size[2] = (size[2] - k1 + 2*p[0]) // self.subsample[0] + 1
         size[3] = (size[3] - k2 + 2*p[1]) // self.subsample[1] + 1
 
-        size[1] = self.filter_shape[0] // self.kwargs.get('maxout_size', 4) if self.activation == utils.maxout else self.filter_shape[0]
+        size[1] = self.filter_shape[0] // self.kwargs.get('maxout_size') if self.activation == utils.maxout \
+            else self.filter_shape[0]
         return tuple(size)
 
     def reset(self):
@@ -759,9 +435,12 @@ class ConvolutionalLayer(Layer):
             self.alpha.set_value(np.float32(.1))
 
 
+Conv2DLayer = ConvolutionalLayer
+
+
 class PerturbativeLayer(Layer):
     def __init__(self, input_shape, num_filters, init=HeNormal(), noise_level=.1, activation='relu', no_bias=True,
-                 layer_name='PerturbativeLayer', **kwargs):
+                 layer_name='Perturbative Layer', **kwargs):
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(PerturbativeLayer, self).__init__(input_shape, layer_name)
@@ -814,10 +493,11 @@ class PerturbativeLayer(Layer):
 
 class InceptionModule1(Layer):
     def __init__(self, input_shape, num_filters=48, border_mode='half', stride=(1, 1), activation='relu',
-                 layer_name='inception_mixed1'):
+                 layer_name='Inception Type 1'):
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(InceptionModule1, self).__init__(input_shape, layer_name)
+        from .resizing import PoolingLayer
         self.border_mode = border_mode
         self.stride = stride
         self.activation = activation
@@ -869,10 +549,11 @@ class InceptionModule1(Layer):
 
 class InceptionModule2(Layer):
     def __init__(self, input_shape, num_filters=128, filter_size=7, border_mode='half', stride=(1, 1), activation='relu',
-                 layer_name='inception_mixed2'):
+                 layer_name='Inception Type 2'):
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(InceptionModule2, self).__init__(input_shape, layer_name)
+        from .resizing import PoolingLayer
         self.filter_size = filter_size
         self.border_mode = border_mode
         self.stride = stride
@@ -938,10 +619,11 @@ class InceptionModule2(Layer):
 
 class InceptionModule3(Layer):
     def __init__(self, input_shape, num_filters=320, border_mode='half', stride=(1, 1), activation='relu',
-                 layer_name='inception_mixed3'):
+                 layer_name='Inception Type 3'):
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(InceptionModule3, self).__init__(input_shape, layer_name)
+        from .resizing import PoolingLayer
         self.border_mode = border_mode
         self.stride = stride
         self.activation = activation
@@ -1033,7 +715,7 @@ class InceptionModule3(Layer):
 
 class TransposedConvolutionalLayer(Layer):
     def __init__(self, input_shape, num_filters, filter_size, output_shape=None, init=HeNormal(gain=1.),
-                 layer_name='Transconv', padding='half', stride=(2, 2), activation='relu', **kwargs):
+                 layer_name='Deconv2D', padding='half', stride=(2, 2), activation='relu', **kwargs):
         """
 
         :param input_shape:
@@ -1109,7 +791,7 @@ class TransposedConvolutionalLayer(Layer):
         return self.activation(input, **self.kwargs)
 
     @property
-    @validate
+    @utils.validate
     def output_shape(self):
         if not any(self.output_shape_tmp):
             if self.padding == 'half':
@@ -1136,11 +818,14 @@ class TransposedConvolutionalLayer(Layer):
             self.alpha.set_value(np.float32(.1))
 
 
+Deconv2DLayer = TransposedConvolutionalLayer
+
+
 class ResNetBlock(Sequential):
     upscale_factor = 1
 
     def __init__(self, input_shape, num_filters, stride=(1, 1), dilation=(1, 1), activation='relu', downsample=None,
-                 layer_name='ResBlock', normalization='bn', groups=32, block=None, **kwargs):
+                 layer_name='Res Block', normalization='bn', groups=32, block=None, **kwargs):
         """
 
         :param input_shape:
@@ -1160,6 +845,7 @@ class ResNetBlock(Sequential):
         assert isinstance(stride, (int, list, tuple))
 
         super(ResNetBlock, self).__init__(input_shape=input_shape, layer_name=layer_name)
+        from neuralnet.normalization import BatchNormLayer, GroupNormLayer
         self.num_filters = num_filters
         self.stride = stride if isinstance(stride, (list, tuple)) else (stride, stride)
         self.dilation = dilation
@@ -1196,6 +882,7 @@ class ResNetBlock(Sequential):
                    ' '.join([' '.join((k, str(v))) for k, v in kwargs.items()]))
 
     def _build_simple_block(self, block_name):
+        from neuralnet.normalization import BatchNormLayer, GroupNormLayer
         block = [ConvolutionalLayer(self.input_shape, self.num_filters, 3, border_mode='half', stride=self.stride,
                                     dilation=self.dilation, layer_name=block_name + '/conv1', no_bias=True,
                                     activation='linear')]
@@ -1235,7 +922,7 @@ class ResNetBottleneckBlock(Sequential):
     upscale_factor = 4
 
     def __init__(self, input_shape, num_filters, stride=1, dilation=(1, 1), activation='relu', downsample=False,
-                 layer_name='ResBottleneckBlock', normalization='bn', block=None, **kwargs):
+                 layer_name='Res Bottleneck Block', normalization='bn', block=None, **kwargs):
         """
 
         :param input_shape:
@@ -1305,7 +992,7 @@ class ResNetBottleneckBlock(Sequential):
 
 class NoiseResNetBlock(Layer):
     def __init__(self, input_shape, num_filters, noise_level=.1, activation='relu', left_branch=False,
-                 layer_name='NoiseResBlock', normalization='bn', groups=32, **kwargs):
+                 layer_name='Noise Res Block', normalization='bn', groups=32, **kwargs):
         """
 
         :param input_shape:
@@ -1323,6 +1010,7 @@ class NoiseResNetBlock(Layer):
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(NoiseResNetBlock, self).__init__(input_shape, layer_name)
+        from neuralnet.normalization import BatchNormLayer, GroupNormLayer
         self.num_filters = num_filters
         self.noise_level = noise_level
         self.activation = activation
@@ -1360,6 +1048,7 @@ class NoiseResNetBlock(Layer):
                    join([' '.join((k, str(v))) for k, v in kwargs.items()]))
 
     def _build_simple_block(self, block_name):
+        from neuralnet.normalization import BatchNormLayer, GroupNormLayer
         block = [PerturbativeLayer(self.input_shape, self.num_filters, noise_level=self.noise_level,
                                    activation=self.activation, no_bias=True, layer_name=self.layer_name+'_noise1')]
 
@@ -1390,7 +1079,7 @@ class NoiseResNetBlock(Layer):
         return utils.function[self.activation](output + res, **self.kwargs)
 
     @property
-    @validate
+    @utils.validate
     def output_shape(self):
         return self.block[-1].output_shape
 
@@ -1408,12 +1097,13 @@ class NoiseResNetBlock(Layer):
 
 class RecursiveResNetBlock(Layer):
     def __init__(self, input_shape, num_filters, filter_size, recursive=1, stride=(1, 1), dilation=(1, 1), activation='relu',
-                 layer_name='RecursiveResBlock', normalization='bn', groups=32, **kwargs):
+                 layer_name='Recursive Res Block', normalization='bn', groups=32, **kwargs):
         assert normalization in (
         None, 'bn', 'gn'), 'normalization must be either None, \'bn\' or \'gn\', got %s.' % normalization
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(RecursiveResNetBlock, self).__init__(input_shape, layer_name)
+        from neuralnet.normalization import BatchNormLayer, GroupNormLayer
         self.num_filters = num_filters
         self.filter_size = filter_size
         self.recursive = recursive
@@ -1463,6 +1153,7 @@ class RecursiveResNetBlock(Layer):
         return block
 
     def get_output(self, input):
+        from neuralnet.normalization import BatchNormLayer
         input = self.first_conv(input)
         first = input
         input = self.block(input) + first
@@ -1494,7 +1185,7 @@ class RecursiveResNetBlock(Layer):
 
 class DenseBlock(Layer):
     def __init__(self, input_shape, transit=False, num_conv_layer=6, growth_rate=32, dropout=False, activation='relu',
-                 layer_name='DenseBlock', pool_transition=True, normlization='bn', target='dev0', **kwargs):
+                 layer_name='Dense Block', pool_transition=True, normlization='bn', target='dev0', **kwargs):
         """
 
         :param input_shape:
@@ -1513,6 +1204,7 @@ class DenseBlock(Layer):
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(DenseBlock, self).__init__(tuple(input_shape), layer_name)
+        from neuralnet.normalization import BatchNormLayer, GroupNormLayer
         self.transit = transit
         self.num_conv_layer = num_conv_layer
         self.growth_rate = growth_rate
@@ -1548,6 +1240,7 @@ class DenseBlock(Layer):
         return block
 
     def _transition(self, input_shape, dropout, activation, layer_name='transition'):
+        from .resizing import PoolingLayer
         if self.pool_transition:
             block = self._bn_act_conv(input_shape, input_shape[1], 1, dropout, activation, layer_name=layer_name)
             block.append(PoolingLayer(block[-1].output_shape, (2, 2), mode='average_inc_pad', ignore_border=False,
@@ -1576,7 +1269,7 @@ class DenseBlock(Layer):
         return feed
 
     @property
-    @validate
+    @utils.validate
     def output_shape(self):
         if not self.transit:
             shape = (self.input_shape[0], self.input_shape[1] + self.growth_rate * self.num_conv_layer,
@@ -1594,325 +1287,6 @@ class DenseBlock(Layer):
                     layer.reset()
 
 
-class BatchNormLayer(Layer):
-    def __init__(self, input_shape, layer_name='BN', epsilon=1e-4, running_average_factor=1e-1, axes='spatial',
-                 activation='relu', no_scale=False, **kwargs):
-        '''
-
-        :param input_shape: (int, int, int, int) or (int, int)
-        :param layer_name: str
-        :param epsilon: float
-        :param running_average_factor: float
-        :param axes: 'spatial' or 'per-activation'
-        '''
-        super(BatchNormLayer, self).__init__(input_shape, layer_name)
-        self.epsilon = np.float32(epsilon)
-        self.running_average_factor = running_average_factor
-        self.activation = utils.function[activation] if not callable(activation) else activation
-        self.no_scale = no_scale
-        self.axes = (0,) + tuple(range(2, len(input_shape))) if axes == 'spatial' else (0,)
-        self.shape = (self.input_shape[1],) if axes == 'spatial' else self.input_shape[1:]
-        self.kwargs = kwargs
-
-        self.gamma_values = np.ones(self.shape, dtype=theano.config.floatX)
-        self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '/gamma', borrow=True)
-
-        self.beta_values = np.zeros(self.shape, dtype=theano.config.floatX)
-        self.beta = theano.shared(np.copy(self.beta_values), name=layer_name + '/beta', borrow=True)
-
-        self.running_mean = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                          name=layer_name + '/running_mean', borrow=True)
-        self.running_var = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                         name=layer_name + '/running_var', borrow=True)
-
-        self.params += [self.gamma, self.beta, self.running_mean, self.running_var]
-        self.trainable += [self.beta] if self. no_scale else [self.beta, self.gamma]
-        self.regularizable += [self.gamma] if not self.no_scale else []
-
-        if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
-            self.params += [self.alpha]
-            self.trainable += [self.alpha]
-            self.kwargs['alpha'] = self.alpha
-
-        self.descriptions = '{} BatchNorm Layer: shape: {} -> {} running_average_factor = {:.4f} activation: {}'\
-            .format(layer_name, self.input_shape, self.output_shape, self.running_average_factor, activation)
-
-    def batch_normalization_train(self, input):
-        out, _, _, mean_, var_ = T.nnet.bn.batch_normalization_train(input, self.gamma, self.beta, self.axes,
-                                                                     self.epsilon, self.running_average_factor,
-                                                                     self.running_mean, self.running_var)
-
-        # Update running mean and variance
-        # Tricks adopted from Lasagne implementation
-        # http://lasagne.readthedocs.io/en/latest/modules/layers/normalization.html
-        running_mean = theano.clone(self.running_mean, share_inputs=False)
-        running_var = theano.clone(self.running_var, share_inputs=False)
-        running_mean.default_update = mean_
-        running_var.default_update = var_
-        out += 0 * (running_mean + running_var)
-        return out
-
-    def batch_normalization_test(self, input):
-        out = T.nnet.bn.batch_normalization_test(input, self.gamma, self.beta, self.running_mean, self.running_var,
-                                                 axes=self.axes, epsilon=self.epsilon)
-        return out
-
-    def get_output(self, input):
-        return self.activation(self.batch_normalization_train(input) if self.training_flag
-                               else self.batch_normalization_test(input), **self.kwargs)
-
-    @property
-    @validate
-    def output_shape(self):
-        return tuple(self.input_shape)
-
-    def reset(self):
-        self.gamma.set_value(np.copy(self.gamma_values))
-        self.beta.set_value(np.copy(self.beta_values))
-        if self.activation is utils.function['prelu']:
-            self.alpha.set_value(np.float32(.1))
-
-
-class DecorrBatchNormLayer(Layer):
-    """
-    From the paper "Decorrelated Batch Normalization" - Lei Huang, Dawei Yang, Bo Lang, Jia Deng
-    """
-    def __init__(self, input_shape, layer_name='DBN', epsilon=1e-4, running_average_factor=1e-1, activation='relu',
-                 no_scale=False, **kwargs):
-        """
-
-        :param input_shape:
-        :param layer_name:
-        :param epsilon:
-        :param running_average_factor:
-        :param activation:
-        :param no_scale:
-        :param kwargs:
-        """
-        super(DecorrBatchNormLayer, self).__init__(input_shape, layer_name)
-        self.epsilon = np.float32(epsilon)
-        self.running_average_factor = running_average_factor
-        self.activation = utils.function[activation] if not callable(activation) else activation
-        self.no_scale = no_scale
-        self.axes = (0,) #+ tuple(range(2, len(input_shape)))
-        self.shape = (self.input_shape[1],)
-        self.kwargs = kwargs
-
-        self.gamma_values = np.ones(self.shape, dtype=theano.config.floatX)
-        self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '/gamma', borrow=True)
-
-        self.beta_values = np.zeros(self.shape, dtype=theano.config.floatX)
-        self.beta = theano.shared(np.copy(self.beta_values), name=layer_name + '/beta', borrow=True)
-
-        self.running_mean = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                          name=layer_name + '/running_mean', borrow=True)
-        self.running_var = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                         name=layer_name + '/running_var', borrow=True)
-
-        self.params += [self.gamma, self.beta, self.running_mean, self.running_var]
-        self.trainable += [self.beta] if self. no_scale else [self.beta, self.gamma]
-        self.regularizable += [self.gamma] if not self.no_scale else []
-
-        self.descriptions = '{} DecorrelatedBatchNorm Layer: shape: {} -> {} running_average_factor = {:.4f} activation: {}'\
-            .format(layer_name, self.input_shape, self.output_shape, self.running_average_factor, activation)
-
-    def batch_normalization_train(self, input):
-        out, _, _, mean_, var_ = T.nnet.bn.batch_normalization_train(input, self.gamma, self.beta, self.axes,
-                                                                     self.epsilon, self.running_average_factor,
-                                                                     self.running_mean, self.running_var)
-
-        # Update running mean and variance
-        # Tricks adopted from Lasagne implementation
-        # http://lasagne.readthedocs.io/en/latest/modules/layers/normalization.html
-        running_mean = theano.clone(self.running_mean, share_inputs=False)
-        running_var = theano.clone(self.running_var, share_inputs=False)
-        running_mean.default_update = mean_
-        running_var.default_update = var_
-        out += 0 * (running_mean + running_var)
-        return out
-
-    def batch_normalization_test(self, input):
-        out = T.nnet.bn.batch_normalization_test(input, self.gamma, self.beta, self.running_mean, self.running_var,
-                                                 axes=self.axes, epsilon=self.epsilon)
-        return out
-
-    def get_output(self, input):
-        m, c, h, w = T.shape(input)
-        X = input.dimshuffle((1, 0, 2, 3))
-        X = X.flatten(2)
-        Muy = T.mean(X, axis=1)
-        X_centered = X - Muy
-        Sigma = 1. / m * T.dot(X_centered, X_centered.T)
-        D, Lambda, _ = T.nlinalg.svd(Sigma)
-        Z = T.dot(T.dot(D, T.nlinalg.diag(T.sqrt(T.nlinalg.diag(Lambda)))), D.T)
-        X = T.dot(Z, X)
-        out = self.activation(self.batch_normalization_train(X.T) if self.training_flag
-                               else self.batch_normalization_test(X.T), **self.kwargs)
-        out = T.reshape(out.T, (c, m, h, w))
-        out = out.dimshuffle((1, 0, 2, 3))
-        return out
-
-    @property
-    @validate
-    def output_shape(self):
-        return tuple(self.input_shape)
-
-    def reset(self):
-        self.gamma.set_value(np.copy(self.gamma_values))
-        self.beta.set_value(np.copy(self.beta_values))
-
-
-class GroupNormLayer(Layer):
-    """
-    Implementation of the paper "Group Normalization" - Wu et al.
-    group = 1 -> Layer Normalization
-    group = input_shape[1] -> Instance Normalization
-    """
-    def __init__(self, input_shape, layer_name='GN', groups=32, epsilon=1e-4, activation='relu', **kwargs):
-        assert input_shape[1] / groups == input_shape[1] // groups, 'groups must divide the number of input channels.'
-
-        super(GroupNormLayer, self).__init__(tuple(input_shape), layer_name)
-        self.groups = groups
-        self.epsilon = np.float32(epsilon)
-        self.activation = utils.function[activation] if not callable(activation) else activation
-        self.kwargs = kwargs
-        self.gamma_values = np.ones(self.input_shape[1], dtype=theano.config.floatX)
-        self.gamma = theano.shared(np.copy(self.gamma_values), name=layer_name + '/gamma', borrow=True)
-
-        self.beta_values = np.zeros(self.input_shape[1], dtype=theano.config.floatX)
-        self.beta = theano.shared(np.copy(self.beta_values), name=layer_name + '/beta', borrow=True)
-
-        self.params += [self.gamma, self.beta]
-        self.trainable += [self.gamma, self.beta]
-        self.regularizable += [self.gamma]
-
-        if activation == 'prelu':
-            self.alpha = theano.shared(np.float32(.1), layer_name + '/alpha')
-            self.params += [self.alpha]
-            self.trainable += [self.alpha]
-            self.kwargs['alpha'] = self.alpha
-
-        self.descriptions = '{} GroupNorm Layer: shape: {} -> {} activation: {}'\
-            .format(layer_name, self.input_shape, self.output_shape, activation)
-
-    def get_output(self, input):
-        gamma = self.gamma.dimshuffle('x', 0, 'x', 'x')
-        beta = self.beta.dimshuffle('x', 0, 'x', 'x')
-        if self.groups == 1:
-            input_ = input.dimshuffle(1, 0, 2, 3)
-            ones = T.ones_like(T.mean(input_, (0, 2, 3), keepdims=True), 'float32')
-            zeros = T.zeros_like(T.mean(input_, (0, 2, 3), keepdims=True), 'float32')
-            output, _, _ = T.nnet.bn.batch_normalization_train(input_, ones, zeros, 'spatial', self.epsilon)
-            output = gamma * output.dimshuffle(1, 0, 2, 3) + beta
-        elif self.groups == self.input_shape[1]:
-            ones = T.ones_like(T.mean(input, (2, 3), keepdims=True), 'float32')
-            zeros = T.zeros_like(T.mean(input, (2, 3), keepdims=True), 'float32')
-            output, _, _ = T.nnet.bn.batch_normalization_train(input, ones, zeros, (2, 3))
-            output = gamma * output + beta
-        else:
-            n, c, h, w = T.shape(input)
-            input_ = T.reshape(input, (n, self.groups, -1, h, w))
-            mean = T.mean(input_, (2, 3, 4), keepdims=True)
-            var = T.var(input_, (2, 3, 4), keepdims=True)
-            input_ = (input_ - mean) / T.sqrt(var + self.epsilon)
-            input_ = T.reshape(input_, (n, c, h, w))
-            output = gamma * input_ + beta
-        return self.activation(output, **self.kwargs)
-
-    @property
-    def output_shape(self):
-        return tuple(self.input_shape)
-
-    def reset(self):
-        self.gamma.set_value(np.copy(self.gamma_values))
-        self.beta.set_value(np.copy(self.beta_values))
-        if self.activation is utils.function['prelu']:
-            self.alpha.set_value(np.float32(.1))
-
-
-class BatchRenormLayer(Layer):
-    def __init__(self, input_shape, layer_name='BRN', epsilon=1e-4, r_max=1, d_max=0, running_average_factor=0.1,
-                 axes='spatial', activation='relu'):
-        '''
-
-        :param input_shape: (int, int, int, int) or (int, int)
-        :param layer_name: str
-        :param epsilon: float
-        :param running_average_factor: float
-        :param axes: 'spatial' or 'per-activation'
-        '''
-        super(BatchRenormLayer, self).__init__(tuple(input_shape), layer_name)
-        self.epsilon = epsilon
-        self.running_average_factor = running_average_factor
-        self.activation = utils.function[activation] if not callable(activation) else activation
-        self.r_max = theano.shared(np.float32(r_max), name=layer_name + 'rmax')
-        self.d_max = theano.shared(np.float32(d_max), name=layer_name + 'dmax')
-        self.axes = (0,) + tuple(range(2, len(input_shape))) if axes == 'spatial' else (0,)
-        self.shape = (self.input_shape[1],) if axes == 'spatial' else self.input_shape[1:]
-
-        self.gamma_values = np.ones(self.shape, dtype=theano.config.floatX)
-        self.beta_values = np.zeros(self.shape, dtype=theano.config.floatX)
-        self.gamma = theano.shared(self.gamma_values, name=layer_name + '/gamma', borrow=True)
-        self.beta = theano.shared(self.beta_values, name=layer_name + '/beta', borrow=True)
-        self.running_mean = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                          name=layer_name + '/running_mean', borrow=True)
-        self.running_var = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
-                                         name=layer_name + '/running_var', borrow=True)
-        self.params += [self.gamma, self.beta, self.running_mean, self.running_var]
-        self.trainable += [self.gamma, self.beta]
-        self.regularizable.append(self.gamma)
-        self.descriptions = '{} Batch Renorm Layer: running_average_factor = {:.4f}'.format(layer_name, self.running_average_factor)
-
-    def get_output(self, input):
-        batch_mean = T.mean(input, axis=self.axes)
-        batch_std = T.sqrt(T.var(input, axis=self.axes) + 1e-10)
-        r = T.clip(batch_std / T.sqrt(self.running_var + 1e-10), -self.r_max, self.r_max)
-        d = T.clip((batch_mean - self.running_mean) / T.sqrt(self.running_var + 1e-10), -self.d_max, self.d_max)
-        out = T.nnet.bn.batch_normalization_test(input, self.gamma, self.beta, batch_mean - d * batch_std / (r + 1e-10),
-                                                 T.sqr(batch_std / (r + 1e-10)), axes=self.axes, epsilon=self.epsilon)
-        if self.training_flag:
-            # Update running mean and variance
-            # Tricks adopted from Lasagne implementation
-            # http://lasagne.readthedocs.io/en/latest/modules/layers/normalization.html
-            m = T.cast(T.prod(input.shape) / T.prod(self.gamma.shape), 'float32')
-            running_mean = theano.clone(self.running_mean, share_inputs=False)
-            running_var = theano.clone(self.running_var, share_inputs=False)
-            running_mean.default_update = running_mean + self.running_average_factor * (batch_mean - running_mean)
-            running_var.default_update = running_var * (1. - self.running_average_factor) + \
-                                         self.running_average_factor * (m / (m - 1)) * T.sqr(batch_std)
-            out += 0 * (running_mean + running_var)
-        return self.activation(out)
-
-    @property
-    @validate
-    def output_shape(self):
-        return tuple(self.input_shape)
-
-    def reset(self):
-        self.gamma.set_value(self.gamma_values)
-        self.beta.set_value(self.beta_values)
-
-
-class AdaptiveInstanceNorm2DLayer(Layer):
-    def __init__(self, input_shape, epsilon=1e-5, layer_name='Adaptive Instance Norm'):
-        super(AdaptiveInstanceNorm2DLayer, self).__init__(input_shape, layer_name)
-        self.epsilon = epsilon
-        self.descriptions = '{} Adaptive Instance Norm layer'.format(layer_name)
-
-    def get_output(self, input):
-        assert isinstance(input, (list, tuple)), 'input must be a list or tuple of input images and normalization params.'
-        input, params = input
-        scale = params[:, :self.input_shape[1]].dimshuffle(0, 1, 'x', 'x')
-        bias = params[:, self.input_shape[1]:].dimshuffle(0, 1, 'x', 'x')
-        output, _, _ = T.nnet.bn.batch_normalization_train(input, scale, bias, (2, 3))
-        return output
-
-    @property
-    def output_shape(self):
-        return self.input_shape
-
-
 class TransformerLayer(Layer):
     """Implementation of the bilinear interpolation transformer layer in https://arxiv.org/abs/1506.020250. Based on
     the implementation in Lasagne.
@@ -1920,12 +1294,14 @@ class TransformerLayer(Layer):
     is the vertical coordinates.
     """
 
-    def __init__(self, input_shape, transform_shape, downsample_factor=1, border_mode='nearest', layer_name='Transformer', **kwargs):
+    def __init__(self, input_shape, transform_shape, downsample_factor=1, border_mode='nearest',
+                 layer_name='Transformer', **kwargs):
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(TransformerLayer, self).__init__(tuple(input_shape), layer_name)
         self.transform_shape = tuple(transform_shape)
-        self.downsample_factor = (downsample_factor, downsample_factor) if isinstance(downsample_factor, int) else tuple(downsample_factor)
+        self.downsample_factor = (downsample_factor, downsample_factor) if isinstance(downsample_factor,
+                                                                                      int) else tuple(downsample_factor)
         self.border_mode = border_mode
         self.kwargs = kwargs
         self.descriptions = '%s Transformer layer.' % layer_name
@@ -1975,7 +1351,7 @@ class WarpingLayer(Layer):
         return output
 
     @property
-    @validate
+    @utils.validate
     def output_shape(self):
         return self.input_shape
 
@@ -1993,91 +1369,6 @@ class IdentityLayer(Layer):
         return input
 
 
-class Upsampling(Layer):
-    def __init__(self, input_shape, ratio=None, frac_ratio=None, layer_name='Upsampling', method='bilinear'):
-        if ratio != int(ratio):
-            raise NotImplementedError
-        if ratio and frac_ratio:
-            raise NotImplementedError
-        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
-        assert method.lower() in ('bilinear', 'nearest'), 'Unknown %s upsampling method.' % method
-
-        super(Upsampling, self).__init__(tuple(input_shape), layer_name)
-        self.ratio = ratio
-        self.frac_ratio = frac_ratio
-        self.method = method.lower()
-        self.descriptions = '{} x{} Resizing Layer {} -> {}'.format(layer_name, self.ratio, self.input_shape, self.output_shape)
-
-    def get_output(self, input):
-        if self.method == 'bilinear':
-            return T.nnet.abstract_conv.bilinear_upsampling(input, ratio=self.ratio) if self.ratio \
-                else T.nnet.abstract_conv.bilinear_upsampling(input, frac_ratio=self.frac_ratio)
-        else:
-            return T.repeat(T.repeat(input, self.ratio, 2), self.ratio, 3)
-
-    @property
-    @validate
-    def output_shape(self):
-        return (self.input_shape[0], self.input_shape[1], self.input_shape[2] * self.ratio, self.input_shape[3] * self.ratio)
-
-
-class ReshapingLayer(Layer):
-    def __init__(self, input_shape, new_shape, layer_name='reshape'):
-        super(ReshapingLayer, self).__init__(tuple(input_shape), layer_name)
-        self.new_shape = tuple(new_shape)
-        self.descriptions = 'Reshaping Layer: {} -> {}'.format(self.input_shape, self.output_shape)
-
-    def get_output(self, input):
-        return T.reshape(input, self.new_shape)
-
-    @property
-    @validate
-    def output_shape(self):
-        if -1 in self.new_shape:
-            if self.new_shape[0] == -1:
-                output = list(self.new_shape)
-                output[0] = None
-                return tuple(output)
-            else:
-                prod_shape = np.prod(self.input_shape[1:])
-                prod_new_shape = np.prod(self.new_shape) * -1
-                shape = [x if x != -1 else prod_shape // prod_new_shape for x in self.input_shape]
-                return tuple(shape)
-        else:
-            return tuple(self.new_shape)
-
-
-class ReflectLayer(Layer):
-    def __init__(self, input_shape, width, batch_ndim=2, layer_name='ReflectLayer'):
-        super(ReflectLayer, self).__init__(input_shape, layer_name)
-        self.width = width
-        self.batch_ndim = batch_ndim
-        self.descriptions = '{} Reflect layer: width {} no padding before {}'.format(layer_name, width, batch_ndim)
-
-    @property
-    def output_shape(self):
-        output_shape = list(self.input_shape)
-
-        if isinstance(self.width, int):
-            widths = [self.width] * (len(self.input_shape) - self.batch_ndim)
-        else:
-            widths = self.width
-
-        for k, w in enumerate(widths):
-            if output_shape[k + self.batch_ndim] is None:
-                continue
-            else:
-                try:
-                    l, r = w
-                except TypeError:
-                    l = r = w
-                output_shape[k + self.batch_ndim] += l + r
-        return tuple(output_shape)
-
-    def get_output(self, input):
-        return utils.reflect_pad(input, self.width, self.batch_ndim)
-
-
 class SlicingLayer(Layer):
     def __init__(self, input_shape, to_idx, from_idx=(0, 0), axes=(2, 3), layer_name='Slicing Layer'):
         '''
@@ -2088,7 +1379,10 @@ class SlicingLayer(Layer):
         :param axes:
         :param layer_name:
         '''
-        assert isinstance(to_idx, (int, list, tuple)) and isinstance(to_idx, (int, list, tuple)) and isinstance(to_idx, (int, list, tuple))
+        assert isinstance(to_idx, (int, list, tuple)) and isinstance(to_idx, (int, list, tuple)) and isinstance(to_idx,
+                                                                                                                (int,
+                                                                                                                 list,
+                                                                                                                 tuple))
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(SlicingLayer, self).__init__(tuple(input_shape), layer_name)
@@ -2115,7 +1409,7 @@ class SlicingLayer(Layer):
         return output
 
     @property
-    @validate
+    @utils.validate
     def output_shape(self):
         shape = list(self.input_shape)
         for idx, axis in enumerate(self.axes):
@@ -2124,7 +1418,7 @@ class SlicingLayer(Layer):
 
 
 class ConcatLayer(Layer):
-    def __init__(self, input_shapes, axis=1, layer_name='ConcatLayer'):
+    def __init__(self, input_shapes, axis=1, layer_name='Concat Layer'):
         super(ConcatLayer, self).__init__(input_shapes, layer_name=layer_name)
         self.axis = axis
         self.descriptions = ''.join(('%s Concat Layer: axis %d' % (layer_name, axis), ' '.join([str(x) for x in input_shapes]),
@@ -2157,16 +1451,17 @@ class SumLayer(Layer):
 
 
 class TransposingLayer(Layer):
-    def __init__(self, input_shape, transpose, layer_name='TransposeLayer'):
+    def __init__(self, input_shape, transpose, layer_name='Transpose Layer'):
         super(TransposingLayer, self).__init__(input_shape, layer_name)
         self.transpose = transpose
-        self.descriptions = '{} Transposing layer: {} -> {}'.format(layer_name, [i for i in range(len(input_shape))], transpose)
+        self.descriptions = '{} Transposing layer: {} -> {}'.format(layer_name, [i for i in range(len(input_shape))],
+                                                                    transpose)
 
     def get_output(self, input):
         return T.transpose(input, self.transpose)
 
     @property
-    @validate
+    @utils.validate
     def output_shape(self):
         return tuple([self.input_shape[i] for i in self.transpose])
 
@@ -2206,7 +1501,7 @@ class ScalingLayer(Layer):
     >>> layer.scales.get_value().shape
     (30, 50)
     """
-    def __init__(self, input_shape, scales=1, shared_axes='auto', layer_name='ScaleLayer'):
+    def __init__(self, input_shape, scales=1, shared_axes='auto', layer_name='Scale Layer'):
         super(ScalingLayer, self).__init__(input_shape, layer_name)
         if shared_axes == 'auto':
             # default: share scales over all but the second axis
@@ -2232,7 +1527,7 @@ class ScalingLayer(Layer):
         return input * self.scales.dimshuffle(*pattern)
 
     @property
-    @validate
+    @utils.validate
     def output_shape(self):
         return self.input_shape
 
@@ -2469,7 +1764,7 @@ class GRUCell(Layer):
 
 class ConvLSTMCell(Layer):
     def __init__(self, input_shape, filter_shape, use_peephole=False, backward=False, learn_init=False, grad_step=-1,
-                 grad_clip=0, activation='tanh', layer_name='ConvLSTMCell', **kwargs):
+                 grad_clip=0, activation='tanh', layer_name='Conv LSTMCell', **kwargs):
         assert isinstance(input_shape, (list, tuple)), 'input_shape must be a list or tuple, got %s.' % input_shape
         assert len(input_shape) == 5, 'input_shape must contain exactly 5 elements, got %d.' % len(input_shape)
 
@@ -2533,7 +1828,7 @@ class ConvLSTMCell(Layer):
 
 class AttConvLSTMCell(Layer):
     def __init__(self, input_shape, num_filters, filter_size, steps, use_peephole=False, learn_init=False, grad_step=-1,
-                 grad_clip=0, activation='tanh', layer_name='AttConvLSTMCell', **kwargs):
+                 grad_clip=0, activation='tanh', layer_name='AttConv LSTMCell', **kwargs):
         assert isinstance(input_shape, (list, tuple)), 'input_shape must be a list or tuple, got %s.' % input_shape
         assert len(input_shape) == 4, 'input_shape must contain exactly 4 elements, got %d.' % len(input_shape)
         assert isinstance(filter_size, (list, tuple, int)), 'filter_size must be a list, tuple or int, got %s.' % type(filter_size)
@@ -2628,23 +1923,12 @@ def set_training_status(training):
     Layer.set_training_status(training)
 
 
-def GlobalAveragePoolingLayer(input_shape, layer_name='GlbAvgPooling'):
-    return PoolingLayer(input_shape, input_shape[2:], True, (1, 1), (0, 0), 'average_exc_pad', layer_name)
-
-
-def MaxPoolingLayer(input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='MaxPooling'):
-    return PoolingLayer(input_shape, ws, ignore_border, stride, pad, 'max', layer_name)
-
-
-def AveragePoolingLayer(input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='AvgPooling'):
-    return PoolingLayer(input_shape, ws, ignore_border, stride, pad, 'average_exc_pad', layer_name)
-
-
 def ConvNormAct(input_shape, num_filters, filter_size, init=HeNormal(gain=1.), no_bias=True, border_mode='half',
-                stride=(1, 1), layer_name='ConvNormAct', activation='relu', dilation=(1, 1), epsilon=1e-4,
+                stride=(1, 1), layer_name='Conv Norm Act', activation='relu', dilation=(1, 1), epsilon=1e-4,
                 running_average_factor=1e-1, axes='spatial', no_scale=False, normalization='bn', groups=32, **kwargs):
     assert normalization in ('bn', 'gn'), 'normalization can be either \'bn\' or \'gn\', got %s' % normalization
 
+    from neuralnet.normalization import BatchNormLayer, GroupNormLayer
     block = Sequential(input_shape=input_shape, layer_name=layer_name)
     block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, init, no_bias, border_mode, stride,
                                     dilation, layer_name+'_conv', 'linear', **kwargs))
@@ -2656,7 +1940,7 @@ def ConvNormAct(input_shape, num_filters, filter_size, init=HeNormal(gain=1.), n
     return block
 
 
-def StackingConv(input_shape, num_layers, num_filters, filter_size=3, batch_norm=False, layer_name='StackingConv',
+def StackingConv(input_shape, num_layers, num_filters, filter_size=3, batch_norm=False, layer_name='Stacking Conv',
                  init=HeNormal(gain=1.), no_bias=True, border_mode='half', stride=1, dilation=(1, 1), activation='relu', **kwargs):
     assert num_layers > 1, 'num_layers must be greater than 1, got %d' % num_layers
 
@@ -2672,25 +1956,8 @@ def StackingConv(input_shape, num_layers, num_filters, filter_size=3, batch_norm
     return block
 
 
-def ReflectPaddingConv(input_shape, num_filters, filter_size=3, stride=1, activation='relu', use_batchnorm=True,
-                       layer_name='ReflectPaddingConv', **kwargs):
-    assert filter_size % 2 == 1
-    pad_size = filter_size >> 1
-    block = Sequential(input_shape=input_shape, layer_name=layer_name)
-    block.append(ReflectLayer(block.output_shape, pad_size, layer_name=layer_name+'/Reflect'))
-    if use_batchnorm:
-        block.append(
-            ConvNormAct(block.output_shape, num_filters, filter_size, Normal(.02), border_mode=0, stride=stride,
-                        activation=activation, layer_name=layer_name + '/conv_bn_act', normalization='gn',
-                        groups=num_filters))
-    else:
-        block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, Normal(.02), border_mode=0,
-                                        stride=stride, activation=activation, layer_name=layer_name+'/conv'))
-    return block
-
-
 def NetworkInNetworkBlock(input_shape, num_filters, filter_size, num_layers=2, num_nodes=(96, 96), activation='relu',
-                          layer_name='NetworkInNetworkBlock', **kwargs):
+                          layer_name='NetworkInNetwork', **kwargs):
         assert len(
             num_nodes) == num_layers, 'The number of element in num_nodes must be equal to num_layers, got %d and %d.' % (
             len(num_nodes), num_layers)
@@ -2701,30 +1968,6 @@ def NetworkInNetworkBlock(input_shape, num_filters, filter_size, num_layers=2, n
         for i in range(num_layers):
             block.append(ConvolutionalLayer(block.output_shape, num_nodes[i], 1, activation=activation,
                                             layer_name=layer_name + '/conv1_%d' % (i + 1), **kwargs))
-        return block
-
-
-def MeanPoolConvLayer(input_shape, num_filters, filter_size, activation='linear', ws=(2, 2), init=HeNormal(gain=1.),
-                      no_bias=False, layer_name='Mean Pool Conv', **kwargs):
-        assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[3] // 2, 'Input must have even shape.'
-
-        block = Sequential(input_shape=input_shape, layer_name=layer_name)
-        block.append(PoolingLayer(input_shape, ws, stride=ws, ignore_border=True, mode='average_exc_pad',
-                                  layer_name=layer_name+'/meanpool'))
-        block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, init, no_bias,
-                                        layer_name=layer_name+'/conv', activation=activation, **kwargs))
-        return block
-
-
-def ConvMeanPoolLayer(input_shape, num_filters, filter_size, activation='linear', ws=(2, 2), init=HeNormal(gain=1.),
-                      no_bias=False, layer_name='Conv Mean Pool', **kwargs):
-        assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[3] // 2, 'Input must have even shape.'
-
-        block = Sequential(input_shape=input_shape, layer_name=layer_name)
-        block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, init, no_bias,
-                                        layer_name=layer_name + '/conv', activation=activation, **kwargs))
-        block.append(PoolingLayer(block.output_shape, ws, stride=ws, ignore_border=True, mode='average_exc_pad',
-                                  layer_name=layer_name+'/meanpool'))
         return block
 
 

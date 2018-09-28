@@ -19,6 +19,14 @@ __all__ = ['ConfigParser', 'DataManager']
 thread_lock = threading.Lock()
 
 
+def validate(func):
+    """make sure output shape is a list of ints"""
+    def func_wrapper(self):
+        out = [int(x) if x is not None else x for x in func(self)]
+        return tuple(out)
+    return func_wrapper
+
+
 def deprecated(version=None, message=None):
     if version is None:
         version = __version__
@@ -945,11 +953,11 @@ def max_singular_value(W, u=None, lp=1):
     return sigma, _u, _v
 
 
-def spectral_normalize(W, u=None):
-    u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype('float32'), 'u') if u is None else u
+def spectral_normalize(W, u_=None):
+    u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype('float32'), 'u') if u_ is None else u_
     sigma, _u, _ = max_singular_value(W, u)
     W /= (sigma + 1e-12)
-    return (W, _u) if u else (W, _u, u)
+    return (W, _u) if u_ else (W, _u, u)
 
 
 def make_one_hot(label, dim):
