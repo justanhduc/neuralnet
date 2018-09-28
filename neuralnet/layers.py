@@ -329,6 +329,32 @@ class FullyConnectedLayer(Layer):
 FCLayer = FullyConnectedLayer
 
 
+class SqueezeAndExcitationBlock(Sequential):
+    def __init__(self, input_shape, ratio=4, activation='relu', layer_name='SE Block', **kwargs):
+        super(SqueezeAndExcitationBlock, self).__init__(input_shape=input_shape, layer_name=layer_name)
+        from neuralnet.resizing import GlobalAveragePoolingLayer
+        self.ratio = ratio
+        self.activation = activation
+        self.kwargs = kwargs
+        self.descriptions = '{} SE Block: ratio {} act {}'.format(layer_name, ratio, activation)
+        block = Sequential(input_shape=input_shape, layer_name=layer_name+'/scaling')
+        block.append(GlobalAveragePoolingLayer(block.output_shape, block.layer_name+'/gap'))
+        block.append(FCLayer(block.output_shape, input_shape[1] // ratio, activation=activation,
+                             layer_name=block.layer_name + '/fc1'))
+        block.append(
+            FCLayer(block.output_shape, input_shape[1], activation='sigmoid', layer_name=block.layer_name + '/fc2'))
+        self.append(block)
+
+    def get_output(self, input):
+        scale = self(input)
+        return input * scale.dimshuffle(0, 1, 'x', 'x')
+
+    @property
+    @utils.validate
+    def output_shape(self):
+        return self.input_shape
+
+
 class ConvolutionalLayer(Layer):
     def __init__(self, input_shape, num_filters, filter_size, init=HeNormal(gain=1.), no_bias=True, border_mode='half',
                  stride=(1, 1), dilation=(1, 1), layer_name='Conv2D Layer', activation='relu', **kwargs):
