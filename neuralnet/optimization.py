@@ -65,12 +65,10 @@ class AdaDelta(Optimizer):
     def get_updates(self, params, grads):
         updates = OrderedDict()
         for param, grad in zip(params, grads):
-            Eg2_i = theano.shared(np.zeros(param.get_value(borrow=True).shape, dtype=theano.config.floatX),
-                                broadcastable=param.broadcastable)
-            delta_i_prev = theano.shared(np.zeros(param.get_value(borrow=True).shape, dtype=theano.config.floatX),
-                                broadcastable=param.broadcastable)
-            Edelx2_i = theano.shared(np.zeros(param.get_value(borrow=True).shape, dtype=theano.config.floatX),
-                                broadcastable=param.broadcastable)
+            value = param.get_value()
+            Eg2_i = theano.shared(np.zeros_like(value), param.name+'_grad_sqr_mva', broadcastable=param.broadcastable)
+            delta_i_prev = theano.shared(np.zeros_like(value), param.name+'_prev_grad', broadcastable=param.broadcastable)
+            Edelx2_i = theano.shared(np.zeros_like(value), param.name+'_velo_sqr_mva', broadcastable=param.broadcastable)
             self.params += [Eg2_i, delta_i_prev, Edelx2_i]
 
             delta_i = T.sqrt(Edelx2_i + self.epsilon) / T.sqrt(Eg2_i + self.epsilon) * grad
@@ -141,8 +139,7 @@ class SGDMomentum(Optimizer):
 
         for param in params:
             value = param.get_value(borrow=True)
-            velocity = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                                     broadcastable=param.broadcastable)
+            velocity = theano.shared(np.zeros_like(value), param.name+'_prev_velo', broadcastable=param.broadcastable)
             self.params.append(velocity)
 
             x = self.alpha * velocity + updates[param]
@@ -194,8 +191,7 @@ class SGDMomentum(Optimizer):
 
         for param in params:
             value = param.get_value(borrow=True)
-            velocity = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                                     broadcastable=param.broadcastable)
+            velocity = theano.shared(np.zeros_like(value), param.name+'_prev_velo', broadcastable=param.broadcastable)
             self.params.append(velocity)
 
             x = self.alpha * velocity + updates[param] - param
@@ -217,8 +213,8 @@ class AdaGrad(Optimizer):
     def get_updates(self, params, grads):
         updates = OrderedDict()
         for param, grad in zip(params, grads):
-            grad_prev = theano.shared(np.zeros(param.get_value(borrow=True).shape, dtype=theano.config.floatX),
-                                broadcastable=param.broadcastable)
+            value = param.get_value()
+            grad_prev = theano.shared(np.zeros_like(value), param.name+'_grad_sqr_sum', broadcastable=param.broadcastable)
             self.params.append(grad_prev)
 
             updates[grad_prev] = grad_prev + grad**2
@@ -240,8 +236,8 @@ class RMSprop(Optimizer):
     def get_updates(self, params, grads):
         updates = OrderedDict()
         for param, grad in zip(params, grads):
-            grad2_prev = theano.shared(np.zeros(param.get_value(borrow=True).shape, dtype=theano.config.floatX),
-                                broadcastable=param.broadcastable)
+            value = param.get_value()
+            grad2_prev = theano.shared(np.zeros_like(value), param.name+'_grad_sqr_mva', broadcastable=param.broadcastable)
             self.params.append(grad2_prev)
 
             updates[grad2_prev] = self.gamma * grad2_prev + (1. - self.gamma) * grad ** 2
@@ -272,8 +268,8 @@ class Adam(Optimizer):
         a_t = self.eta * T.sqrt(one - self.beta2 ** t) / (one - self.beta1 ** t)
         for param, g_t in zip(params, grads):
             value = param.get_value(borrow=True)
-            m_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype), param.name + '_grad_mva', broadcastable=param.broadcastable)
-            v_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype), param.name + '_grad_sq_mva', broadcastable=param.broadcastable)
+            m_prev = theano.shared(np.zeros_like(value), param.name + '_grad_mva', broadcastable=param.broadcastable)
+            v_prev = theano.shared(np.zeros_like(value), param.name + '_grad_sqr_mva', broadcastable=param.broadcastable)
             self.params += [m_prev, v_prev]
 
             m_t = self.beta1 * m_prev + (one - self.beta1) * g_t
@@ -310,8 +306,8 @@ class AdaMax(Optimizer):
         a_t = self.eta / (one - self.beta1 ** t)
         for param, g_t in zip(params, grads):
             value = param.get_value(borrow=True)
-            m_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype), broadcastable=param.broadcastable)
-            u_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype), broadcastable=param.broadcastable)
+            m_prev = theano.shared(np.zeros_like(value), param.name+'_grad_mva', broadcastable=param.broadcastable)
+            u_prev = theano.shared(np.zeros_like(value), param.name+'_abs_grad_mva', broadcastable=param.broadcastable)
             self.params += [m_prev, u_prev]
 
             m_t = self.beta1 * m_prev + (one - self.beta1) * g_t
@@ -349,8 +345,8 @@ class NAdam(Optimizer):
         t = t_prev + 1
         for param, g_t in zip(params, grads):
             value = param.get_value(borrow=True)
-            m_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
-            n_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
+            m_prev = theano.shared(np.zeros_like(value), param.name+'_grad_mva', broadcastable=param.broadcastable)
+            n_prev = theano.shared(np.zeros_like(value), param.name+'_grad_sqr_mva', broadcastable=param.broadcastable)
             self.params += [m_prev, n_prev]
 
             beta1_t = self.decay(self.beta1, t)
@@ -397,9 +393,9 @@ class AMSGrad(Optimizer):
         a_t = eta_t * T.sqrt(T.constant(1.) - self.beta2 ** t) / (T.constant(1.) - self.beta1 ** t)
         for param, g_t in zip(params, grads):
             value = param.get_value(borrow=True)
-            m_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
-            v_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
-            v_hat_prev = theano.shared(np.zeros(value.shape, value.dtype), broadcastable=param.broadcastable)
+            m_prev = theano.shared(np.zeros_like(value), param.name+'_grad_mva', broadcastable=param.broadcastable)
+            v_prev = theano.shared(np.zeros_like(value), param.name+'_grad_sqr_mva', broadcastable=param.broadcastable)
+            v_hat_prev = theano.shared(np.zeros_like(value), param.name+'_grad_sqr_velo', broadcastable=param.broadcastable)
             self.params += [m_prev, v_prev, v_hat_prev]
 
             m_t = self.beta1 * m_prev + (1. - self.beta1) * g_t
@@ -494,7 +490,7 @@ def adamax(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by
 
 
 def anneal_learning_rate(lr, t, method='half-life', **kwargs):
-    if method not in ('half-life', 'step', 'exponential', 'inverse'):
+    if method not in ('half-life', 'step', 'exponential', 'inverse', 'linear'):
         raise ValueError('Unknown annealing method.')
     if not isinstance(lr, T.sharedvar.ScalarSharedVariable):
         raise TypeError('lr must be a shared variable, got %s.' % type(lr))
@@ -519,6 +515,12 @@ def anneal_learning_rate(lr, t, method='half-life', **kwargs):
     elif method == 'exponential':
         decay = kwargs.pop('decay', 1e-4)
         lr.set_value(np.float32(lr_ * np.exp(-decay * t)))
+    elif method == 'linear':
+        num_iters = kwargs.pop('num_iters', None)
+        if num_iters is None:
+            raise ValueError('num_iters must be provided.')
+
+        lr.set_value(np.float32(lr_ * (1 - t / num_iters)))
     else:
         decay = kwargs.pop('decay', .01)
         lr.set_value(np.float32(lr_ * 1. / (1. + decay * t)))

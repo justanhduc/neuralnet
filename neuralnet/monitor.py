@@ -12,17 +12,22 @@ import pickle as pickle
 from scipy.misc import imsave
 import os
 from shutil import copyfile
+import visdom
+import time
 
 from neuralnet import utils, model
 
 
 class Monitor(utils.ConfigParser):
-    def __init__(self, config_file=None, model_name='my_model', root='results', current_folder=None, checkpoint=0):
+    def __init__(self, config_file=None, model_name='my_model', root='results', current_folder=None, checkpoint=0,
+                 valid_freq=None):
         super(Monitor, self).__init__(config_file)
         self.__num_since_beginning = collections.defaultdict(lambda: {})
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [checkpoint]
+        self.__timer = time.time()
+        self.valid_freq = valid_freq if config_file else self.config['training']['validation_frequency']
 
         if self.config:
             self.name = self.config['model']['name']
@@ -54,6 +59,14 @@ class Monitor(utils.ConfigParser):
             copyfile(config_file, '%s/network_config.config' % self.current_folder)
         self.dump_files = collections.OrderedDict()
         print('Result folder: %s' % self.current_folder)
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.__iter[0] % self.valid_freq == 0:
+            self.flush()
+        self.tick()
 
     def dump_model(self, network):
         assert isinstance(network, model.Model), 'network must be an instance of Model, got {}.'.format(type(network))
@@ -116,7 +129,8 @@ class Monitor(utils.ConfigParser):
         with open(self.current_folder + '/log.pkl', 'wb') as f:
             pickle.dump(dict(self.__num_since_beginning), f, pickle.HIGHEST_PROTOCOL)
 
-        print("Iteration {}\t{}".format(self.__iter[0], "\t".join(prints)))
+        print("Elapsed time {:.2f}min \t Iteration {}\t{}".format((time.time() - self.__timer) / 60., self.__iter[0],
+                                                                  "\t".join(prints)))
 
     def dump(self, obj, file, keep=-1):
         assert isinstance(keep, int), 'keep must be an int, got %s' % type(keep)
@@ -189,9 +203,6 @@ class Monitor(utils.ConfigParser):
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [0]
+        self.__timer = 0.
 
     imwrite = save_image
-
-
-if __name__ == '__main__':
-    pass
