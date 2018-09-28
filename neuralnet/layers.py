@@ -22,7 +22,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'IdentityLayer', 'DropoutLayer', 'InceptionModule1', 'InceptionModule2', 'InceptionModule3',
            'NetworkInNetworkBlock', 'SoftmaxLayer', 'TransposingLayer', 'set_training_status', 'WarpingLayer',
            'NoiseResNetBlock', 'set_training_on', 'set_training_off', 'PreprocessingLayer', 'Conv2DLayer',
-           'Deconv2DLayer', 'FCLayer']
+           'Deconv2DLayer', 'FCLayer', 'SqueezeAndExcitationBlock']
 
 
 class NetMethod:
@@ -851,7 +851,7 @@ class ResNetBlock(Sequential):
     upscale_factor = 1
 
     def __init__(self, input_shape, num_filters, stride=(1, 1), dilation=(1, 1), activation='relu', downsample=None,
-                 layer_name='Res Block', normalization='bn', groups=32, block=None, **kwargs):
+                 layer_name='Res Block', normalization='bn', groups=32, block=None, se_block=False, **kwargs):
         """
 
         :param input_shape:
@@ -883,6 +883,7 @@ class ResNetBlock(Sequential):
                                                stride=self.stride[0], dilation=self.dilation, activation=self.activation,
                                                normalization=self.normalization, block_name=name,
                                                **self.kwargs) if block else self._build_simple_block(name)
+        self.se_block = se_block
         self.kwargs = kwargs
 
         if activation == 'prelu':
@@ -902,6 +903,10 @@ class ResNetBlock(Sequential):
                                   else GroupNormLayer(downsample[-1].output_shape, layer_name=layer_name + '/down_gn',
                                                       groups=groups, activation='linear'))
             self.append(downsample)
+
+        if se_block:
+            ratio = kwargs.pop('ratio', 4)
+            self.append(SqueezeAndExcitationBlock(self.output_shape, ratio, activation, layer_name+'/se', **kwargs))
 
         self.descriptions = '{} ResNet Basic Block {} -> {} {} filters stride {} dilation {} {} {}'.\
             format(layer_name, self.input_shape, self.output_shape, num_filters, stride, dilation, activation,
@@ -936,6 +941,9 @@ class ResNetBlock(Sequential):
 
         if self.downsample:
             res = self[self.layer_name+'/down'](res)
+
+        if self.se_block:
+            output = self[self.layer_name+'/se'](output)
         return utils.function[self.activation](output + res, **self.kwargs)
 
     def reset(self):
