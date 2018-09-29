@@ -346,7 +346,7 @@ class SqueezeAndExcitationBlock(Sequential):
         self.append(block)
 
     def get_output(self, input):
-        scale = self(input)
+        scale = self[self.layer_name+'/scaling'](input)
         return input * scale.dimshuffle(0, 1, 'x', 'x')
 
     @property
