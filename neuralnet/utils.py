@@ -160,12 +160,9 @@ class DataManager(ConfigParser):
             queue.put(None)
 
         # start producer (in a background thread)
-        threads = []
-        for i in range(self.num_threads):
-            thread = threading.Thread(target=producer)
-            thread.daemon = True
-            thread.start()
-            threads.append(thread)
+        thread = threading.Thread(target=producer)
+        thread.daemon = True
+        thread.start()
 
         # run as consumer (read items from queue, in current thread)
         while True:
