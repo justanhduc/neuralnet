@@ -10,10 +10,9 @@ from scipy import misc
 from functools import reduce
 import cloudpickle as cpkl
 import pickle as pkl
-from collections import OrderedDict
 import logging
 
-from . import __version__
+from neuralnet import __version__
 
 __all__ = ['ConfigParser', 'DataManager']
 thread_lock = threading.Lock()
@@ -97,6 +96,8 @@ class DataManager(ConfigParser):
             'shuffle'] if config_file else False
         self.num_cached = kwargs.get('num_cached') if kwargs.get('num_cached') else self.config['data'][
             'num_cached'] if config_file else 10
+        self.num_threads = kwargs.get('num_threads') if kwargs.get('num_threads') else self.config['data'][
+            'num_threads'] if config_file else 10
         self.augmentation = kwargs.get('augmentation', None)
         self.cur_epoch = kwargs.get('checkpoint', 0)
         self.dataset = None
@@ -150,24 +151,29 @@ class DataManager(ConfigParser):
         Runs a generator in a background thread, caching up to `num_cached` items.
         """
         queue = Queue(maxsize=self.num_cached)
-        sentinel = 'end'
 
         # define producer (putting items into queue)
         def producer():
             for item in generator:
                 queue.put(item)
-            queue.put(sentinel)
+            queue.join()
+            queue.put(None)
 
         # start producer (in a background thread)
-        thread = threading.Thread(target=producer)
-        thread.daemon = True
-        thread.start()
+        threads = []
+        for i in range(self.num_threads):
+            thread = threading.Thread(target=producer)
+            thread.daemon = True
+            thread.start()
+            threads.append(thread)
 
         # run as consumer (read items from queue, in current thread)
-        item = queue.get()
-        while item is not 'end':
-            yield item
+        while True:
             item = queue.get()
+            if item is None:
+                break
+            yield item
+            queue.task_done()
 
     def update_input(self, data):
         if isinstance(self.placeholders, (list, tuple)) and isinstance(data, (list, tuple)):
