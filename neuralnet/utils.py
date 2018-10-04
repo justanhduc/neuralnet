@@ -935,8 +935,12 @@ def load_batch_checkpoints(files, weights):
             w.set_value(w_np)
 
 
-def lpnormalize(v, p=2, eps=1e-12):
-    return v / ((T.sum(v ** p)) ** np.float32(1. / p) + eps)
+def lp_normalize(v, p=2, eps=1e-12):
+    return v / (lp_norm(v, p) + eps)
+
+
+def lp_norm(v, p=2):
+    return T.sum(v ** p) ** np.float32(1 / p)
 
 
 def max_singular_value(W, u=None, lp=1):
@@ -950,8 +954,8 @@ def max_singular_value(W, u=None, lp=1):
         u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype('float32'), 'u')
     _u = u
     for _ in range(lp):
-        _v = lpnormalize(T.dot(_u, W))
-        _u = lpnormalize(T.dot(_v, W.T))
+        _v = lp_normalize(T.dot(_u, W))
+        _u = lp_normalize(T.dot(_v, W.T))
     sigma = T.sum(T.dot(T.dot(_u, W), _v.T))
     return sigma, _u, _v
 

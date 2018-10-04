@@ -24,6 +24,7 @@ class Monitor(utils.ConfigParser):
         self.__num_since_beginning = collections.defaultdict(lambda: {})
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
+        self.__tensor_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [checkpoint]
         self.__timer = time.time()
         self.valid_freq = self.config['training']['validation_frequency'] if config_file else valid_freq
@@ -78,8 +79,11 @@ class Monitor(utils.ConfigParser):
     def plot(self, name, value):
         self.__num_since_last_flush[name][self.__iter[0]] = value
 
-    def save_image(self, name, tensor_img, callback=lambda x: x):
-        self.__img_since_last_flush[name][self.__iter[0]] = callback(tensor_img)
+    def save_image(self, name, value, callback=lambda x: x):
+        self.__img_since_last_flush[name][self.__iter[0]] = callback(value)
+
+    def hist(self, name, value):
+        self.__tensor_since_last_flush[name][self.__iter[0]] = value
 
     def flush(self):
         prints = []
@@ -124,6 +128,15 @@ class Monitor(utils.ConfigParser):
                 else:
                     raise NotImplementedError
         self.__img_since_last_flush.clear()
+
+        for name, vals in list(self.__tensor_since_last_flush.items()):
+            k = max(list(self.__tensor_since_last_flush[name].keys()))
+            val = vals[k].flatten()
+            fig = plt.figure()
+            fig.clf()
+            plt.hist(val, bins='auto')
+            fig.savefig(self.current_folder + '/' + name.replace(' ', '_') + '_hist.jpg')
+        self.__tensor_since_last_flush.clear()
 
         with open(self.current_folder + '/log.pkl', 'wb') as f:
             pickle.dump(dict(self.__num_since_beginning), f, pickle.HIGHEST_PROTOCOL)
@@ -201,6 +214,7 @@ class Monitor(utils.ConfigParser):
         self.__num_since_beginning = collections.defaultdict(lambda: {})
         self.__num_since_last_flush = collections.defaultdict(lambda: {})
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
+        self.__tensor_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [0]
         self.__timer = 0.
 
