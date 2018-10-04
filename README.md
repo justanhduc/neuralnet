@@ -27,7 +27,7 @@ pip install neuralnet==0.1.0
 The version in this repo tends to be newer since I am lazy to make a new version available on Pypi when the change is tiny. To install the version in this repo execute
 
 ```
-pip install git+git://github.com/justanhduc/neuralnet.git@master (--ignore-installed) (--no-deps)
+pip install git+git://github.com/justanhduc/neuralnet.git@linux (--ignore-installed) (--no-deps)
 ```
 
 ## Usages
