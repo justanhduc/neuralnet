@@ -9,6 +9,7 @@ import theano
 import numpy as np
 from theano import tensor as T
 from theano.tensor.nnet import conv2d as conv
+from theano.tensor.nnet import conv3d as conv3
 from collections import OrderedDict
 from functools import partial
 
@@ -22,7 +23,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'IdentityLayer', 'DropoutLayer', 'InceptionModule1', 'InceptionModule2', 'InceptionModule3',
            'NetworkInNetworkBlock', 'SoftmaxLayer', 'TransposingLayer', 'set_training_status', 'WarpingLayer',
            'NoiseResNetBlock', 'set_training_on', 'set_training_off', 'PreprocessingLayer', 'Conv2DLayer',
-           'Deconv2DLayer', 'FCLayer', 'SqueezeAndExcitationBlock']
+           'Deconv2DLayer', 'FCLayer', 'SqueezeAndExcitationBlock', 'Conv3DLayer']
 
 
 class NetMethod:
@@ -357,7 +358,7 @@ class SqueezeAndExcitationBlock(Sequential):
 
 class ConvolutionalLayer(Layer):
     def __init__(self, input_shape, num_filters, filter_size, init=HeNormal(gain=1.), no_bias=True, border_mode='half',
-                 stride=(1, 1), dilation=(1, 1), layer_name='Conv2D Layer', activation='relu', **kwargs):
+                 stride=1, dilation=1, layer_name='Conv Layer', activation='relu', **kwargs):
         """
 
         :param input_shape:
@@ -374,20 +375,27 @@ class ConvolutionalLayer(Layer):
         :param target:
         :param kwargs:
         """
-        assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+        assert len(input_shape) in (4, 5), 'input_shape must have 4 or 5 elements. Received %d' % len(input_shape)
         assert isinstance(num_filters, int) and isinstance(filter_size, (int, list, tuple))
         assert isinstance(border_mode, (int, list, tuple, str)), 'border_mode should be either \'int\', ' \
                                                                  '\'list\', \'tuple\' or \'str\', got {}'.format(type(border_mode))
         assert isinstance(stride, (int, list, tuple))
 
         super(ConvolutionalLayer, self).__init__(input_shape, layer_name)
-        self.filter_shape = (num_filters, input_shape[1], filter_size[0], filter_size[1]) if isinstance(filter_size, (
-            list, tuple)) else (num_filters, input_shape[1], filter_size, filter_size)
+        if len(input_shape) == 4:
+            self.filter_shape = (num_filters, input_shape[1], filter_size[0], filter_size[1]) if isinstance(filter_size, (
+                list, tuple)) else (num_filters, input_shape[1], filter_size, filter_size)
+        else:
+            self.filter_shape = (
+                num_filters, input_shape[1], filter_size[0], filter_size[1], filter_size[2]) if isinstance(filter_size, (
+                list, tuple)) else (num_filters, input_shape[1], filter_size, filter_size, filter_size)
         self.no_bias = no_bias
         self.activation = utils.function[activation] if not callable(activation) else activation
         self.border_mode = border_mode
-        self.subsample = tuple(stride) if isinstance(stride, (tuple, list)) else (stride, stride)
-        self.dilation = dilation
+        self.subsample = tuple(stride) if isinstance(stride, (tuple, list)) else (stride, stride) if len(
+            input_shape) == 4 else (stride, stride, stride)
+        self.dilation = dilation if isinstance(dilation, (tuple, list)) else (dilation, dilation) if len(
+            input_shape) == 4 else (dilation, dilation, dilation)
         self.filter_flip = kwargs.pop('filter_flip', True)
         self.kwargs = kwargs
 
@@ -415,43 +423,85 @@ class ConvolutionalLayer(Layer):
                                      'activation: {} '.format(activation)))
 
     def get_output(self, input):
-        output = conv(input=input, filters=self.W, border_mode=self.border_mode, subsample=self.subsample,
-                      filter_flip=self.filter_flip, filter_shape=self.filter_shape)
+        if self.border_mode in ('ref', 'rep'):
+            assert len(self.input_shape) == 4, '\'ref\' and \'rep\' padding modes support only 4D input'
+            self.border_mode = 'half'
+            if self.border_mode == 'ref':
+                output = utils.replication_pad2d(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
+            else:
+                output = utils.reflect_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
+            output = conv(input=output, filters=self.W, border_mode='valid', subsample=self.subsample,
+                          filter_flip=self.filter_flip, filter_shape=self.filter_shape)
+        else:
+            output = conv(input=input, filters=self.W, border_mode=self.border_mode, subsample=self.subsample,
+                          filter_flip=self.filter_flip, filter_shape=self.filter_shape) if len(
+                self.input_shape) == 4 else conv3(input, self.W, border_mode=self.border_mode, subsample=self.subsample,
+                                                  filter_flip=self.filter_flip, filter_dilation=self.dilation)
         if not self.no_bias:
-            output += self.b.dimshuffle(('x', 0, 'x', 'x'))
+            output += self.b.dimshuffle(('x', 0, 'x', 'x')) if len(self.input_shape) == 4 else self.b.dimshuffle(
+                ('x', 0, 'x', 'x', 'x'))
         return self.activation(output, **self.kwargs)
 
     @property
     @utils.validate
     def output_shape(self):
         size = list(self.input_shape)
-        assert len(size) == 4, "Shape must consist of 4 elements only"
+        if len(size) == 4:
+            k1, k2 = self.filter_shape[2] + (self.filter_shape[2] - 1)*(self.dilation[0] - 1), \
+                     self.filter_shape[3] + (self.filter_shape[3] - 1)*(self.dilation[1] - 1)
 
-        k1, k2 = self.filter_shape[2] + (self.filter_shape[2] - 1)*(self.dilation[0] - 1), \
-                 self.filter_shape[3] + (self.filter_shape[3] - 1)*(self.dilation[1] - 1)
-
-        if isinstance(self.border_mode, str):
-            if self.border_mode == 'half':
-                p = (k1 // 2, k2 // 2)
-            elif self.border_mode == 'valid':
-                p = (0, 0)
-            elif self.border_mode == 'full':
-                p = (k1 - 1, k2 - 1)
+            if isinstance(self.border_mode, str):
+                if self.border_mode == 'half':
+                    p = (k1 // 2, k2 // 2)
+                elif self.border_mode == 'valid':
+                    p = (0, 0)
+                elif self.border_mode == 'full':
+                    p = (k1 - 1, k2 - 1)
+                elif self.border_mode in ('ref', 'rep'):
+                    p = (k1 // 2, k2 // 2)
+                else:
+                    raise NotImplementedError
+            elif isinstance(self.border_mode, (list, tuple)):
+                p = tuple(self.border_mode)
+            elif isinstance(self.border_mode, int):
+                p = (self.border_mode, self.border_mode)
             else:
                 raise NotImplementedError
-        elif isinstance(self.border_mode, (list, tuple)):
-            p = tuple(self.border_mode)
-        elif isinstance(self.border_mode, int):
-            p = (self.border_mode, self.border_mode)
+
+            size[2] = (size[2] - k1 + 2*p[0]) // self.subsample[0] + 1
+            size[3] = (size[3] - k2 + 2*p[1]) // self.subsample[1] + 1
+
+            size[1] = self.filter_shape[0] // self.kwargs.get('maxout_size') if self.activation == utils.maxout \
+                else self.filter_shape[0]
+            return tuple(size)
         else:
-            raise NotImplementedError
+            k1, k2, k3 = self.filter_shape[2] + (self.filter_shape[2] - 1) * (self.dilation[0] - 1), self.filter_shape[
+                3] + (self.filter_shape[3] - 1) * (self.dilation[1] - 1), self.filter_shape[4] + (
+                                     self.filter_shape[4] - 1) * (self.dilation[2] - 1)
 
-        size[2] = (size[2] - k1 + 2*p[0]) // self.subsample[0] + 1
-        size[3] = (size[3] - k2 + 2*p[1]) // self.subsample[1] + 1
+            if isinstance(self.border_mode, str):
+                if self.border_mode == 'half':
+                    p = (k1 // 2, k2 // 2, k3 // 2)
+                elif self.border_mode == 'valid':
+                    p = (0, 0, 0)
+                elif self.border_mode == 'full':
+                    p = (k1 - 1, k2 - 1, k3 - 1)
+                else:
+                    raise NotImplementedError
+            elif isinstance(self.border_mode, (list, tuple)):
+                p = tuple(self.border_mode)
+            elif isinstance(self.border_mode, int):
+                p = (self.border_mode, self.border_mode, self.border_mode)
+            else:
+                raise NotImplementedError
 
-        size[1] = self.filter_shape[0] // self.kwargs.get('maxout_size') if self.activation == utils.maxout \
-            else self.filter_shape[0]
-        return tuple(size)
+            size[2] = (size[2] - k1 + 2 * p[0]) // self.subsample[0] + 1
+            size[3] = (size[3] - k2 + 2 * p[1]) // self.subsample[1] + 1
+            size[4] = (size[4] - k3 + 2 * p[2]) // self.subsample[2] + 1
+
+            size[1] = self.filter_shape[0] // self.kwargs.get('maxout_size') if self.activation == utils.maxout \
+                else self.filter_shape[0]
+            return tuple(size)
 
     def reset(self):
         self.W.set_value(np.copy(self.W_values))
@@ -462,6 +512,7 @@ class ConvolutionalLayer(Layer):
 
 
 Conv2DLayer = ConvolutionalLayer
+Conv3DLayer = ConvolutionalLayer
 
 
 class PerturbativeLayer(Layer):
@@ -502,7 +553,7 @@ class PerturbativeLayer(Layer):
         input += self.noise.dimshuffle('x', 0, 1, 2)
         input = self.activation(input, **self.kwargs)
         kern = self.W.dimshuffle(0, 1, 'x', 'x')
-        output = T.nnet.conv2d(input, kern, border_mode='half')
+        output = conv(input, kern, border_mode='half')
         return output if self.no_bias else output + self.b.dimshuffle('x', 0, 'x', 'x')
 
     @property
@@ -1497,7 +1548,7 @@ class TransposingLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        return tuple([self.input_shape[i] for i in self.transpose])
+        return tuple([self.input_shape[i] if isinstance(i, int) else 1 for i in self.transpose])
 
 
 class ScalingLayer(Layer):

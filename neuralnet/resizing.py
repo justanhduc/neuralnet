@@ -2,7 +2,7 @@ import theano
 import numpy as np
 from theano import tensor as T
 from theano.tensor.nnet import conv2d as conv
-from theano.tensor.signal.pool import pool_2d as pool
+from theano.gpuarray.dnn import dnn_pool as pool
 from functools import partial
 import numbers
 
@@ -137,7 +137,8 @@ class PoolingLayer(Layer):
                                      ' stride: {}'.format(stride), ' {} -> {}'.format(input_shape, self.output_shape)))
 
     def get_output(self, input):
-        return pool(input, self.ws, self.ignore_border, self.stride, self.pad, self.mode)
+        return pool(input, self.ws, self.stride, self.mode, self.pad) if self.ignore_border else T.signal.pool.pool_2d(
+            input, self.ws, self.ignore_border, self.stride, self.pad, self.mode)
 
     @property
     @utils.validate
@@ -191,8 +192,8 @@ class DetailPreservingPoolingLayer(Layer):
                                                                                   self.output_shape)
 
     def __downsampling(self, input):
-        output = pool(input, self.ws, True, mode='average_exc_pad')
-        output = T.nnet.conv2d(output, self.kern, border_mode='half')
+        output = pool(input, self.ws, self.stride, 'average_exc_pad')
+        output = conv(output, self.kern, border_mode='half')
         return output
 
     def __penalty(self, x, lam):
@@ -208,8 +209,8 @@ class DetailPreservingPoolingLayer(Layer):
         down = self.__downsampling(input)
         down_up = utils.unpool(down, self.ws)
         W = alpha + self.__penalty(input - down_up, lam)
-        output = pool(input * W, self.ws, True, mode='average_exc_pad')
-        weight = 1. / pool(W, self.ws, True, mode='average_exc_pad')
+        output = pool(input * W, self.ws, mode='average_exc_pad')
+        weight = 1. / pool(W, self.ws, mode='average_exc_pad')
         return output * weight
 
     @property

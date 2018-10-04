@@ -770,20 +770,20 @@ def reflect_pad(x, padding, batch_ndim=2):
     out = T.zeros(output_shape)
 
     # Vertical Reflections
-    out = T.set_subtensor(out[:, :, :padding, padding:-padding],
-                          x[:, :, padding:0:-1, :])  # out[:,:,:width,width:-width] = x[:,:,width:0:-1,:]
-    out = T.set_subtensor(out[:, :, -padding:, padding:-padding],
-                          x[:, :, -2:-(2 + padding):-1, :])  # out[:,:,-width:,width:-width] = x[:,:,-2:-(2+width):-1,:]
+    out = T.set_subtensor(out[:, :, :widths[0], widths[1]:-widths[1]],
+                          x[:, :, widths[0]:0:-1, :])  # out[:,:,:width,width:-width] = x[:,:,width:0:-1,:]
+    out = T.set_subtensor(out[:, :, -widths[0]:, widths[1]:-widths[1]],
+                          x[:, :, -2:-(2 + widths[0]):-1, :])  # out[:,:,-width:,width:-width] = x[:,:,-2:-(2+width):-1,:]
 
     # Place X in out
     # out = T.set_subtensor(out[tuple(indices)], x) # or, alternative, out[width:-width,width:-width] = x
-    out = T.set_subtensor(out[:, :, padding:-padding, padding:-padding], x)  # out[:,:,width:-width,width:-width] = x
+    out = T.set_subtensor(out[:, :, widths[0]:-widths[0], widths[1]:-widths[1]], x)  # out[:,:,width:-width,width:-width] = x
 
     # Horizontal reflections
-    out = T.set_subtensor(out[:, :, :, :padding],
-                          out[:, :, :, (2 * padding):padding:-1])  # out[:,:,:,:width] = out[:,:,:,(2*width):width:-1]
-    out = T.set_subtensor(out[:, :, :, -padding:], out[:, :, :, -(padding + 2):-(
-            2 * padding + 2):-1])  # out[:,:,:,-width:] = out[:,:,:,-(width+2):-(2*width+2):-1]
+    out = T.set_subtensor(out[:, :, :, :widths[1]],
+                          out[:, :, :, (2 * widths[1]):widths[1]:-1])  # out[:,:,:,:width] = out[:,:,:,(2*width):width:-1]
+    out = T.set_subtensor(out[:, :, :, -widths[1]:], out[:, :, :, -(widths[1] + 2):-(
+            2 * widths[1] + 2):-1])  # out[:,:,:,-width:] = out[:,:,:,-(width+2):-(2*width+2):-1]
     return out
 
 
