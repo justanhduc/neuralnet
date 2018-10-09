@@ -224,15 +224,3 @@ def linspace(start, stop, num, dtype=None):
         y[-1] = stop
 
     return y.astype(dtype)
-
-
-if __name__ == '__main__':
-    import theano
-    x = T.scalar()
-    y = T.scalar()
-    z = T.scalar()
-    t = linspace(x, y, z)
-    f = theano.function([x, y, z], t)
-
-    print(f(10., 12., 3.))
-    np.linspace()

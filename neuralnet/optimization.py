@@ -17,7 +17,7 @@ from .model_zoo import Net
 
 sys.setrecursionlimit(10000)
 __all__ = ['sgd', 'sgdmomentum', 'adadelta', 'adagrad', 'adam', 'adamax', 'nadam', 'rmsprop', 'amsgrad',
-           'anneal_learning_rate']
+           'anneal_learning_rate', 'optimizer']
 
 
 class Optimizer(Net, metaclass=abc.ABCMeta):
@@ -415,40 +415,40 @@ class AMSGrad(Optimizer):
             param.set_value(param.get_value() * np.float32(0))
 
 
-def sgd(cost, params, eta=1e-3, clip_by_norm=False, return_op=False):
+def sgd(cost, params, lr=1e-3, clip_by_norm=False, return_op=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
         grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
-    sgd_op = VanillaSGD(eta)
+    sgd_op = VanillaSGD(lr)
     return (sgd_op, sgd_op.get_updates(params, grads)) if return_op else sgd_op.get_updates(params, grads)
 
 
-def adadelta(cost, params, rho=.95, epsilon=1e-6, clip_by_norm=False, return_op=False):
+def adadelta(cost, params, mom=.95, epsilon=1e-6, clip_by_norm=False, return_op=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
         grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
-    adadelta_op = AdaDelta(rho, epsilon)
+    adadelta_op = AdaDelta(mom, epsilon)
     return (adadelta_op, adadelta_op.get_updates(params, grads)) if return_op else adadelta_op.get_updates(params, grads)
 
 
-def adam(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by_norm=False, return_op=False):
+def adam(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by_norm=False, return_op=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
         grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
-    adam_op = Adam(alpha, beta1, beta2, epsilon)
+    adam_op = Adam(lr, beta1, beta2, epsilon)
     return (adam_op, adam_op.get_updates(params, grads)) if return_op else adam_op.get_updates(params, grads)
 
 
-def amsgrad(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x, clip_by_norm=False,
-            return_op=False):
+def amsgrad(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x, clip_by_norm=False,
+            return_op=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
         grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
-    amsgrad_op = AMSGrad(alpha, beta1, beta2, epsilon, decay)
+    amsgrad_op = AMSGrad(lr, beta1, beta2, epsilon, decay)
     return (amsgrad_op, amsgrad_op.get_updates(params, grads)) if return_op else amsgrad_op.get_updates(params, grads)
 
 
-def sgdmomentum(cost, params, lr, mom=.95, nesterov=False, clip_by_norm=False, return_op=False):
+def sgdmomentum(cost, params, lr, mom=.95, nesterov=False, clip_by_norm=False, return_op=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
         grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
@@ -456,36 +456,36 @@ def sgdmomentum(cost, params, lr, mom=.95, nesterov=False, clip_by_norm=False, r
     return (sgdmom_op, sgdmom_op.get_updates(params, grads)) if return_op else sgdmom_op.get_updates(params, grads)
 
 
-def rmsprop(cost, params, eta=1e-3, gamma=.9, epsilon=1e-6, clip_by_norm=False, return_op=False):
+def rmsprop(cost, params, lr=1e-3, mom=.9, epsilon=1e-6, clip_by_norm=False, return_op=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
         grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
-    rmsprop_op = RMSprop(eta, gamma, epsilon)
+    rmsprop_op = RMSprop(lr, mom, epsilon)
     return (rmsprop_op, rmsprop_op.get_updates(params, grads)) if return_op else rmsprop_op.get_updates(params, grads)
 
 
-def adagrad(cost, params, eta, epsilon=1e-6, clip_by_norm=False, return_op=False):
+def adagrad(cost, params, lr, epsilon=1e-6, clip_by_norm=False, return_op=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
         grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
-    adagrad_op = AdaGrad(eta, epsilon)
+    adagrad_op = AdaGrad(lr, epsilon)
     return (adagrad_op, adagrad_op.get_updates(params, grads)) if return_op else adagrad_op.get_updates(params, grads)
 
 
-def nadam(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x, clip_by_norm=False,
-          return_op=False):
+def nadam(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x, clip_by_norm=False,
+          return_op=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
         grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
-    nadam_op = NAdam(alpha, beta1, beta2, epsilon, decay)
+    nadam_op = NAdam(lr, beta1, beta2, epsilon, decay)
     return (nadam_op, nadam_op.get_updates(params, grads)) if return_op else nadam_op.get_updates(params, grads)
 
 
-def adamax(cost, params, alpha=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by_norm=False, return_op=False):
+def adamax(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by_norm=False, return_op=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
         grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
-    adamax_op = AdaMax(alpha, beta1, beta2, epsilon)
+    adamax_op = AdaMax(lr, beta1, beta2, epsilon)
     return (adamax_op, adamax_op.get_updates(params, grads)) if return_op else adamax_op.get_updates(params, grads)
 
 
@@ -638,3 +638,7 @@ def total_norm_constraint(tensor_vars, max_norm, epsilon=1e-7,
         return tensor_vars_scaled, norm
     else:
         return tensor_vars_scaled
+
+
+optimizer = {'sgd': sgd, 'sgdmomentum': sgdmomentum, 'adadelta': adadelta, 'adagrad': adagrad, 'adam': adam,
+             'adamax': adamax, 'nadam': nadam, 'rmsprop': rmsprop, 'amsgrad': amsgrad}

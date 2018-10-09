@@ -16,14 +16,14 @@ from functools import partial
 from neuralnet import utils
 from neuralnet.init import *
 
-__all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', 'TransformerLayer',
+__all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', 'SpatialTransformerLayer',
            'TransposedConvolutionalLayer', 'DenseBlock', 'SumLayer', 'StackingConv', 'ScalingLayer',
            'SlicingLayer', 'LSTMCell', 'ActivationLayer', 'AttConvLSTMCell', 'ConcatLayer', 'ConvLSTMCell',
            'ConvNormAct', 'RecursiveResNetBlock', 'ResNetBlock', 'ResNetBottleneckBlock', 'GRUCell',
            'IdentityLayer', 'DropoutLayer', 'InceptionModule1', 'InceptionModule2', 'InceptionModule3',
            'NetworkInNetworkBlock', 'SoftmaxLayer', 'TransposingLayer', 'set_training_status', 'WarpingLayer',
            'NoiseResNetBlock', 'set_training_on', 'set_training_off', 'PreprocessingLayer', 'Conv2DLayer',
-           'Deconv2DLayer', 'FCLayer', 'SqueezeAndExcitationBlock', 'Conv3DLayer']
+           'Deconv2DLayer', 'FCLayer', 'SqueezeAndExcitationBlock', 'Conv3DLayer', 'RNNBlockDNN']
 
 
 class NetMethod:
@@ -427,7 +427,7 @@ class ConvolutionalLayer(Layer):
             assert len(self.input_shape) == 4, '\'ref\' and \'rep\' padding modes support only 4D input'
             self.border_mode = 'half'
             if self.border_mode == 'ref':
-                output = utils.replication_pad2d(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
+                output = utils.replication_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
             else:
                 output = utils.reflect_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
             output = conv(input=output, filters=self.W, border_mode='valid', subsample=self.subsample,
@@ -445,63 +445,29 @@ class ConvolutionalLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        size = list(self.input_shape)
-        if len(size) == 4:
-            k1, k2 = self.filter_shape[2] + (self.filter_shape[2] - 1)*(self.dilation[0] - 1), \
-                     self.filter_shape[3] + (self.filter_shape[3] - 1)*(self.dilation[1] - 1)
+        shape = list(self.input_shape)
+        ks = [fs + (fs - 1) * (d - 1) for fs, d in zip(self.filter_shape[2:], self.dilation)]
 
-            if isinstance(self.border_mode, str):
-                if self.border_mode == 'half':
-                    p = (k1 // 2, k2 // 2)
-                elif self.border_mode == 'valid':
-                    p = (0, 0)
-                elif self.border_mode == 'full':
-                    p = (k1 - 1, k2 - 1)
-                elif self.border_mode in ('ref', 'rep'):
-                    p = (k1 // 2, k2 // 2)
-                else:
-                    raise NotImplementedError
-            elif isinstance(self.border_mode, (list, tuple)):
-                p = tuple(self.border_mode)
-            elif isinstance(self.border_mode, int):
-                p = (self.border_mode, self.border_mode)
+        if isinstance(self.border_mode, str):
+            if self.border_mode in ('half', 'ref', 'rep'):
+                p = [k >> 1 for k in ks]
+            elif self.border_mode == 'valid':
+                p = [0] * len(ks)
+            elif self.border_mode == 'full':
+                p = [k - 1 for k in ks]
             else:
                 raise NotImplementedError
-
-            size[2] = (size[2] - k1 + 2*p[0]) // self.subsample[0] + 1
-            size[3] = (size[3] - k2 + 2*p[1]) // self.subsample[1] + 1
-
-            size[1] = self.filter_shape[0] // self.kwargs.get('maxout_size') if self.activation == utils.maxout \
-                else self.filter_shape[0]
-            return tuple(size)
+        elif isinstance(self.border_mode, (list, tuple)):
+            p = tuple(self.border_mode)
+        elif isinstance(self.border_mode, int):
+            p = [self.border_mode] * len(ks)
         else:
-            k1, k2, k3 = self.filter_shape[2] + (self.filter_shape[2] - 1) * (self.dilation[0] - 1), self.filter_shape[
-                3] + (self.filter_shape[3] - 1) * (self.dilation[1] - 1), self.filter_shape[4] + (
-                                     self.filter_shape[4] - 1) * (self.dilation[2] - 1)
+            raise NotImplementedError
 
-            if isinstance(self.border_mode, str):
-                if self.border_mode == 'half':
-                    p = (k1 // 2, k2 // 2, k3 // 2)
-                elif self.border_mode == 'valid':
-                    p = (0, 0, 0)
-                elif self.border_mode == 'full':
-                    p = (k1 - 1, k2 - 1, k3 - 1)
-                else:
-                    raise NotImplementedError
-            elif isinstance(self.border_mode, (list, tuple)):
-                p = tuple(self.border_mode)
-            elif isinstance(self.border_mode, int):
-                p = (self.border_mode, self.border_mode, self.border_mode)
-            else:
-                raise NotImplementedError
-
-            size[2] = (size[2] - k1 + 2 * p[0]) // self.subsample[0] + 1
-            size[3] = (size[3] - k2 + 2 * p[1]) // self.subsample[1] + 1
-            size[4] = (size[4] - k3 + 2 * p[2]) // self.subsample[2] + 1
-
-            size[1] = self.filter_shape[0] // self.kwargs.get('maxout_size') if self.activation == utils.maxout \
-                else self.filter_shape[0]
-            return tuple(size)
+        shape[2:] = [(s - ks[idx] + 2 * p[idx]) // self.subsample[idx] + 1 for idx, s in enumerate(shape[2:])]
+        shape[1] = self.filter_shape[0] // self.kwargs.get('maxout_size') if self.activation == utils.maxout \
+            else self.filter_shape[0]
+        return tuple(shape)
 
     def reset(self):
         self.W.set_value(np.copy(self.W_values))
@@ -1372,22 +1338,22 @@ class DenseBlock(Layer):
                     layer.reset()
 
 
-class TransformerLayer(Layer):
+class SpatialTransformerLayer(Layer):
     """Implementation of the bilinear interpolation transformer layer in https://arxiv.org/abs/1506.020250. Based on
     the implementation in Lasagne.
     coordinates is a tensor of shape (n, 2, h, w). coordinates[:, 0, :, :] is the horizontal coordinates and the other
     is the vertical coordinates.
     """
 
-    def __init__(self, input_shape, transform_shape, downsample_factor=1, border_mode='nearest',
-                 layer_name='Transformer', **kwargs):
+    def __init__(self, input_shape, downsample_factor=1, border_mode='nearest', layer_name='Transformer', dnn=True,
+                 **kwargs):
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
-        super(TransformerLayer, self).__init__(tuple(input_shape), layer_name)
-        self.transform_shape = tuple(transform_shape)
+        super(SpatialTransformerLayer, self).__init__(input_shape, layer_name)
         self.downsample_factor = (downsample_factor, downsample_factor) if isinstance(downsample_factor,
                                                                                       int) else tuple(downsample_factor)
         self.border_mode = border_mode
+        self.dnn = dnn
         self.kwargs = kwargs
         self.descriptions = '%s Transformer layer.' % layer_name
 
@@ -1399,7 +1365,12 @@ class TransformerLayer(Layer):
 
     def get_output(self, inputs):
         input, theta = inputs
-        return utils.transform_affine(theta, input, self.downsample_factor, self.border_mode)
+        return theano.gpuarray.dnn.dnn_spatialtf(input, theta, 1. / np.float32(self.downsample_factor[0]),
+                                                 1. / np.float32(self.downsample_factor[
+                                                                     1])) if self.dnn else utils.transform_affine(theta,
+                                                                                                                  input,
+                                                                                                                  self.downsample_factor,
+                                                                                                                  self.border_mode)
 
 
 class WarpingLayer(Layer):
@@ -1768,6 +1739,52 @@ class LSTMCell(Layer):
     @property
     def output_shape(self):
         return self.input_shape[0], self.input_shape[1], self.num_units
+
+
+class RNNBlockDNN(Layer):
+    def __init__(self, input_shape, num_units, depth=1, type='lstm', direction='unidirectional', learn_init=False,
+                 layer_name='RNNBlock'):
+        """
+
+        :param input_shape: (timesteps, batch_size, input_dim)
+        :param num_units:
+        :param depth:
+        :param type:
+        :param direction:
+        :param learn_init:
+        :param layer_name:
+        """
+        super(RNNBlockDNN, self).__init__(input_shape, layer_name)
+        self.num_units = num_units
+        self.depth = depth
+        self.type = type
+        self.direction = direction
+        self.learn_init = learn_init
+        self.rnn = theano.gpuarray.dnn.RNNBlock(theano.config.floatX, num_units, depth, type)
+
+        n_in = int(np.prod(input_shape[2:]))
+        psize = self.rnn.get_param_size((input_shape[1], n_in))
+        self.W = theano.shared(np.zeros(psize, theano.config.floatX), layer_name + '_' + type + '/W')
+        self.params.append(self.W)
+        self.trainable.append(self.W)
+        self.regularizable.append(self.W)
+
+        self.init = [theano.shared(np.zeros((1, 1, num_units), 'float32'), layer_name + '_' + type + '/hid_init')]
+        if type == 'lstm':
+            self.init.append(
+                theano.shared(np.zeros((1, 1, num_units), 'float32'), layer_name + '_' + type + '/cell_init'))
+        if learn_init:
+            self.trainable += self.init
+
+        self.descriptions = '%s RNNBlock: %s shape = (%d, %d)' % (self.layer_name, type, n_in, num_units)
+
+    def get_output(self, input, **kwargs):
+        return_hid = kwargs.get('hid', False)
+        return self.rnn.apply(self.W, input, *self.init) if return_hid else self.rnn.apply(self.W, input, *self.init)[0]
+
+    @property
+    def output_shape(self):
+        return tuple([self.input_shape[0], self.num_units])
 
 
 class GRUCell(Layer):

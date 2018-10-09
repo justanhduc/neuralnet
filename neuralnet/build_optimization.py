@@ -8,7 +8,6 @@ from neuralnet import metrics
 from neuralnet import utils
 from neuralnet.optimization import *
 
-from theano import tensor as T
 import numpy as np
 
 
@@ -21,8 +20,6 @@ class Optimization(utils.ConfigParser):
         self.learning_rate = self.config['optimization'].get('learning_rate', 1e-3)
         self.momentum = self.config['optimization'].get('momentum', .95)
         self.epsilon = self.config['optimization'].get('epsilon', 1e-8)
-        self.gamma = self.config['optimization'].get('gamma', .9)
-        self.rho = self.config['optimization'].get('rho', .95)
         self.beta1 = self.config['optimization'].get('beta1', .9)
         self.beta2 = self.config['optimization'].get('beta2', .99)
         self.nesterov = self.config['optimization'].get('nesterov', False)
@@ -34,7 +31,6 @@ class Optimization(utils.ConfigParser):
         self.opt = None
 
     def build_cost(self, y_pred, y, regularizable=None):
-
         if self.cost_function.lower() == 'mse':
             cost = metrics.norm_error(y_pred, y)
         elif self.cost_function.lower() == 'sigmoid_ce':
@@ -49,43 +45,22 @@ class Optimization(utils.ConfigParser):
         return cost
 
     def build_updates(self, cost, trainable, **kwargs):
-        if not trainable:
-            raise ValueError('No trainable parameters are given.')
+        method = kwargs.pop('method', self.method)
+        if 'lr' not in kwargs.keys():
+            kwargs['lr'] = self.learning_rate
+        if 'mom' not in kwargs.keys():
+            kwargs['mom'] = self.momentum
+        if 'epsilon' not in kwargs.keys():
+            kwargs['epsilon'] = self.epsilon
+        if 'beta1' not in kwargs.keys():
+            kwargs['beta1'] = self.beta1
+        if 'beta2' not in kwargs.keys():
+            kwargs['beta2'] = self.beta2
+        if 'nesterov' not in kwargs.keys():
+            kwargs['nesterov'] = self.nesterov
+        kwargs['return_op'] = True
 
-        try:
-            method = kwargs.get('method', self.method)
-            learning_rate = kwargs.get('learning_rate', self.learning_rate)
-            momentum = kwargs.get('momentum', self.momentum)
-            epsilon = kwargs.get('epsilon', self.epsilon)
-            rho = kwargs.get('rho', self.rho)
-            beta1 = kwargs.get('beta1', self.beta1)
-            beta2 = kwargs.get('beta2', self.beta2)
-            nesterov = kwargs.get('nesterov', self.nesterov)
-        except AttributeError:
-            raise AttributeError('Some attribute not found')
-
-        if method.lower() == 'adadelta':
-            self.opt, updates = adadelta(cost, trainable, rho, epsilon, return_op=True)
-        elif method.lower() == 'rmsprop':
-            self.opt, updates = rmsprop(cost, trainable, learning_rate, self.gamma, self.epsilon, return_op=True)
-        elif method.lower() == 'sgdmomentum':
-            self.opt, updates = sgdmomentum(cost, trainable, learning_rate, momentum, nesterov, return_op=True)
-        elif method.lower() == 'adagrad':
-            self.opt, updates = adagrad(cost, trainable, learning_rate, epsilon, return_op=True)
-        elif method.lower() == 'adam':
-            self.opt, updates = adam(cost, trainable, learning_rate, beta1, beta2, epsilon, return_op=True)
-        elif method.lower() == 'adamax':
-            self.opt, updates = adamax(cost, trainable, learning_rate, beta1, beta2, epsilon, return_op=True)
-        elif method.lower() == 'sgd':
-            self.opt, updates = sgd(cost, trainable, learning_rate, return_op=True)
-        elif method.lower() == 'nadam':
-            self.opt, updates = nadam(cost, trainable, learning_rate, beta1, beta2, epsilon, return_op=True)
-        elif method.lower() == 'amsgrad':
-            self.opt, updates = amsgrad(cost, trainable, learning_rate, beta1, beta2, epsilon,
-                                        kwargs.get('decay', lambda x, t: x), return_op=True)
-        else:
-            print('No valid optimization method chosen. Use Vanilla SGD instead')
-            self.opt, updates = sgd(cost, trainable, learning_rate, return_op=True)
+        self.opt, updates = optimizer.get(method.lower(), sgd)(cost, trainable, **kwargs)
         return updates
 
     def build_regularization(self, params, **kwargs):
@@ -101,10 +76,3 @@ class Optimization(utils.ConfigParser):
             return reg_coeff * metrics.l1_reg(params)
         else:
             raise NotImplementedError('Regularization should be L1 or L2 only')
-
-    def decrease_learning_rate(self, **kwargs):
-        lr = kwargs.get('lr', None)
-        iter = kwargs.get('iter', None)
-        if lr is None or iter is None:
-            raise ValueError('Learning rate Shared Variable and iteration Variable must be provided')
-        utils.decrease_learning_rate(lr, iter, self.learning_rate, self.final_learning_rate, self.last_iter_to_decrease)

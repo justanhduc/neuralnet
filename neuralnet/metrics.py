@@ -10,7 +10,7 @@ from neuralnet import utils
 __all__ = ['manhattan_distance', 'mean_classification_error', 'mean_squared_error', 'msssim',
            'multinoulli_cross_entropy', 'root_mean_squared_error', 'psnr', 'psnr255', 'pearson_correlation',
            'ssim', 'spearman', 'first_derivative_error', 'huberloss', 'binary_cross_entropy', 'norm_error',
-           'gradient_difference', 'total_variation', 'kld', 'pulling_away', 'vgg16_loss', 'dog_loss',
+           'gradient_difference', 'total_variation', 'pulling_away', 'vgg16_loss', 'dog_loss',
            'log_loss', 'gram_vgg19_loss', 'l1_reg', 'l2_reg']
 
 
@@ -84,14 +84,7 @@ def gradient_difference(x, y, p):
 def total_variation(x, type='aniso', p=2, depth=3):
     print('Using Total variation regularizer')
     assert x.ndim == 4, 'Input must be a tensor image'
-    # if type == 'aniso':
-    #     del_v = T.sum(T.abs_(x[:, :, 1:, :] - x[:, :, :-1, :]))
-    #     del_h = T.sum(T.abs_(x[:, :, :, 1:] - x[:, :, :, :-1]))
-    #     return del_h + del_v
-    # elif type == 'iso':
-    #     del_v = T.sqr(x[:, :, 1:, :] - x[:, :, :-1, :])
-    #     del_h = T.sqr(x[:, :, :, 1:] - x[:, :, :, :-1])
-    #     return T.sum(T.sqrt(del_v + del_h))
+
     kern_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype='float32')
     kern_x = utils.make_tensor_kernel_from_numpy((depth, depth), kern_x)
 
@@ -108,7 +101,7 @@ def gram_vgg19_loss(x, y, weight_file, p=2, low_mem=False):
         raise TypeError('x and y must be image tensors.')
     print('Using Gram matrix VGG19 loss')
     net = VGG19((None, 3, 224, 224), False)
-    net.load_weights(weight_file)
+    net.load_params(weight_file)
     mean = T.constant(np.array([123.68, 116.779, 103.939], dtype='float32')[None, :, None, None], 'mean')
     x -= mean
     y -= mean
@@ -132,7 +125,7 @@ def vgg16_loss(x, y, weight_file, p=2, low_mem=False):
     print('Using VGG16 loss')
     mean = T.constant(np.array([123.68, 116.779, 103.939], dtype='float32')[None, :, None, None], 'mean')
     net = VGG16((None, 3, 224, 224), False)
-    net.load_weights(weight_file)
+    net.load_params(weight_file)
     x -= mean
     y -= mean
     if low_mem:
@@ -175,18 +168,19 @@ def l1_reg(params):
     return l1
 
 
-def kld(y, y_pred):
-    y = T.clip(y, 1e-8, )
-    raise NotImplementedError
-
-
-def spearman(ypred, y, eps=1e-8):
+def spearman(ypred, y, axis=None, eps=1e-8):
     print('Using SROCC metric')
+
     rng = RandomStreams()
     error = eps * rng.normal(size=[y.shape[0]], dtype=theano.config.floatX)
     y += error  # to break tied rankings
-    rg_ypred = T.cast(T.argsort(ypred), T.config.floatX)
-    rg_y = T.cast(T.argsort(y), T.config.floatX)
+
+    if axis is None:
+        ypred = ypred.flatten()
+        y = y.flatten()
+
+    rg_ypred = T.cast(T.argsort(ypred, axis=axis), T.config.floatX)
+    rg_y = T.cast(T.argsort(y, axis=axis), T.config.floatX)
     n = y.shape[0]
     numerator = 6 * T.sum(T.square(rg_ypred - rg_y))
     denominator = n * (n**2 - 1)
@@ -204,10 +198,6 @@ def pearson_correlation(x, y):
 
 def multinoulli_cross_entropy(p_y_given_x, y):
     print('Using multinoulli cross entropy')
-    # xdev = p_y_given_x - p_y_given_x.max(1, keepdims=True)
-    # lsm = xdev - T.log(T.sum(T.exp(xdev), axis=1, keepdims=True))
-    # cm2 = -lsm[T.arange(y.shape[0]), y]
-    # cost = cm2.mean()
     cost = T.nnet.categorical_crossentropy(p_y_given_x, y).mean()
     return cost
 
@@ -375,40 +365,3 @@ def psnr255(x, y):
     x = T.round(x)
     y = T.round(y)
     return 20. * T.log(255.) / T.log(10.) - 10. * T.log(T.mean(T.square(y - x))) / T.log(10.)
-
-
-if __name__ == '__main__':
-    X = T.tensor4()
-    Z = T.tensor4()
-    # kern_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype='float32')
-    # kern_x = utils.make_tensor_kernel_from_numpy((3, 3), kern_x)
-    #
-    # kern_y = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
-    # kern_y = utils.make_tensor_kernel_from_numpy((3, 3), kern_y)
-    #
-    # x_grad_x = T.nnet.conv2d(X, kern_x, border_mode='half')
-    # x_grad_y = T.nnet.conv2d(X, kern_y, border_mode='half')
-    # Y = T.sqrt(T.sqr(x_grad_x) + T.sqr(x_grad_y))
-    # X_ = utils.rgb2gray(X)
-    Y = utils.difference_of_gaussian(X)
-    # kern = utils.make_tensor_kernel_from_numpy((1, 1), kern)
-    # Y = T.nnet.conv2d(X_, kern, border_mode='half')
-    f = theano.function([X], Y)
-
-    from scipy import misc
-    # from matplotlib import pyplot as plt
-    im = misc.imread('E:/Users/Duc/frame_interpolation/utils/Camila Cabello - Havana ft. Young Thug/100.jpg').astype('float32') / 255.
-    # im2 = misc.imread('E:/Users/Duc/frame_interpolation/utils/Camila Cabello - Havana ft. Young Thug/200.jpg').astype('float32') / 255.
-    im = np.transpose(im[None], (0, 3, 1, 2))
-    # im2 = np.transpose(im2[None], (0, 3, 1, 2))
-    res = f(im)
-    res = np.squeeze(np.transpose(res[0], (1, 2, 0)))
-    res = (res[..., :3] - np.min(res[..., :3])) / (np.max(res[..., :3]) - np.min(res[..., :3]))
-    # res2 = (res[..., 3:] - np.min(res[..., 3:])) / (np.max(res[..., 3:]) - np.min(res[..., 3:]))
-    from skimage import color
-    res = color.rgb2gray(res)
-    misc.imsave('dog.eps', res)
-    # plt.imshow(color.rgb2gray(res1), 'gray')
-    # plt.figure()
-    # plt.imshow(color.rgb2gray(res2), 'gray')
-    # plt.show()

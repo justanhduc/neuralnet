@@ -88,17 +88,18 @@ class DataManager(ConfigParser):
 
         super(DataManager, self).__init__(config_file)
         self.path = kwargs.get('path') if kwargs.get('path') else self.config['data']['path']
-        self.batch_size = kwargs.get('batch_size') if kwargs.get('batch_size') else self.config['training'][
-            'batch_size']
-        self.n_epochs = kwargs.get('n_epochs') if kwargs.get('n_epochs') else self.config['training'][
-            'n_epochs']
-        self.shuffle = kwargs.get('shuffle') if kwargs.get('shuffle') else self.config['data'][
-            'shuffle'] if config_file else False
-        self.num_cached = kwargs.get('num_cached') if kwargs.get('num_cached') else self.config['data'][
-            'num_cached'] if config_file else 10
-        self.num_threads = kwargs.get('num_threads') if kwargs.get('num_threads') else self.config['data'][
-            'num_threads'] if config_file else 10
-        self.augmentation = kwargs.get('augmentation', None)
+        self.batch_size = kwargs.get('batch_size') if kwargs.get('batch_size') else self.config['training'].get(
+            'batch_size', None)
+        self.n_epochs = kwargs.get('n_epochs') if kwargs.get('n_epochs') else self.config['training'].get('n_epochs',
+                                                                                                          None)
+        if self.batch_size is None or self.n_epochs is None:
+            raise ValueError('batch_size and n_epochs must be provided.')
+
+        self.shuffle = kwargs.get('shuffle') if kwargs.get('shuffle') else self.config['data'].get('shuffle', False)
+        self.num_cached = kwargs.get('num_cached') if kwargs.get('num_cached') else self.config['data'].get(
+            'num_cached', 10)
+        self.augmentation = kwargs.get('augmentation') if kwargs.get('augmentation') else self.config['data'].get(
+            'augmentation', False)
         self.cur_epoch = kwargs.get('checkpoint', 0)
         self.dataset = None
         self.data_size = None
@@ -233,7 +234,7 @@ def progress(items, desc='', total=None, min_delay=0.1):
     print("\r%s%d/%d (100.00%%) (took %d:%02d)" % ((desc, total, total) + divmod(t_total, 60)))
 
 
-def shared_dataset(self, data_xy):
+def shared_dataset(data_xy):
     data_x, data_y = data_xy
     shared_x = theano.shared(np.asarray(data_x, dtype=theano.config.floatX))
     shared_y = theano.shared(np.asarray(data_y, dtype=theano.config.floatX))
@@ -257,6 +258,14 @@ def crop_center(image, resize=256, crop=(224, 224)):
 
 
 def prep_image(fname, mean_bgr, color='bgr', resize=256):
+    """
+    for ImageNet
+    :param fname:
+    :param mean_bgr:
+    :param color:
+    :param resize:
+    :return:
+    """
     im = misc.imread(fname)
 
     # Resize
@@ -281,51 +290,6 @@ def prep_image(fname, mean_bgr, color='bgr', resize=256):
     else:
         raise NotImplementedError
     return rawim, np.transpose(im[None], (0, 3, 1, 2))
-
-
-def load_weights(weight_file, model):
-    weights = np.load(weight_file)
-    keys = sorted(weights.keys())
-    num_weights = len(keys)
-    j = 0
-    for i, layer in enumerate(model):
-        if j > num_weights - 1:
-            break
-        try:
-            W = weights[keys[j]].transpose(3, 2, 0, 1) if len(weights[keys[j]].shape) == 4 else weights[keys[j]]
-            if W.shape == layer.params[0].get_value().shape:
-                layer.params[0].set_value(W)
-                print('@ Layer %d %s %s' % (i, keys[j], np.shape(weights[keys[j]])))
-            else:
-                print('No compatible parameters for layer %d %s found. '
-                      'Random initialization is used' % (i, keys[j]))
-        except:
-            W_converted = convert_dense_weights_data_format(weights[keys[j]], layer.filter_shape) \
-                if hasattr(layer, 'filter_shape') else None
-
-            if W_converted is not None:
-                if W_converted.shape == layer.filter_shape:
-                    layer.W.set_value(W_converted)
-                    print('@ Layer %d %s %s' % (i, keys[j], layer.filter_shape))
-                else:
-                    print('No compatible parameters for layer %d %s found. '
-                          'Random initialization is used' % (i, keys[j]))
-            else:
-                print('No compatible parameters for layer %d %s found. '
-                      'Random initialization is used' % (i, keys[j]))
-        try:
-            b = weights[keys[j+1]]
-            if b.shape == layer.params[1].get_value().shape:
-                layer.params[1].set_value(b)
-                print('@ Layer %d %s %s' % (i, keys[j+1], np.shape(weights[keys[j+1]])))
-            else:
-                print('No compatible parameters for layer %d %s found. '
-                      'Random initialization is used' % (i, keys[j+1]))
-        except:
-            print('No compatible parameters for layer %d %s found. '
-                  'Random initialization is used' % (i, keys[j+1]))
-        j += 2
-    print('Loaded successfully!')
 
 
 def convert_dense_weights_data_format(weights, previous_feature_map_shape, target_data_format='channels_first'):
@@ -390,12 +354,6 @@ def inference(input, model):
     for layer in model:
         feed = layer(feed)
     return feed
-
-
-def decrease_learning_rate(learning_rate, iter, epsilon_zero, epsilon_tau, tau):
-    eps_zero = epsilon_zero if iter <= tau else 0.
-    epsilon = (1 - float(iter)/tau) * eps_zero + float(iter)/tau * epsilon_tau
-    learning_rate.set_value(np.cast['float32'](epsilon))
 
 
 def rgb2gray(img):
@@ -697,7 +655,7 @@ def get_kernel(factor, kernel_type, phase, kernel_width, support=None, sigma=Non
     return floatX(kernel)
 
 
-def replication_pad2d(input, padding):
+def replication_pad(input, padding):
     """
     Mimicking torch.nn.ReplicationPad2d(padding)
 
@@ -714,7 +672,7 @@ def replication_pad2d(input, padding):
 
     output = input
     for axis, i in enumerate(padding):
-        for j in range(i):
+        for _ in range(i):
             if axis == 0:
                 output = T.concatenate((output[:, :, :, 0:1], output), 3)
             elif axis == 1:
@@ -725,7 +683,6 @@ def replication_pad2d(input, padding):
                 output = T.concatenate((output, output[:, :, -1:]), 2)
             else:
                 raise ValueError('padding must have 4 elements. Received %d.' % len(padding))
-
     return output
 
 
@@ -875,6 +832,13 @@ def difference_of_gaussian(x, depth=3, size=21, sigma1=1, sigma2=1.6):
 
 
 def pad(img, mul):
+    """
+    pad image to the nearest multiplicity of mul
+
+    :param img: theano.tensor.tensor4
+    :param mul: int or list/tuple of 2
+    :return: theano.tensor.tensor4
+    """
     h_new = int(np.ceil(img.shape[0] / mul[0])) * mul[0]
     w_new = int(np.ceil(img.shape[1] / mul[1])) * mul[1]
 
