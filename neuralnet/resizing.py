@@ -73,7 +73,7 @@ class DownsamplingLayer(Layer):
                 pad = int((kernel_width - 1) / 2.)
             else:
                 pad = int((kernel_width - factor) / 2.)
-            self.padding = partial(utils.replication_pad2d, padding=pad)
+            self.padding = partial(utils.replication_pad, padding=pad)
 
     def get_output(self, input):
         if self.preserve_size:
@@ -91,7 +91,7 @@ class DownsamplingLayer(Layer):
 
 
 class PoolingLayer(Layer):
-    def __init__(self, input_shape, window_size=(2, 2), ignore_border=True, stride=(2, 2), pad='valid', mode='max',
+    def __init__(self, input_shape, window_size=(2, 2), ignore_border=True, stride=None, pad='valid', mode='max',
                  layer_name='Pooling'):
         """
 

@@ -28,17 +28,15 @@ class Monitor(utils.ConfigParser):
         self.__tensor_since_last_flush = collections.defaultdict(lambda: {})
         self.__iter = [checkpoint]
         self.__timer = time.time()
-        self.valid_freq = self.config['training']['validation_frequency'] if config_file else valid_freq
 
         if self.config:
-            self.name = self.config['model']['name']
-            if self.config['result']['root']:
-                self.root = self.config['result']['root']
-            else:
-                self.root = root
+            self.name = self.config['model'].get('name', model_name)
+            self.root = self.config['result'].get('root', root)
+            self.valid_freq = self.config['training'].get('validation_frequency', valid_freq)
         else:
             self.root = root
             self.name = model_name
+            self.valid_freq = valid_freq
 
         self.path = self.root + '/' + self.name
         if not os.path.exists(self.root):
