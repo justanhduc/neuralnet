@@ -132,8 +132,8 @@ def test_model_zoo_vgg19():
             results.append(c)
         print('\n')
 
-    # sample_res = ['water snake', 'ski', 'Shetland sheepdog, Shetland sheep dog, Shetland', 'soup bowl', 'bassinet']
-    # assert results == sample_res
+    sample_res = ['sea snake', 'ski', 'Shetland sheepdog, Shetland sheep dog, Shetland', 'soup bowl', 'bassinet']
+    assert results == sample_res
 
 
 def test_replication_padding():

@@ -132,45 +132,45 @@ class VGG19(nn.Sequential, Net):
         super(VGG19, self).__init__(input_shape=input_shape, layer_name=name)
         self.fc = fc
         self.append(
-            nn.Conv2DLayer(self.output_shape, 64, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv1_1'))
+            nn.Conv2DLayer(self.output_shape, 64, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv1_1'))
         self.append(
-            nn.Conv2DLayer(self.output_shape, 64, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv1_2'))
+            nn.Conv2DLayer(self.output_shape, 64, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv1_2'))
         self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool0'))
 
         self.append(
-            nn.Conv2DLayer(self.output_shape, 128, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv2_1'))
+            nn.Conv2DLayer(self.output_shape, 128, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv2_1'))
         self.append(
-            nn.Conv2DLayer(self.output_shape, 128, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv2_2'))
+            nn.Conv2DLayer(self.output_shape, 128, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv2_2'))
         self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool1'))
 
         self.append(
-            nn.Conv2DLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv3_1'))
+            nn.Conv2DLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv3_1'))
         self.append(
-            nn.Conv2DLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv3_2'))
+            nn.Conv2DLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv3_2'))
         self.append(
-            nn.Conv2DLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv3_3'))
+            nn.Conv2DLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv3_3'))
         self.append(
-            nn.Conv2DLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv3_4'))
+            nn.Conv2DLayer(self.output_shape, 256, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv3_4'))
         self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool2'))
 
         self.append(
-            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv4_1'))
+            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv4_1'))
         self.append(
-            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv4_2'))
+            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv4_2'))
         self.append(
-            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv4_3'))
+            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv4_3'))
         self.append(
-            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv4_4'))
+            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv4_4'))
         self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool3'))
 
         self.append(
-            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv5_1'))
+            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv5_1'))
         self.append(
-            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv5_2'))
+            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv5_2'))
         self.append(
-            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv5_3'))
+            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv5_3'))
         self.append(
-            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=False, layer_name=name + '_conv5_4'))
+            nn.Conv2DLayer(self.output_shape, 512, 3, no_bias=False, filter_flip=True, layer_name=name + '_conv5_4'))
 
         if fc:
             self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name+'_maxpool4'))
@@ -180,6 +180,8 @@ class VGG19(nn.Sequential, Net):
 
     def load_params(self, param_file=None):
         f = h5py.File(param_file, mode='r')
+        trained = [f['layer_%d' % idx] for idx, _ in enumerate(list(f.keys())) if
+                   f['layer_%d' % idx].get('param_0', None) is not None]
 
         filtered_layers = []
         for layer in self:
@@ -188,9 +190,9 @@ class VGG19(nn.Sequential, Net):
             filtered_layers.append(layer)
 
         weight_value_tuples = []
-        for layer in filtered_layers:
-            weight_value_tuples.append((layer.W, f[layer.layer_name[len(self.layer_name)+1:]+'_W']))
-            weight_value_tuples.append((layer.b, f[layer.layer_name[len(self.layer_name)+1:]+'_b']))
+        for layer, trained_layer in zip(filtered_layers, trained):
+            weight_value_tuples.append((layer.W, trained_layer['param_0']))
+            weight_value_tuples.append((layer.b, trained_layer['param_1']))
         nn.utils.batch_set_value(weight_value_tuples)
         print('Pretrained weights loaded successfully!')
 
