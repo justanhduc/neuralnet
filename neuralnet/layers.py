@@ -235,22 +235,27 @@ class ActivationLayer(Layer):
 
 
 class DropoutLayer(Layer):
-    def __init__(self, input_shape, drop_prob=0.5, gaussian=False, layer_name='Dropout'):
+    def __init__(self, input_shape, drop_prob=0.5, gaussian=False, position='per-activation', layer_name='Dropout'):
         assert len(input_shape) == 2 or len(input_shape) == 4, \
             'input_shape must have 2 or 4 elements. Received %d' % len(input_shape)
+        assert type in ('per-activation', 'per-channel'), 'Unknown dropout position.'
 
         super(DropoutLayer, self).__init__(input_shape, layer_name)
         self.gaussian = gaussian
         self.srng = theano.sandbox.rng_mrg.MRG_RandomStreams(self.rng.randint(1, int(time.time())))
         self.dropout_prob = drop_prob
+        self.position = position
         self.descriptions = '{} Dropout Layer: p={:.2f}'.format(layer_name, 1. - drop_prob)
 
     def get_output(self, input):
         keep_prob = T.constant((1 - self.dropout_prob) if self.training_flag and not self.gaussian else 1, 'keep_prob',
-                               dtype='float32')
+                               dtype=theano.config.floatX)
         if self.training_flag:
-            mask = self.srng.normal(input.shape) + 1. if self.gaussian \
-                else self.srng.binomial(n=1, p=keep_prob, size=input.shape, dtype='float32')
+            shape = input.shape if self.position == 'per-activation' else input.shape[:2]
+            mask = self.srng.normal(shape) + 1. if self.gaussian \
+                else self.srng.binomial(n=1, p=keep_prob, size=shape, dtype=theano.config.floatX)
+            if self.position == 'per-channel':
+                mask = mask.dimshuffle(0, 1, 'x', 'x')
             input = input * mask
         return input / keep_prob
 
@@ -425,11 +430,10 @@ class ConvolutionalLayer(Layer):
     def get_output(self, input):
         if self.border_mode in ('ref', 'rep'):
             assert len(self.input_shape) == 4, '\'ref\' and \'rep\' padding modes support only 4D input'
-            self.border_mode = 'half'
             if self.border_mode == 'ref':
-                output = utils.replication_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
-            else:
                 output = utils.reflect_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
+            else:
+                output = utils.replication_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
             output = conv(input=output, filters=self.W, border_mode='valid', subsample=self.subsample,
                           filter_flip=self.filter_flip, filter_shape=self.filter_shape)
         else:
@@ -493,7 +497,7 @@ class PerturbativeLayer(Layer):
         self.no_bias = no_bias
         self.kwargs = kwargs
 
-        self.noise = (2. * T.as_tensor_variable(np.random.rand(*input_shape[1:]).astype('float32')) - 1.) * noise_level
+        self.noise = (2. * T.as_tensor_variable(np.random.rand(*input_shape[1:]).astype(theano.config.floatX)) - 1.) * noise_level
         self.W_values = init((num_filters, input_shape[1]))
         self.W = theano.shared(self.W_values, layer_name+'/W', borrow=True)
         self.params += [self.W]
@@ -501,7 +505,7 @@ class PerturbativeLayer(Layer):
         self.regularizable += [self.W]
 
         if not no_bias:
-            self.b = theano.shared(np.zeros((num_filters,), 'float32'), layer_name+'/b', borrow=True)
+            self.b = theano.shared(np.zeros((num_filters,), theano.config.floatX), layer_name+'/b', borrow=True)
             self.params += [self.b]
             self.trainable += [self.b]
 
@@ -531,7 +535,7 @@ class PerturbativeLayer(Layer):
         if self.activation is utils.function['prelu']:
             self.alpha.set_value(.1)
         if not self.no_bias:
-            self.b.set_value(np.zeros((self.num_filters,), 'float32'))
+            self.b.set_value(np.zeros((self.num_filters,), theano.config.floatX))
 
 
 class InceptionModule1(Layer):
@@ -1388,9 +1392,9 @@ class WarpingLayer(Layer):
         def meshgrid(height, width):
             x_t = T.dot(T.ones(shape=[height, 1]),
                         T.transpose(
-                            T.as_tensor_variable(np.linspace(-1.0, 1.0, width, dtype='float32')).dimshuffle(0, 'x'),
+                            T.as_tensor_variable(np.linspace(-1.0, 1.0, width, dtype=theano.config.floatX)).dimshuffle(0, 'x'),
                             [1, 0]))
-            y_t = T.dot(T.as_tensor_variable(np.linspace(-1.0, 1.0, height, dtype='float32')).dimshuffle(0, 'x'),
+            y_t = T.dot(T.as_tensor_variable(np.linspace(-1.0, 1.0, height, dtype=theano.config.floatX)).dimshuffle(0, 'x'),
                         T.ones(shape=[1, width]))
             x_t_flat = T.reshape(x_t, (1, -1))
             y_t_flat = T.reshape(y_t, (1, -1))
@@ -1399,8 +1403,8 @@ class WarpingLayer(Layer):
             return grid_x, grid_y
 
         gx, gy = meshgrid(self.input_shape[2], self.input_shape[3])
-        gx = T.as_tensor_variable(gx, ndim=2).astype('float32').dimshuffle('x', 0, 1)
-        gy = T.as_tensor_variable(gy, ndim=2).astype('float32').dimshuffle('x', 0, 1)
+        gx = T.as_tensor_variable(gx, ndim=2).astype(theano.config.floatX).dimshuffle('x', 0, 1)
+        gy = T.as_tensor_variable(gy, ndim=2).astype(theano.config.floatX).dimshuffle('x', 0, 1)
         x_coor = gx + flow[:, 0]
         y_coor = gy + flow[:, 1]
         output = utils.interpolate_bilinear(image, x_coor, y_coor, border_mode=self.border_mode)
@@ -1680,8 +1684,8 @@ class LSTMCell(Layer):
         self.cell_gate = Gate((n_in, num_units), W_cell=False, layer_name='cell_gate')
         self.out_gate = Gate((n_in, num_units), W_cell=False, layer_name='out_gate')
 
-        self.cell_init = theano.shared(np.zeros((1, num_units), 'float32'), 'cell_init')
-        self.hid_init = theano.shared(np.zeros((1, num_units), 'float32'), 'hid_init')
+        self.cell_init = theano.shared(np.zeros((1, num_units), theano.config.floatX), 'cell_init')
+        self.hid_init = theano.shared(np.zeros((1, num_units), theano.config.floatX), 'hid_init')
         self.params += self.in_gate.trainable + self.forget_gate.trainable + \
                        self.cell_gate.trainable + self.out_gate.trainable + [self.cell_init, self.hid_init]
         self.trainable += self.in_gate.trainable + self.forget_gate.trainable + \
@@ -1725,7 +1729,7 @@ class LSTMCell(Layer):
             hid = out_gate * self.activation(cell)
             return cell, hid
 
-        ones = T.ones((num_batch, 1), 'float32')
+        ones = T.ones((num_batch, 1), theano.config.floatX)
         non_seqs = [W_hid_stacked, W_in_stacked, b_stacked]
         cell_init = T.dot(ones, self.cell_init)
         hid_init = T.dot(ones, self.hid_init)
@@ -1769,10 +1773,10 @@ class RNNBlockDNN(Layer):
         self.trainable.append(self.W)
         self.regularizable.append(self.W)
 
-        self.init = [theano.shared(np.zeros((1, 1, num_units), 'float32'), layer_name + '_' + type + '/hid_init')]
+        self.init = [theano.shared(np.zeros((1, 1, num_units), theano.config.floatX), layer_name + '_' + type + '/hid_init')]
         if type == 'lstm':
             self.init.append(
-                theano.shared(np.zeros((1, 1, num_units), 'float32'), layer_name + '_' + type + '/cell_init'))
+                theano.shared(np.zeros((1, 1, num_units), theano.config.floatX), layer_name + '_' + type + '/cell_init'))
         if learn_init:
             self.trainable += self.init
 
@@ -1808,7 +1812,7 @@ class GRUCell(Layer):
         self.trainable += self.update_gate.trainable + self.reset_gate.trainable + self.hidden_update.trainable
         self.regularizable += self.update_gate.regularizable + self.reset_gate.regularizable + self.hidden_update.regularizable
 
-        self.hid_init = theano.shared(np.zeros((1, num_units), 'float32'), 'hid_init')
+        self.hid_init = theano.shared(np.zeros((1, num_units), theano.config.floatX), 'hid_init')
         self.params.append(self.hid_init)
         if learn_init:
             self.trainable.append(self.hid_init)
@@ -1850,7 +1854,7 @@ class GRUCell(Layer):
             hidden_update = self.hidden_update.activation(hidden_update, **self.kwargs)
             return (1. - update_gate) * hid_prev + update_gate * hidden_update
 
-        hid_init = T.dot(T.ones((num_batch, 1), 'float32'), self.hid_init)
+        hid_init = T.dot(T.ones((num_batch, 1), theano.config.floatX), self.hid_init)
         non_seqs = [W_hid_stacked, W_in_stacked, b_stacked]
         hid_out = theano.scan(step, input, [hid_init], non_seqs, go_backwards=self.backwards,
                               truncate_gradient=self.grad_steps, strict=True)[0]
@@ -1886,8 +1890,8 @@ class ConvLSTMCell(Layer):
         self.cell_gate = Gate(filter_shape, W_cell=False, activation='tanh', layer_name='cell_gate')
         self.out_gate = Gate(filter_shape, W_cell=False, layer_name='out_gate')
 
-        self.cell_init = theano.shared(np.zeros(self.output_shape[1:], 'float32'), 'cell_init')
-        self.hid_init = theano.shared(np.zeros(self.output_shape[1:], 'float32'), 'hid_init')
+        self.cell_init = theano.shared(np.zeros(self.output_shape[1:], theano.config.floatX), 'cell_init')
+        self.hid_init = theano.shared(np.zeros(self.output_shape[1:], theano.config.floatX), 'hid_init')
         self.params += self.in_gate.trainable + self.forget_gate.trainable + \
                        self.cell_gate.trainable + self.out_gate.trainable + [self.cell_init, self.hid_init]
         self.trainable += self.in_gate.trainable + self.forget_gate.trainable + \
@@ -1952,7 +1956,7 @@ class AttConvLSTMCell(Layer):
         self.cell_gate = Gate(filter_shape, W_cell=False, activation='tanh', layer_name='cell_gate')
         self.out_gate = Gate(filter_shape, W_cell=False, layer_name='out_gate')
         self.att_gate = Gate(filter_shape, W_cell=False, activation='tanh', layer_name='att_gate')
-        # self.Va = theano.shared(np.zeros((1, filter_shape[0], filter_shape[2], filter_shape[3]), 'float32'), 'att_kern')
+        # self.Va = theano.shared(np.zeros((1, filter_shape[0], filter_shape[2], filter_shape[3]), theano.config.floatX), 'att_kern')
 
         self.params += self.in_gate.params + self.forget_gate.params + self.cell_gate.params + \
                        self.out_gate.params + self.att_gate.params #+ [self.Va]
@@ -1962,9 +1966,9 @@ class AttConvLSTMCell(Layer):
                               self.cell_gate.regularizable + self.out_gate.regularizable + self.att_gate.regularizable
         if self.learn_init:
             self.cell_init = theano.shared(
-                np.zeros((1, filter_shape[0], input_shape[2], input_shape[3]), 'float32'), 'cell_init')
+                np.zeros((1, filter_shape[0], input_shape[2], input_shape[3]), theano.config.floatX), 'cell_init')
             self.hid_init = theano.shared(
-                np.zeros((1, filter_shape[0], input_shape[2], input_shape[3]), 'float32'), 'hid_init')
+                np.zeros((1, filter_shape[0], input_shape[2], input_shape[3]), theano.config.floatX), 'hid_init')
             self.params += [self.cell_init, self.hid_init]
             self.trainable += [self.cell_init, self.hid_init]
         self.descriptions = '{} AttConvLSTMCell: input shape = {} filter shape = {}'.format(self.layer_name, input_shape,
@@ -1982,8 +1986,8 @@ class AttConvLSTMCell(Layer):
             cell_init = T.tile(self.cell_init, (num_batch, 1, 1, 1))
             hid_init = T.tile(self.hid_init, (num_batch, 1, 1, 1))
         else:
-            cell_init = T.zeros((num_batch, self.filter_shape[0], self.input_shape[2], self.input_shape[3]), 'float32')
-            hid_init = T.zeros((num_batch, self.filter_shape[0], self.input_shape[2], self.input_shape[3]), 'float32')
+            cell_init = T.zeros((num_batch, self.filter_shape[0], self.input_shape[2], self.input_shape[3]), theano.config.floatX)
+            hid_init = T.zeros((num_batch, self.filter_shape[0], self.input_shape[2], self.input_shape[3]), theano.config.floatX)
 
         def softmax(x):
             exp = T.exp(x)

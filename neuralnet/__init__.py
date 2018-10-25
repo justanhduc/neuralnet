@@ -12,7 +12,7 @@ from .utils import *
 from .build_training import *
 from .monitor import *
 from .build_optimization import *
+from .model import Model
 from . import read_data
 from . import transforms
-from .model import Model
 from . import model_zoo

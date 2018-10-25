@@ -24,11 +24,27 @@ To install a stable version, use the following command
 pip install neuralnet==0.1.0
 ```
 
-The version in this repo tends to be newer since I am lazy to make a new version available on Pypi when the change is tiny. To install the version in this repo execute
+The version in this repo tends to be newer since I am lazy to make a new version available on Pypi when the change is tiny. 
+To install the version in this repo execute
 
 ```
 pip install git+git://github.com/justanhduc/neuralnet.git@linux (--ignore-installed) (--no-deps)
 ```
 
-## Usages
-To create a new model, simply make a new model class and inherit from Model in model.py. Please check out my [DenseNet](https://github.com/justanhduc/densenet) implementation for more details.
+## Pretrained Models
+[VGG16](https://s3.ap-northeast-2.amazonaws.com/pretrained-theano-models/vgg16_from_pytorch.npz)
+
+[VGG19](https://s3.ap-northeast-2.amazonaws.com/pretrained-theano-models/vgg19_from_pytorch.npz)
+
+[ResNet18](https://s3.ap-northeast-2.amazonaws.com/pretrained-theano-models/resnet18_from_pytorch.npz)
+
+[ResNet34](https://s3.ap-northeast-2.amazonaws.com/pretrained-theano-models/resnet34_from_pytorch.npz)
+
+[ResNet50](https://s3.ap-northeast-2.amazonaws.com/pretrained-theano-models/resnet50_from_pytorch.npz)
+
+[ResNet101](https://s3.ap-northeast-2.amazonaws.com/pretrained-theano-models/resnet101_from_pytorch.npz)
+
+[ResNet152](https://s3.ap-northeast-2.amazonaws.com/pretrained-theano-models/resnet152_from_pytorch.npz)
+
+All the tests for these models are available at [test.py](https://github.com/justanhduc/neuralnet/tree/master/neuralnet/test.py).
+Also, checkout the file for example usages.

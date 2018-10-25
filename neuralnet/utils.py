@@ -11,10 +11,11 @@ from functools import reduce
 import cloudpickle as cpkl
 import pickle as pkl
 import logging
+import abc
 
 from neuralnet import __version__
 
-__all__ = ['ConfigParser', 'DataManager']
+__all__ = ['ConfigParser', 'DataManager', 'placeholder']
 thread_lock = threading.Lock()
 
 
@@ -75,42 +76,56 @@ class ConfigParser:
         return data
 
 
-class DataManager(ConfigParser):
-    '''Manage dataset
-    '''
+class DataManager(ConfigParser, metaclass=abc.ABCMeta):
+    """
+    A class to manage data loader.
+    """
 
-    def __init__(self, config_file, placeholders, **kwargs):
-        '''
-
-        :param dataset: (features, targets) or features. Features and targets must be numpy arrays
-        '''
-        assert config_file or kwargs, 'Either config_file or keyword arguments must be provided.'
-
+    def __init__(self, config_file=None, placeholders=None, path=None, batch_size=None, n_epochs=None, *args, **kwargs):
+        """
+        Either a config_file specifying path, batch_size, and n_epochs or these parameters themselvesshould be provided.
+        A placeholder of a list (tuple) of placeholders should be provided if gpu is to be used. In that case, the
+        returned object when being iterated is the iteration index. Otherwise, a tuple of data shall be returned.
+        :param config_file:
+        :param placeholders:
+        :param path:
+        :param batch_size:
+        :param n_epochs:
+        :param args:
+        :param kwargs:
+        """
         super(DataManager, self).__init__(config_file)
-        self.path = kwargs.get('path') if kwargs.get('path') else self.config['data']['path']
-        self.batch_size = kwargs.get('batch_size') if kwargs.get('batch_size') else self.config['training'].get(
-            'batch_size', None)
-        self.n_epochs = kwargs.get('n_epochs') if kwargs.get('n_epochs') else self.config['training'].get('n_epochs',
-                                                                                                          None)
-        if self.batch_size is None or self.n_epochs is None:
-            raise ValueError('batch_size and n_epochs must be provided.')
+        self.path = path if path else self.config['data'].pop('path', None)
+        self.batch_size = batch_size if batch_size else self.config['training'].pop('batch_size', None)
+        self.n_epochs = n_epochs if n_epochs else self.config['training'].pop('n_epochs', None)
+        if self.path is None or self.batch_size is None or self.n_epochs is None:
+            raise ValueError('path, batch_size and n_epochs must be provided.')
 
-        self.shuffle = kwargs.get('shuffle') if kwargs.get('shuffle') else self.config['data'].get('shuffle', False)
-        self.num_cached = kwargs.get('num_cached') if kwargs.get('num_cached') else self.config['data'].get(
-            'num_cached', 10)
-        self.augmentation = kwargs.get('augmentation') if kwargs.get('augmentation') else self.config['data'].get(
-            'augmentation', False)
-        self.cur_epoch = kwargs.get('checkpoint', 0)
+        self.shuffle = self.config['data'].get('shuffle') if config_file else kwargs.pop('shuffle', False)
+        self.num_cached = self.config['data'].get('num_cached') if config_file else kwargs.pop('num_cached', 10)
+        self.augmentation = kwargs.pop('augmentation', None)
+        self.apply_to = kwargs.pop('apply_to', 0)
+        self.cur_epoch = kwargs.pop('checkpoint', 0)
+        self.infinite = kwargs.pop('infinite', False)
+        self.kwargs = kwargs
         self.dataset = None
         self.data_size = None
         self.placeholders = placeholders
+        self.batches = None
 
+    @classmethod
     def load_data(self):
-        raise NotImplementedError
+        raise NotImplementedError('This method must be implemented to return a batch of data. The order of '
+                                  'the returned data must also match the order of the placeholders.')
 
     def __iter__(self):
-        for i in self.get_batches():
-            yield i
+        self.batches = self.get_batches()
+        return self
+
+    def __next__(self):
+        if self.batches is None:
+            self.batches = self.get_batches()
+        return self.batches.__next__()
 
     def __len__(self):
         return self.data_size
@@ -119,33 +134,44 @@ class DataManager(ConfigParser):
         assert isinstance(item, (int, slice)), 'item must be an int or slice, got %s.' % type(item)
         return self.dataset[item]
 
-    def preprocess(self, *args, **kwargs):
+    def augment_minibatches(self, minibatches):
         """
-        preprocess input tensors and return the processed tensors
-        :param args:
-        :param kwargs:
+        Automatically apply augmentation to objects in minibatches at positions in specified in apply_to.
+        :param minibatches:
         :return:
         """
-        raise NotImplementedError
+        assert isinstance(self.augmentation,
+                          (list, tuple)), '\'augmentation\' should be a tuple or list of functions, got %s' % type(
+            self.augmentation)
+        assert all(callable(f) for f in self.augmentation), 'All object in \'augmentation\n should be callable.'
 
-    def augment_minibatches(self, minibatches, *args, **kwargs):
-        raise NotImplementedError
+        for batch in minibatches:
+            if isinstance(batch, np.ndarray):
+                for transform in self.augmentation:
+                    batch = transform(batch)
+                yield batch
+            else:
+                if isinstance(self.apply_to, int):
+                    for transform in self.augmentation:
+                        batch[self.apply_to] = transform(batch[self.apply_to])
+                    yield batch
+                else:
+                    for idx in self.apply_to:
+                        for transform in self.augmentation:
+                            batch[idx] = transform(batch[idx])
+                    yield batch
 
-    def get_batches(self, show_progress=False, *args, **kwargs):
-        infinite = kwargs.pop('infinite', False)
+    def get_batches(self):
         num_batches = self.data_size // self.batch_size
         cur_epoch = self.cur_epoch
-        for _, self.cur_epoch in enumerate(iter(int, 1)) if infinite else enumerate(range(cur_epoch, self.n_epochs)):
+        for _, self.cur_epoch in enumerate(iter(int, 1)) if self.infinite else enumerate(range(cur_epoch, self.n_epochs)):
             batches = self.generator()
-            if self.augmentation:
-                batches = self.augment_minibatches(batches, *args, **kwargs)
+            if self.augmentation is not None:
+                batches = self.augment_minibatches(batches)
             batches = self.generate_in_background(batches)
-            if show_progress:
-                batches = progress(batches, desc='Epoch %d/%d, Batch ' % (self.cur_epoch, self.n_epochs),
-                                   total=num_batches)
             for it, b in enumerate(batches):
                 self.update_input(b)
-                yield self.cur_epoch * num_batches + it
+                yield (self.cur_epoch * num_batches + it) if self.placeholders is not None else b
 
     def generate_in_background(self, generator):
         """
@@ -174,21 +200,22 @@ class DataManager(ConfigParser):
             queue.task_done()
 
     def update_input(self, data):
-        if isinstance(self.placeholders, (list, tuple)) and isinstance(data, (list, tuple)):
-            assert len(self.placeholders) == len(data), 'Data has length %d but placeholders has length %d.' % \
-                                                        (len(data), len(self.placeholders))
-            for d, p in zip(data, self.placeholders):
-                p.set_value(d, borrow=True)
-        elif isinstance(self.placeholders, theano.gpuarray.type.GpuArraySharedVariable) and isinstance(data, np.ndarray):
-            x = data
-            shape_x = self.placeholders.get_value().shape
-            if x.shape != shape_x:
-                raise ValueError('Input of the shared variable must have the same shape with the shared variable')
-            self.placeholders.set_value(x, borrow=True)
-        else:
-            raise TypeError(
-                'placeholders should be a theano shared or list/tuple type and data should be a list, '
-                'tuple or numpy ndarray, got {} and {}'.format(type(self.placeholders), type(data)))
+        if self.placeholders is not None:
+            if isinstance(self.placeholders, (list, tuple)) and isinstance(data, (list, tuple)):
+                assert len(self.placeholders) == len(data), 'Data has length %d but placeholders has length %d.' % \
+                                                            (len(data), len(self.placeholders))
+                for d, p in zip(data, self.placeholders):
+                    p.set_value(d, borrow=True)
+            elif isinstance(self.placeholders, theano.gpuarray.type.GpuArraySharedVariable) and isinstance(data, np.ndarray):
+                x = data
+                shape_x = self.placeholders.get_value().shape
+                if x.shape != shape_x:
+                    raise ValueError('Input of the shared variable must have the same shape with the shared variable')
+                self.placeholders.set_value(x, borrow=True)
+            else:
+                raise TypeError(
+                    'placeholders should be a theano shared or list/tuple type and data should be a list, '
+                    'tuple or numpy ndarray, got {} and {}'.format(type(self.placeholders), type(data)))
 
     def generator(self):
         num_batches = self.data_size // self.batch_size
@@ -197,6 +224,8 @@ class DataManager(ConfigParser):
             index = np.arange(0, self.data_size)
             np.random.shuffle(index)
             if isinstance(self.dataset, (list, tuple)):
+                assert all(isinstance(data, np.ndarray) for data in self.dataset), 'All objects in dataset should ' \
+                                                                                   'be numpy ndarray objects.'
                 dataset = tuple([x[index] for x in self.dataset])
             elif isinstance(self.dataset, np.ndarray):
                 dataset = self.dataset[index]
@@ -234,27 +263,47 @@ def progress(items, desc='', total=None, min_delay=0.1):
     print("\r%s%d/%d (100.00%%) (took %d:%02d)" % ((desc, total, total) + divmod(t_total, 60)))
 
 
-def shared_dataset(data_xy):
-    data_x, data_y = data_xy
-    shared_x = theano.shared(np.asarray(data_x, dtype=theano.config.floatX))
-    shared_y = theano.shared(np.asarray(data_y, dtype=theano.config.floatX))
-    return shared_x, T.cast(shared_y, 'int32')
-
-
-def crop_center(image, resize=256, crop=(224, 224)):
-    h, w = image.shape[:2]
-    scale = resize * 1.0 / min(h, w)
-    if h < w:
-        newh, neww = resize, int(scale * w + 0.5)
-    else:
-        newh, neww = int(scale * h + 0.5), resize
-    image = misc.imresize(image, (newh, neww))
+def crop_center(image, crop, resize=None):
+    if resize:
+        h, w = image.shape[:2]
+        scale = resize * 1.0 / min(h, w)
+        if h < w:
+            newh, neww = resize, int(scale * w + 0.5)
+        else:
+            newh, neww = int(scale * h + 0.5), resize
+        image = misc.imresize(image, (newh, neww))
 
     orig_shape = image.shape
     h0 = int((orig_shape[0] - crop[0]) * 0.5)
     w0 = int((orig_shape[1] - crop[1]) * 0.5)
     image = image[h0:h0 + crop[0], w0:w0 + crop[1]]
-    return image.astype('uint8')
+    return image
+
+
+def crop_random(image, crop, resize=None):
+    crop = (int(crop), int(crop)) if isinstance(crop, int) else crop
+    if resize:
+        h, w = image.shape[:2]
+        scale = resize * 1.0 / min(h, w)
+        if h < w:
+            newh, neww = resize, int(scale * w + 0.5)
+        else:
+            newh, neww = int(scale * h + 0.5), resize
+        image = misc.imresize(image, (newh, neww))
+
+    def _get_params():
+        h, w = image.shape[:2]
+        th, tw = crop
+        if w == tw and h == th:
+            return 0, 0, h, w
+
+        i = np.random.randint(0, h - th)
+        j = np.random.randint(0, w - tw)
+        return i, j, th, tw
+
+    i, j, h, w = _get_params()
+    img = image[i:i + h, j:j + w, :]
+    return img
 
 
 def prep_image(fname, mean_bgr, color='bgr', resize=256):
@@ -282,7 +331,7 @@ def prep_image(fname, mean_bgr, color='bgr', resize=256):
 
     rawim = np.copy(im).astype('uint8')
 
-    im = im.astype('float32')
+    im = im.astype(theano.config.floatX)
     if color == 'bgr':
         im = im[:, :, ::-1] - mean_bgr
     elif color == 'rgb':
@@ -292,9 +341,40 @@ def prep_image(fname, mean_bgr, color='bgr', resize=256):
     return rawim, np.transpose(im[None], (0, 3, 1, 2))
 
 
+def prep_image2(fname, mean, std=None, resize=256):
+    """
+    for ImageNet Pytorch
+    :param fname:
+    :param mean_bgr:
+    :param color:
+    :param resize:
+    :return:
+    """
+    im = misc.imread(fname)
+
+    # Resize
+    h, w, _ = im.shape
+    if h < w:
+        new_sh = (resize, int(w * resize / h))
+    else:
+        new_sh = (int(h * resize / w), resize)
+    im = misc.imresize(im, new_sh, interp='bicubic')
+
+    # Crop center 224, 224
+    h, w = new_sh
+    im = im[h // 2 - 112:h // 2 + 112, w // 2 - 112:w // 2 + 112]
+    rawim = np.copy(im).astype('uint8')
+
+    im = im.astype(theano.config.floatX) / 255.
+    im -= mean
+    if std is not None:
+        im /= std
+    return rawim, np.transpose(im[None], (0, 3, 1, 2))
+
+
 def convert_dense_weights_data_format(weights, previous_feature_map_shape, target_data_format='channels_first'):
     assert target_data_format in {'channels_last', 'channels_first'}
-    kernel = np.array(weights, 'float32')
+    kernel = np.array(weights, theano.config.floatX)
     for i in range(kernel.shape[1]):
         if target_data_format == 'channels_first':
             c, h, w = previous_feature_map_shape
@@ -592,8 +672,8 @@ def point_op(image, lut, origin, increment, *args):
     index = pos.astype('int64')
     index = T.set_subtensor(index[index < 0], 0)
     index = T.set_subtensor(index[index > lutsize], lutsize)
-    res = lut[index] + (lut[index+1] - lut[index]) * (pos - index.astype('float32'))
-    return T.reshape(res, (h, w)).astype('float32')
+    res = lut[index] + (lut[index+1] - lut[index]) * (pos - index.astype(theano.config.floatX))
+    return T.reshape(res, (h, w)).astype(theano.config.floatX)
 
 
 def get_kernel(factor, kernel_type, phase, kernel_width, support=None, sigma=None):
@@ -663,9 +743,11 @@ def replication_pad(input, padding):
     If a 4-tuple, uses (paddingLeft, paddingRight, paddingTop, paddingBottom)
     :return:
     """
-
     if not isinstance(padding, (int, list, tuple)):
         raise TypeError('padding must be an int, a list or a tuple. Got %s.' % type(padding))
+
+    if np.all(np.array(padding) == 0):
+        return input
 
     if isinstance(padding, int):
         padding = (padding, ) * 4
@@ -686,12 +768,12 @@ def replication_pad(input, padding):
     return output
 
 
-def reflect_pad(x, padding, batch_ndim=2):
+def reflect_pad(input, padding, batch_ndim=2):
     """
     Pad a tensor with a constant value.
     Parameters
     ----------
-    x : tensor
+    input : tensor
     padding : int, iterable of int, or iterable of tuple
         Padding width. If an int, pads each axis symmetrically with the same
         amount in the beginning and end. If an iterable of int, defines the
@@ -704,8 +786,11 @@ def reflect_pad(x, padding, batch_ndim=2):
 
     # Idea for how to make this happen: Flip the tensor horizontally to grab horizontal values, then vertically to grab vertical values
     # alternatively, just slice correctly
-    input_shape = x.shape
-    input_ndim = x.ndim
+    if np.all(np.array(padding) == 0):
+        return input
+
+    input_shape = input.shape
+    input_ndim = input.ndim
 
     output_shape = list(input_shape)
     indices = [slice(None) for _ in output_shape]
@@ -728,13 +813,13 @@ def reflect_pad(x, padding, batch_ndim=2):
 
     # Vertical Reflections
     out = T.set_subtensor(out[:, :, :widths[0], widths[1]:-widths[1]],
-                          x[:, :, widths[0]:0:-1, :])  # out[:,:,:width,width:-width] = x[:,:,width:0:-1,:]
+                          input[:, :, widths[0]:0:-1, :])  # out[:,:,:width,width:-width] = x[:,:,width:0:-1,:]
     out = T.set_subtensor(out[:, :, -widths[0]:, widths[1]:-widths[1]],
-                          x[:, :, -2:-(2 + widths[0]):-1, :])  # out[:,:,-width:,width:-width] = x[:,:,-2:-(2+width):-1,:]
+                          input[:, :, -2:-(2 + widths[0]):-1, :])  # out[:,:,-width:,width:-width] = x[:,:,-2:-(2+width):-1,:]
 
     # Place X in out
     # out = T.set_subtensor(out[tuple(indices)], x) # or, alternative, out[width:-width,width:-width] = x
-    out = T.set_subtensor(out[:, :, widths[0]:-widths[0], widths[1]:-widths[1]], x)  # out[:,:,width:-width,width:-width] = x
+    out = T.set_subtensor(out[:, :, widths[0]:-widths[0], widths[1]:-widths[1]], input)  # out[:,:,width:-width,width:-width] = x
 
     # Horizontal reflections
     out = T.set_subtensor(out[:, :, :, :widths[1]],
@@ -774,7 +859,7 @@ def make_tensor_kernel_from_numpy(kern_shape, numpy_kernel, type='each'):
     if type == 'each':
         if kern_shape[0] != kern_shape[1]:
             raise ValueError('kern_shape values must be the same for \'each\'.')
-        kern = T.zeros(tuple(kern_shape) + numpy_kernel.shape, 'float32')
+        kern = T.zeros(tuple(kern_shape) + numpy_kernel.shape, theano.config.floatX)
         for ii in range(kern_shape[0]):
             kern = T.set_subtensor(kern[ii, ii], numpy_kernel)
     else:
@@ -817,11 +902,11 @@ def fspecial_gauss(size, sigma):
     """Function to mimic the 'fspecial' gaussian MATLAB function
     """
     x, y = T.mgrid[-size // 2 + 1:size // 2 + 1, -size // 2 + 1:size // 2 + 1]
-    g = T.exp(-((T.cast(x, 'float32') ** 2 + T.cast(y, 'float32') ** 2) / (2.0 * sigma ** 2)))
+    g = T.exp(-((T.cast(x, theano.config.floatX) ** 2 + T.cast(y, theano.config.floatX) ** 2) / (2.0 * sigma ** 2)))
     return g / T.sum(g)
 
 
-def difference_of_gaussian(x, depth=3, size=21, sigma1=1, sigma2=1.6):
+def difference_of_gaussian(x, size=21, sigma1=1, sigma2=1.6, depth=3):
     kern1 = gaussian2(size, sigma1)
     kern2 = gaussian2(size, sigma2)
     kern1 = make_tensor_kernel_from_numpy((depth, depth), kern1)
@@ -860,6 +945,12 @@ def unpad(img, old_shape):
 
 
 def depth_to_space(x, upscale_factor):
+    """
+    from the sub-pixel super-resolution paper
+    :param x:
+    :param upscale_factor:
+    :return:
+    """
     n, c, h, w = x.shape
     oc = c // (upscale_factor ** 2)
     oh = h * upscale_factor
@@ -870,23 +961,45 @@ def depth_to_space(x, upscale_factor):
     return T.reshape(z, (n, oc, oh, ow))
 
 
+def space_to_depth(x, downscale_factor):
+    n, c, h, w = x.shape
+    oc = c * (downscale_factor ** 2)
+    oh = h // downscale_factor
+    ow = w // downscale_factor
+
+    z = T.reshape(x, (n, oc, h, downscale_factor, w, downscale_factor))
+    z = z.dimshuffle(0, 1, 3, 5, 2, 4)
+    return T.reshape(z, (n, oc, oh, ow))
+
+
 def save(obj, file):
     with open(file, 'wb') as f:
         cpkl.dump(obj, f, pkl.HIGHEST_PROTOCOL)
 
 
-def numpy2shared(numpy_vars, shared_vars):
-    assert isinstance(numpy_vars, (list, tuple)), 'numpy_vars must be a list or tuple of numpy arrays, got %s' % type(
+def numpy2shared(numpy_vars, shared_vars=None):
+    assert isinstance(numpy_vars, (list, tuple, np.ndarray)), 'numpy_vars must be a numpy ndarray, list or ' \
+                                                              'tuple of numpy arrays, got %s' % type(
         numpy_vars)
-    assert isinstance(shared_vars, (list, tuple)), 'shared_vars must be a list or tuple of numpy arrays, got %s' % type(
-        shared_vars)
-    return [sv.set_value(nv) for sv, nv in zip(shared_vars, numpy_vars)]
+    if shared_vars is not None:
+        assert isinstance(shared_vars, (list, tuple, T.sharedvar.ScalarSharedVariable, T.sharedvar.TensorSharedVariable)), \
+            'shared_vars must be a list or tuple of numpy arrays, got %s' % type(shared_vars)
+        return shared_vars.set_value(numpy_vars) if isinstance(numpy_vars, np.ndarray) else [sv.set_value(nv) for sv, nv
+                                                                                             in zip(shared_vars, numpy_vars)]
+    else:
+        shared_vars = placeholder(numpy_vars.shape, numpy_vars.dtype, numpy_vars) if isinstance(numpy_vars,
+                                                                                                np.ndarray) else [
+            placeholder(var.shape, var.dtype, var) for var in numpy_vars]
+        return shared_vars
 
 
 def shared2numpy(shared_vars):
-    assert isinstance(shared_vars, (list, tuple)), 'shared_vars must be a list or tuple of numpy arrays, got %s' % type(
+    assert isinstance(shared_vars, (list, tuple, T.sharedvar.ScalarSharedVariable,
+                                    T.sharedvar.TensorSharedVariable)), 'shared_vars must be a shared var, list ' \
+                                                                        'or tuple of numpy arrays, got %s' % type(
         shared_vars)
-    return [np.array(sv.get_value()) for sv in shared_vars]
+    return [np.array(sv.get_value()) for sv in shared_vars] if isinstance(shared_vars,
+                                                                          (list, tuple)) else shared_vars.get_value()
 
 
 def load_batch_checkpoints(files, weights):
@@ -915,7 +1028,7 @@ def max_singular_value(W, u=None, lp=1):
         W = W.flatten(2)
 
     if u is None:
-        u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype('float32'), 'u')
+        u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype(theano.config.floatX), 'u')
     _u = u
     for _ in range(lp):
         _v = lp_normalize(T.dot(_u, W))
@@ -925,7 +1038,7 @@ def max_singular_value(W, u=None, lp=1):
 
 
 def spectral_normalize(W, u_=None):
-    u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype('float32'), 'u') if u_ is None else u_
+    u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype(theano.config.floatX), 'u') if u_ is None else u_
     sigma, _u, _ = max_singular_value(W, u)
     W /= (sigma + 1e-12)
     return (W, _u) if u_ else (W, _u, u)
@@ -933,13 +1046,17 @@ def spectral_normalize(W, u_=None):
 
 def make_one_hot(label, dim):
     num = label.shape[0]
-    one_hot = T.zeros((num, dim), 'float32')
+    one_hot = T.zeros((num, dim), theano.config.floatX)
     one_hot = T.set_subtensor(one_hot[T.arange(num), label], 1.)
     return one_hot
 
 
-def placeholder(shape, dtype='float32', name=None, borrow=None):
-    x = theano.shared(np.zeros(shape, dtype), name, borrow=borrow)
+def placeholder(shape=None, dtype=theano.config.floatX, value=None, name=None, borrow=None):
+    assert shape is not None or value is not None, 'Either \'shape\' or \'value\' must be provided.'
+    if value is not None:
+        x = theano.shared(np.cast[dtype](value), name, borrow=borrow)
+    else:
+        x = theano.shared(np.zeros(shape, dtype), name, borrow=borrow)
     return x
 
 

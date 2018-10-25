@@ -329,9 +329,9 @@ class AdaMax(Optimizer):
 class NAdam(Optimizer):
     def __init__(self, alpha=1e-3, beta1=.99, beta2=.999, epsilon=1e-8, decay=lambda x, t: x * (1. - .5 * .96 ** (t / 250.))):
         super(NAdam, self).__init__(alpha)
-        self.beta1 = T.cast(beta1, 'float32')
-        self.beta2 = T.cast(beta2, 'float32')
-        self.epsilon = T.cast(epsilon, 'float32')
+        self.beta1 = T.cast(beta1, theano.config.floatX)
+        self.beta2 = T.cast(beta2, theano.config.floatX)
+        self.epsilon = T.cast(epsilon, theano.config.floatX)
         self.decay = decay
         print('Using NESTEROV ADAM. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2))
 
@@ -376,9 +376,9 @@ class NAdam(Optimizer):
 class AMSGrad(Optimizer):
     def __init__(self, alpha=1e-3, beta1=.9, beta2=.99, epsilon=1e-8, decay=lambda x, t: x):
         super(AMSGrad, self).__init__(alpha)
-        self.beta1 = T.cast(beta1, 'float32')
-        self.beta2 = T.cast(beta2, 'float32')
-        self.epsilon = T.cast(epsilon, 'float32')
+        self.beta1 = T.cast(beta1, theano.config.floatX)
+        self.beta2 = T.cast(beta2, theano.config.floatX)
+        self.epsilon = T.cast(epsilon, theano.config.floatX)
         self.decay = decay
         print('Using AMSGRAD. ALPHA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2))
 
@@ -490,9 +490,7 @@ def adamax(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by_no
 
 
 def anneal_learning_rate(lr, t, method='half-life', **kwargs):
-    if method not in ('half-life', 'step', 'exponential', 'inverse', 'linear'):
-        raise ValueError('Unknown annealing method.')
-    if not isinstance(lr, T.sharedvar.ScalarSharedVariable):
+    if not isinstance(lr, (T.sharedvar.ScalarSharedVariable, T.sharedvar.TensorSharedVariable)):
         raise TypeError('lr must be a shared variable, got %s.' % type(lr))
 
     lr_ = lr.get_value()
@@ -502,28 +500,33 @@ def anneal_learning_rate(lr, t, method='half-life', **kwargs):
         if num_iters is None:
             raise ValueError('num_iters must be provided.')
 
-        if t > num_iters // 2 or t > 3 * num_iters // 4:
-            lr.set_value(np.float32(lr_ * decay))
+        cond = T.cast(T.or_(T.eq(t, num_iters // 2), T.eq(t, 3 * num_iters // 4)), theano.config.floatX)
+        lr.default_update = lr * decay * cond + (1. - cond) * lr
     elif method == 'step':
         step = kwargs.pop('step', None)
         decay = kwargs.pop('decay', .5)
         if step is None:
             raise ValueError('step must be provided.')
 
-        if t % step == 0:
-            lr.set_value(np.float32(lr_ * decay))
+        cond = T.cast(T.eq(T.mod(t, step), 0), theano.config.floatX)
+        lr.default_update = lr * decay * cond + (1. - cond) * lr
     elif method == 'exponential':
         decay = kwargs.pop('decay', 1e-4)
-        lr.set_value(np.float32(lr_ * np.exp(-decay * t)))
+        t = T.cast(t, theano.config.floatX)
+        lr.default_update = lr_ * T.exp(-decay * t)
     elif method == 'linear':
         num_iters = kwargs.pop('num_iters', None)
         if num_iters is None:
             raise ValueError('num_iters must be provided.')
 
-        lr.set_value(np.float32(lr_ * (1 - t / num_iters)))
-    else:
+        t = T.cast(t, theano.config.floatX)
+        lr.default_update = lr_ * (1. - t / np.cast[theano.config.floatX](num_iters))
+    elif method == 'inverse':
         decay = kwargs.pop('decay', .01)
-        lr.set_value(np.float32(lr_ * 1. / (1. + decay * t)))
+        t = T.cast(t, theano.config.floatX)
+        lr.default_update = lr_ / (1. + decay * t)
+    else:
+        raise ValueError('Unknown annealing method.')
 
 
 def norm_constraint(tensor_var, max_norm, norm_axes=None, epsilon=1e-7):

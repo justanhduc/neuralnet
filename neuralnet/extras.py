@@ -1,4 +1,5 @@
 import numpy as np
+import theano
 from theano import gof
 import theano.tensor as T
 
@@ -148,7 +149,7 @@ def meshgrid(*xi, **kwargs):
     outputs = meshgrid_op(*xi)
 
     if indexing == 'xy' and ndim > 1:
-        outputs = [output.dimshuffle((1, 0) + s0[2:]).astype('float32') for output in outputs]
+        outputs = [output.dimshuffle((1, 0) + s0[2:]).astype(theano.config.floatX) for output in outputs]
     return outputs
 
 
@@ -190,13 +191,13 @@ def linspace(start, stop, num, dtype=None):
         Size of spacing between samples.
 
     """
-    dtype = dtype if dtype else 'float32'
+    dtype = dtype if dtype else theano.config.floatX
     div = num - 1
 
     # Convert float/complex array scalars to float, gh-3504
     # and make sure one can use variables that have an __array_interface__, gh-6634
-    start = T.cast(start, 'float32')
-    stop = T.cast(stop, 'float32')
+    start = T.cast(start, theano.config.floatX)
+    stop = T.cast(stop, theano.config.floatX)
 
     y = T.arange(0, num, dtype=dtype)
 
