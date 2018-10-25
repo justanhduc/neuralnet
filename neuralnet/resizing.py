@@ -171,8 +171,8 @@ class DetailPreservingPoolingLayer(Layer):
         self.learn_filter = learn_filter
         self.symmetric = symmetric
         self.epsilon_sqr = np.float32(epsilon ** 2)
-        self.alpha_ = theano.shared(np.zeros((input_shape[1],), 'float32'), 'alpha_', borrow=True)
-        self.lambda_ = theano.shared(np.zeros((input_shape[1],), 'float32'), 'lambda_', borrow=True)
+        self.alpha_ = theano.shared(np.zeros((input_shape[1],), theano.config.floatX), 'alpha_', borrow=True)
+        self.lambda_ = theano.shared(np.zeros((input_shape[1],), theano.config.floatX), 'lambda_', borrow=True)
 
         self.params += [self.alpha_, self.lambda_]
         self.trainable += [self.alpha_, self.lambda_]
@@ -184,8 +184,8 @@ class DetailPreservingPoolingLayer(Layer):
             self.trainable.append(self.kern)
             self.regularizable.append(self.kern)
         else:
-            gauss_filter = T.as_tensor_variable(np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]], 'float32') / 16.)
-            self.kern = T.zeros((self.input_shape[1], self.input_shape[1], 3, 3), 'float32')
+            gauss_filter = T.as_tensor_variable(np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]], theano.config.floatX) / 16.)
+            self.kern = T.zeros((self.input_shape[1], self.input_shape[1], 3, 3), theano.config.floatX)
             for i in range(self.input_shape[1]):
                 self.kern = T.set_subtensor(self.kern[i, i], gauss_filter)
         self.descriptions = '{} Detail Preserving Pooling Layer: {} -> {}'.format(layer_name, input_shape,

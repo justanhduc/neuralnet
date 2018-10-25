@@ -6,7 +6,7 @@ from neuralnet.layers import *
 from neuralnet import utils
 
 __all__ = ['BatchNormLayer', 'BatchRenormLayer', 'DecorrBatchNormLayer', 'GroupNormLayer',
-           'AdaptiveInstanceNorm2DLayer', 'InstanceNormLayer', 'LayerNormLayer']
+           'AdaptiveInstanceNorm2DLayer', 'InstanceNormLayer', 'LayerNormLayer', 'AdaIN2DLayer']
 
 
 class BatchNormLayer(Layer):
@@ -40,7 +40,7 @@ class BatchNormLayer(Layer):
         self.running_var = theano.shared(np.zeros(self.shape, dtype=theano.config.floatX),
                                          name=layer_name + '/running_var', borrow=True)
 
-        self.params += [self.gamma, self.beta, self.running_mean, self.running_var]
+        self.params += [self.running_mean, self.running_var, self.gamma, self.beta]
         self.trainable += [self.beta] if self. no_scale else [self.beta, self.gamma]
         self.regularizable += [self.gamma] if not self.no_scale else []
 
@@ -216,13 +216,13 @@ class GroupNormLayer(Layer):
         beta = self.beta.dimshuffle('x', 0, 'x', 'x')
         if self.groups == 1:
             input_ = input.dimshuffle(1, 0, 2, 3)
-            ones = T.ones_like(T.mean(input_, (0, 2, 3), keepdims=True), 'float32')
-            zeros = T.zeros_like(T.mean(input_, (0, 2, 3), keepdims=True), 'float32')
+            ones = T.ones_like(T.mean(input_, (0, 2, 3), keepdims=True), theano.config.floatX)
+            zeros = T.zeros_like(T.mean(input_, (0, 2, 3), keepdims=True), theano.config.floatX)
             output, _, _ = T.nnet.bn.batch_normalization_train(input_, ones, zeros, 'spatial', self.epsilon)
             output = gamma * output.dimshuffle(1, 0, 2, 3) + beta
         elif self.groups == self.input_shape[1]:
-            ones = T.ones_like(T.mean(input, (2, 3), keepdims=True), 'float32')
-            zeros = T.zeros_like(T.mean(input, (2, 3), keepdims=True), 'float32')
+            ones = T.ones_like(T.mean(input, (2, 3), keepdims=True), theano.config.floatX)
+            zeros = T.zeros_like(T.mean(input, (2, 3), keepdims=True), theano.config.floatX)
             output, _, _ = T.nnet.bn.batch_normalization_train(input, ones, zeros, (2, 3))
             output = gamma * output + beta
         else:
@@ -291,7 +291,7 @@ class BatchRenormLayer(Layer):
             # Update running mean and variance
             # Tricks adopted from Lasagne implementation
             # http://lasagne.readthedocs.io/en/latest/modules/layers/normalization.html
-            m = T.cast(T.prod(input.shape) / T.prod(self.gamma.shape), 'float32')
+            m = T.cast(T.prod(input.shape) / T.prod(self.gamma.shape), theano.config.floatX)
             running_mean = theano.clone(self.running_mean, share_inputs=False)
             running_var = theano.clone(self.running_var, share_inputs=False)
             running_mean.default_update = running_mean + self.running_average_factor * (batch_mean - running_mean)
@@ -317,16 +317,28 @@ class AdaptiveInstanceNorm2DLayer(Layer):
         self.descriptions = '{} Adaptive Instance Norm layer'.format(layer_name)
 
     def get_output(self, input):
-        assert isinstance(input, (list, tuple)), 'input must be a list or tuple of input images and normalization params.'
+        assert isinstance(input, (list, tuple)), \
+            'input must be a list or tuple of input images and normalization params.'
+
         input, params = input
-        scale = params[:, :self.input_shape[1]].dimshuffle(0, 1, 'x', 'x')
-        bias = params[:, self.input_shape[1]:].dimshuffle(0, 1, 'x', 'x')
+
+        assert params.ndim == 2 or params.ndim == 4, \
+            'The second element in input should either be a feature map or a concatenated matrix.'
+
+        if params.ndim == 4:
+            scale, bias = T.sqrt(T.var(params, (2, 3)) + 1e-8), T.mean(params, (2, 3))
+        else:
+            scale = params[:, :self.input_shape[1]].dimshuffle(0, 1, 'x', 'x')
+            bias = params[:, self.input_shape[1]:].dimshuffle(0, 1, 'x', 'x')
         output, _, _ = T.nnet.bn.batch_normalization_train(input, scale, bias, (2, 3))
         return output
 
     @property
     def output_shape(self):
         return self.input_shape
+
+
+AdaIN2DLayer = AdaptiveInstanceNorm2DLayer
 
 
 def InstanceNormLayer(input_shape, layer_name='IN', epsilon=1e-4, activation='relu', **kwargs):

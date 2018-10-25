@@ -14,8 +14,47 @@ import os
 from shutil import copyfile
 import visdom
 import time
+import theano
+from theano.compile import function_module as fm
+from theano import tensor as T
 
 from neuralnet import utils, model
+
+__all__ = ['track', 'get_tracked_vars', 'eval_tracked_vars', 'Monitor']
+
+_TRACKS = collections.OrderedDict()
+
+
+def track(name, x):
+    assert isinstance(name, str), 'name must be a string, got %s.' % type(name)
+    assert isinstance(x, T.TensorVariable), 'x must be a Theano TensorVariable, got %s.' % type(x)
+    _TRACKS[name] = x
+
+
+def get_tracked_vars(name=None, return_name=False):
+    assert isinstance(name, (str, list, tuple)) or name is None, 'name must either be None, a tring, or a list/tuple.'
+    if name is None:
+        tracked = ([n for n in _TRACKS.keys()], [val for val in _TRACKS.values()]) if return_name \
+            else [val for val in _TRACKS.values()]
+        return tracked
+    elif isinstance(name, (list, tuple)):
+        tracked = (name, [_TRACKS[n] for n in name]) if return_name else [_TRACKS[n] for n in name]
+        return tracked
+    else:
+        tracked = (name, _TRACKS[name]) if return_name else _TRACKS[name]
+        return tracked
+
+
+def eval_tracked_vars(feed_dict):
+    name, vars = get_tracked_vars(return_name=True)
+    dict = collections.OrderedDict()
+    for n, v in zip(name, vars):
+        try:
+            dict[n] = v.eval(feed_dict)
+        except fm.UnusedInputError:
+            func = theano.function([], v, givens=feed_dict, on_unused_input='ignore')
+            dict[n] = func()
+    return dict
 
 
 class Monitor(utils.ConfigParser):
@@ -120,7 +159,7 @@ class Monitor(utils.ConfigParser):
             else:
                 plt.plot(x_vals, y_vals)
                 prints.append("{}\t{}".format(name, np.mean(np.array(list(vals.values())), 0)))
-            fig.savefig(self.current_folder + '/' + name.replace(' ', '_')+'.jpg')
+            fig.savefig(self.current_folder + '/' + name.replace(' ', '_') + '.jpg')
             if use_visdom_for_plots:
                 self.vis.matplot(fig, win=name)
             plt.close(fig)
@@ -137,14 +176,15 @@ class Monitor(utils.ConfigParser):
                         img = val[num]
                         if img.shape[0] == 3:
                             img = np.transpose(img, (1, 2, 0))
-                            imsave(self.current_folder + '/' + name + '_%d.jpg' % num, img)
+                            imsave(self.current_folder + '/' + name.replace(' ', '_') + '_%d.jpg' % num, img)
                         else:
                             for ch in range(img.shape[0]):
-                                imsave(self.current_folder + '/' + name + '_%d_%d.jpg' % (num, ch), img[ch])
+                                imsave(self.current_folder + '/' + name.replace(' ', '_') + '_%d_%d.jpg' % (num, ch),
+                                       img[ch])
                 elif len(val.shape) == 3 or len(val.shape) == 2:
                     if use_visdom_for_image:
                         self.vis.image(val if len(val.shape) == 2 else np.transpose(val, (2, 0, 1)), win=name)
-                    imsave(self.current_folder + '/' + name + '.jpg', val)
+                    imsave(self.current_folder + '/' + name.replace(' ', '_') + '.jpg', val)
                 else:
                     raise NotImplementedError
         self.__img_since_last_flush.clear()
@@ -156,6 +196,7 @@ class Monitor(utils.ConfigParser):
             fig.clf()
             plt.hist(val, bins='auto')
             fig.savefig(self.current_folder + '/' + name.replace(' ', '_') + '_hist.jpg')
+            plt.close(fig)
         self.__tensor_since_last_flush.clear()
 
         with open(self.current_folder + '/log.pkl', 'wb') as f:

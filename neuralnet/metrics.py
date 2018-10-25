@@ -51,7 +51,7 @@ def huberloss(x, y, thres=1.):
     e = T.abs_(x - y)
     larger_than_equal_to = .5 * thres ** 2 + thres * (e - thres)
     less_than = .5 * e**2
-    mask = T.cast(e >= thres, 'float32')
+    mask = T.cast(e >= thres, theano.config.floatX)
     return T.mean(mask * larger_than_equal_to + (1. - mask) * less_than)
 
 
@@ -59,10 +59,10 @@ def first_derivative_error(x, y, p=2, depth=3):
     print('Using First derivative loss '),
     if x.ndim != 4 and y.ndim != 4:
         raise TypeError('y and y_pred should have four dimensions')
-    kern_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype='float32')
+    kern_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=theano.config.floatX)
     kern_x = utils.make_tensor_kernel_from_numpy((depth, depth), kern_x)
 
-    kern_y = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
+    kern_y = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=theano.config.floatX)
     kern_y = utils.make_tensor_kernel_from_numpy((depth, depth), kern_y)
 
     grad_x = T.nnet.conv2d(T.concatenate((x, y), 1), kern_x, border_mode='half')
@@ -85,15 +85,15 @@ def total_variation(x, type='aniso', p=2, depth=3):
     print('Using Total variation regularizer')
     assert x.ndim == 4, 'Input must be a tensor image'
 
-    kern_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype='float32')
+    kern_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=theano.config.floatX)
     kern_x = utils.make_tensor_kernel_from_numpy((depth, depth), kern_x)
 
-    kern_y = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype='float32')
+    kern_y = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=theano.config.floatX)
     kern_y = utils.make_tensor_kernel_from_numpy((depth, depth), kern_y)
     x_grad_x = T.nnet.conv2d(x, kern_x, border_mode='half')
     x_grad_y = T.nnet.conv2d(x, kern_y, border_mode='half')
     x_grad = T.sqrt(T.sqr(x_grad_x) + T.sqr(x_grad_y) + 1e-10)
-    return norm_error(x_grad, T.zeros_like(x_grad, 'float32'), p)
+    return norm_error(x_grad, T.zeros_like(x_grad, theano.config.floatX), p)
 
 
 def gram_vgg19_loss(x, y, weight_file, p=2, low_mem=False):
@@ -102,7 +102,7 @@ def gram_vgg19_loss(x, y, weight_file, p=2, low_mem=False):
     print('Using Gram matrix VGG19 loss')
     net = VGG19((None, 3, 224, 224), False)
     net.load_params(weight_file)
-    mean = T.constant(np.array([123.68, 116.779, 103.939], dtype='float32')[None, :, None, None], 'mean')
+    mean = T.constant(np.array([123.68, 116.779, 103.939], dtype=theano.config.floatX)[None, :, None, None], 'mean')
     x -= mean
     y -= mean
     if low_mem:
@@ -123,7 +123,7 @@ def vgg16_loss(x, y, weight_file, p=2, low_mem=False):
     if x.ndim != 4 and y.ndim != 4:
         raise TypeError('x and y must be image tensors.')
     print('Using VGG16 loss')
-    mean = T.constant(np.array([123.68, 116.779, 103.939], dtype='float32')[None, :, None, None], 'mean')
+    mean = T.constant(np.array([123.68, 116.779, 103.939], dtype=theano.config.floatX)[None, :, None, None], 'mean')
     net = VGG16((None, 3, 224, 224), False)
     net.load_params(weight_file)
     x -= mean
@@ -142,10 +142,10 @@ def pulling_away(x, y=None):
     if not y:
         if x.ndim != 2:
             raise TypeError('x must be a 2D matrix, got a %dD tensor.' % x.ndim)
-        eye = T.eye(x.shape[0], dtype='float32')
+        eye = T.eye(x.shape[0], dtype=theano.config.floatX)
         x_hat = x / T.sqrt(T.sum(T.sqr(x), 1, keepdims=True))
         corr = T.dot(x_hat, x_hat.T) ** 2.
-        f = 1. / T.cast(4 * x.shape[0] * (x.shape[0]-1), 'float32') * T.sum(corr * (1. - eye))
+        f = 1. / T.cast(4 * x.shape[0] * (x.shape[0]-1), theano.config.floatX) * T.sum(corr * (1. - eye))
         return f
     else:
         if x.ndim != 1:
@@ -270,7 +270,7 @@ def ssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0
     size = T.min((filter_size, height, width))
 
     # Scale down sigma if a smaller filter size is used.
-    sigma = (T.cast(size, 'float32') * filter_sigma / filter_size) if filter_size else T.as_tensor_variable(np.float32(1))
+    sigma = (T.cast(size, theano.config.floatX) * filter_sigma / filter_size) if filter_size else T.as_tensor_variable(np.float32(1))
 
     if filter_size:
         window = T.cast(T.reshape(utils.fspecial_gauss(size, sigma), (1, 1, size, size)), theano.config.floatX)
@@ -336,7 +336,7 @@ def msssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2
         raise RuntimeError('Input images must have four dimensions, not %d', img1.ndim)
 
     # Note: default weights don't sum to 1.0 but do match the paper / matlab code.
-    weights = np.array(weights if weights else [0.0448, 0.2856, 0.3001, 0.2363, 0.1333], dtype='float32')
+    weights = np.array(weights if weights else [0.0448, 0.2856, 0.3001, 0.2363, 0.1333], dtype=theano.config.floatX)
     levels = weights.size
     downsample_filter = np.ones((1, 1, 2, 2), dtype=theano.config.floatX) / 4.0
     mssim = []
@@ -355,7 +355,7 @@ def msssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2
 def psnr(x, y, mask=None):
     """PSNR for [0,1] images"""
     print('Using PSNR metric for [0, 1] images')
-    mask = mask.astype('float32') if mask else None
+    mask = mask.astype(theano.config.floatX) if mask else None
     return -10 * T.log(T.sum(T.square((y - x)*mask)) / T.sum(mask)) / T.log(10.) if mask \
         else -10 * T.log(T.mean(T.square(y - x))) / T.log(10.)
 
