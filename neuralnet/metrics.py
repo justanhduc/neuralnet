@@ -9,7 +9,7 @@ from neuralnet import utils
 
 __all__ = ['manhattan_distance', 'mean_classification_error', 'mean_squared_error', 'msssim',
            'multinoulli_cross_entropy', 'root_mean_squared_error', 'psnr', 'psnr255', 'pearson_correlation',
-           'ssim', 'spearman', 'first_derivative_error', 'huberloss', 'binary_cross_entropy', 'norm_error',
+           'ssim', 'spearman', 'first_derivative_error', 'huber_loss', 'binary_cross_entropy', 'norm_error',
            'gradient_difference', 'total_variation', 'pulling_away', 'vgg16_loss', 'dog_loss',
            'log_loss', 'gram_vgg19_loss', 'l1_reg', 'l2_reg']
 
@@ -44,7 +44,7 @@ def root_mean_squared_error(x, y):
     return T.sqrt(T.mean(T.sqr(x - y)))
 
 
-def huberloss(x, y, thres=1.):
+def huber_loss(x, y, thres=1.):
     print('Using Huber loss')
     if y.ndim != x.ndim:
         raise TypeError('y should have the same shape as y_pred', ('y', y.type, 'y_pred', x.type))

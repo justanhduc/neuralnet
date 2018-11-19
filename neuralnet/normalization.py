@@ -159,7 +159,7 @@ class DecorrBatchNormLayer(Layer):
         Muy = T.mean(X, axis=1)
         X_centered = X - Muy
         Sigma = 1. / m * T.dot(X_centered, X_centered.T)
-        D, Lambda, _ = T.nlinalg.svd(Sigma)
+        D, Lambda, _ = T.nlinalg.SVD(Sigma)
         Z = T.dot(T.dot(D, T.nlinalg.diag(T.sqrt(T.nlinalg.diag(Lambda)))), D.T)
         X = T.dot(Z, X)
         out = self.activation(self.batch_normalization_train(X.T) if self.training_flag

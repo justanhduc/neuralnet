@@ -22,7 +22,7 @@ __all__ = ['Layer', 'Sequential', 'ConvolutionalLayer', 'FullyConnectedLayer', '
            'ConvNormAct', 'RecursiveResNetBlock', 'ResNetBlock', 'ResNetBottleneckBlock', 'GRUCell',
            'IdentityLayer', 'DropoutLayer', 'InceptionModule1', 'InceptionModule2', 'InceptionModule3',
            'NetworkInNetworkBlock', 'SoftmaxLayer', 'TransposingLayer', 'set_training_status', 'WarpingLayer',
-           'NoiseResNetBlock', 'set_training_on', 'set_training_off', 'PreprocessingLayer', 'Conv2DLayer',
+           'NoiseResNetBlock', 'set_training_on', 'set_training_off', 'LambdaLayer', 'Conv2DLayer',
            'Deconv2DLayer', 'FCLayer', 'SqueezeAndExcitationBlock', 'Conv3DLayer', 'RNNBlockDNN']
 
 
@@ -155,19 +155,21 @@ class Sequential(OrderedDict, NetMethod):
     def update(self, other):
         if other is None:
             return
-        if isinstance(other, Sequential):
-            for layer in other:
-                if layer.layer_name not in self.keys():
-                    self[layer.layer_name] = layer
-                else:
-                    raise NameError('Name %s already existed.' % layer.layer_name)
-        elif isinstance(other, Layer):
+
+        if isinstance(other, (Layer, Sequential)):
             if other.layer_name not in self.keys():
                 self[other.layer_name] = other
             else:
                 raise NameError('Name %s already existed.' % other.layer_name)
         else:
             raise TypeError('Cannot update a Sequential instance with a %s instance.' % type(other))
+
+    def extend(self, others):
+        if isinstance(others, (list, tuple, Sequential)):
+            for layer in others:
+                self.append(layer)
+        else:
+            raise TypeError('Cannot extend a Sequential instance with a %s instance.' % type(others))
 
     def __add__(self, other):
         assert isinstance(other, Sequential), 'Cannot concatenate a Sequential object with a %s object.' % type(other)
@@ -188,14 +190,14 @@ class Sequential(OrderedDict, NetMethod):
             layer.reset()
 
 
-class PreprocessingLayer(Layer):
-    def __init__(self, input_shape, function, layer_name='Preprocessing Layer', **kwargs):
+class LambdaLayer(Layer):
+    def __init__(self, input_shape, function, layer_name='Lambda Layer', **kwargs):
         assert callable(function), 'The provided function must be callable.'
 
-        super(PreprocessingLayer, self).__init__(input_shape, layer_name)
+        super(LambdaLayer, self).__init__(input_shape, layer_name)
         self.function = function
         self.kwargs = kwargs
-        self.descriptions = '{} Preprocessing Layer'.format(layer_name)
+        self.descriptions = '{} Lambda Layer'.format(layer_name)
 
     def get_output(self, input):
         return self.function(input, **self.kwargs)
