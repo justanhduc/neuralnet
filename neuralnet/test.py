@@ -30,8 +30,24 @@ def test_tracking():
     res_numpy = [a_ + i for i in range(trivial_loops + 1)]
     assert np.allclose(func(a_), res_numpy[-1])
 
-    trackeds = nn.eval_tracked_vars({a: a_, b: b_.get_value()})
-    assert all(np.allclose(x, y) for x, y in zip(list(trackeds.values()), res_numpy[:-1]))
+    for i in range(trivial_loops):
+        trackeds = nn.eval_tracked_vars({a: a_, b: b_.get_value()})
+        assert all(np.allclose(x, y) for x, y in zip(list(trackeds.values()), res_numpy[:-1]))
+
+
+def test_yiq():
+    from scipy import misc
+    im = misc.imread('test_files/lena.jpg').astype(theano.config.floatX) / 255.
+    im = np.transpose(im[None], (0, 3, 1, 2))
+
+    a = T.tensor4('input')
+    b = nn.utils.rgb2yiq(a)
+    c = nn.utils.yiq2rgb(b)
+    func = nn.function([a], [b[:, 0:1], c])
+
+    im_out_y, im_out = func(im)
+    misc.imsave('test_files/lena_from_yiq.jpg', np.transpose(im_out[0], (1, 2, 0)))
+    misc.imsave('test_files/lena_y.jpg', im_out_y[0, 0])
 
 
 def test_diff_of_gaussians():

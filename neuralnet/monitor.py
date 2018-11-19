@@ -28,6 +28,7 @@ def track(name, x):
     assert isinstance(name, str), 'name must be a string, got %s.' % type(name)
     assert isinstance(x, T.TensorVariable), 'x must be a Theano TensorVariable, got %s.' % type(x)
     _TRACKS[name] = x
+    return x
 
 
 def get_tracked_vars(name=None, return_name=False):
@@ -76,22 +77,19 @@ class Monitor(utils.ConfigParser):
             self.name = model_name
             self.valid_freq = valid_freq
 
-        self.path = self.root + '/' + self.name
-        if not os.path.exists(self.root):
-            os.mkdir(self.root)
-        if not os.path.exists(self.path):
-            os.mkdir(self.path)
-
-        subfolders = os.listdir(self.path)
         if current_folder:
             self.current_folder = current_folder
         else:
-            self.current_folder = self.path + '/run%d' % (len(subfolders) + 1)
+            self.path = os.path.join(self.root, self.name)
+            os.makedirs(self.path, exist_ok=True)
+            subfolders = os.listdir(self.path)
+            self.current_folder = os.path.join(self.path, 'run%d' % (len(subfolders) + 1))
             idx = 1
             while os.path.exists(self.current_folder):
-                self.current_folder = self.path + '/run%d' % (len(subfolders) + 1 + idx)
+                self.current_folder = os.path.join(self.path, 'run%d' % (len(subfolders) + 1 + idx))
                 idx += 1
-            os.mkdir(self.current_folder)
+            os.makedirs(self.current_folder, exist_ok=True)
+
         if config_file:
             copyfile(config_file, '%s/network_config.config' % self.current_folder)
         self.dump_files = collections.OrderedDict()
@@ -143,7 +141,7 @@ class Monitor(utils.ConfigParser):
             else:
                 plt.plot(x_vals, y_vals)
                 prints.append("{}\t{}".format(name, np.mean(np.array(list(vals.values())), 0)))
-            fig.savefig(self.current_folder + '/' + name.replace(' ', '_') + '.jpg')
+            fig.savefig(os.path.join(self.current_folder, name.replace(' ', '_') + '.jpg'))
             plt.close(fig)
         self.__num_since_last_flush.clear()
 
@@ -156,13 +154,15 @@ class Monitor(utils.ConfigParser):
                         img = val[num]
                         if img.shape[0] == 3:
                             img = np.transpose(img, (1, 2, 0))
-                            imsave(self.current_folder + '/' + name.replace(' ', '_') + '_%d.jpg' % num, img)
+                            imsave(
+                                os.path.join(self.current_folder, name.replace(' ', '_') + '_%d.jpg' % num), img)
                         else:
                             for ch in range(img.shape[0]):
-                                imsave(self.current_folder + '/' + name.replace(' ', '_') + '_%d_%d.jpg' % (num, ch),
-                                       img[ch])
+                                img_normed = (img[ch] - np.min(img[ch])) / (np.max(img[ch]) - np.min(img[ch]))
+                                imsave(os.path.join(self.current_folder,
+                                                    name.replace(' ', '_') + '_%d_%d.jpg' % (num, ch)), img_normed)
                 elif len(val.shape) == 3 or len(val.shape) == 2:
-                    imsave(self.current_folder + '/' + name.replace(' ', '_') + '.jpg', val)
+                    imsave(os.path.join(self.current_folder, name.replace(' ', '_') + '.jpg'), val)
                 else:
                     raise NotImplementedError
         self.__img_since_last_flush.clear()
@@ -173,11 +173,11 @@ class Monitor(utils.ConfigParser):
             fig = plt.figure()
             fig.clf()
             plt.hist(val, bins='auto')
-            fig.savefig(self.current_folder + '/' + name.replace(' ', '_') + '_hist.jpg')
+            fig.savefig(os.path.join(self.current_folder, name.replace(' ', '_') + '_hist.jpg'))
             plt.close(fig)
         self.__tensor_since_last_flush.clear()
 
-        with open(self.current_folder + '/log.pkl', 'wb') as f:
+        with open(os.path.join(self.current_folder, 'log.pkl'), 'wb') as f:
             pickle.dump(dict(self.__num_since_beginning), f, pickle.HIGHEST_PROTOCOL)
 
         print("Elapsed time {:.2f}min \t Iteration {}\t{}".format((time.time() - self.__timer) / 60., self.__iter[0],
@@ -186,7 +186,7 @@ class Monitor(utils.ConfigParser):
     def dump(self, obj, file, keep=-1):
         assert isinstance(keep, int), 'keep must be an int, got %s' % type(keep)
 
-        file = self.current_folder + '/' + file
+        file = os.path.join(self.current_folder, file)
         if keep < 2:
             with open(file, 'wb') as f:
                 pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
@@ -217,7 +217,7 @@ class Monitor(utils.ConfigParser):
     def load(self, file, version=-1):
         assert isinstance(version, int), 'keep must be an int, got %s' % type(version)
 
-        full_file = self.current_folder + '/' + file
+        full_file = os.path.join(self.current_folder, file)
         versions = self.dump_files.get(full_file, [])
         if version <= 0:
             if len(versions) > 0:

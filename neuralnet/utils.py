@@ -169,9 +169,10 @@ class DataManager(ConfigParser, metaclass=abc.ABCMeta):
             if self.augmentation is not None:
                 batches = self.augment_minibatches(batches)
             batches = self.generate_in_background(batches)
-            for it, b in enumerate(batches):
-                self.update_input(b)
-                yield (self.cur_epoch * num_batches + it) if self.placeholders is not None else b
+            for it, batch in enumerate(batches):
+                self.update_input(batch)
+                yield (self.cur_epoch * num_batches + it) if self.placeholders is not None \
+                          else ((self.cur_epoch * num_batches + it), batch)
 
     def generate_in_background(self, generator):
         """
@@ -210,7 +211,7 @@ class DataManager(ConfigParser, metaclass=abc.ABCMeta):
                 x = data
                 shape_x = self.placeholders.get_value().shape
                 if x.shape != shape_x:
-                    raise ValueError('Input of the shared variable must have the same shape with the shared variable')
+                    raise ValueError('Shape mismatch. Got {} for shared variable of shape {}.'.format(x.shape, shape_x))
                 self.placeholders.set_value(x, borrow=True)
             else:
                 raise TypeError(
@@ -264,6 +265,7 @@ def progress(items, desc='', total=None, min_delay=0.1):
 
 
 def crop_center(image, crop, resize=None):
+    crop = (crop, crop) if isinstance(crop, int) else crop
     if resize:
         h, w = image.shape[:2]
         scale = resize * 1.0 / min(h, w)
@@ -281,7 +283,7 @@ def crop_center(image, crop, resize=None):
 
 
 def crop_random(image, crop, resize=None):
-    crop = (int(crop), int(crop)) if isinstance(crop, int) else crop
+    crop = (crop, crop) if isinstance(crop, int) else crop
     if resize:
         h, w = image.shape[:2]
         scale = resize * 1.0 / min(h, w)
@@ -372,6 +374,25 @@ def prep_image2(fname, mean, std=None, resize=256):
     return rawim, np.transpose(im[None], (0, 3, 1, 2))
 
 
+def convert_kernel(kernel):
+    """Converts a Numpy kernel matrix from Theano format to TensorFlow format.
+    Also works reciprocally, since the transformation is its own inverse.
+    # Arguments
+        kernel: Numpy array (3D, 4D or 5D).
+    # Returns
+        The converted kernel.
+    # Raises
+        ValueError: in case of invalid kernel shape or invalid data_format.
+    """
+    kernel = np.asarray(kernel)
+    if not 3 <= kernel.ndim <= 5:
+        raise ValueError('Invalid kernel shape:', kernel.shape)
+    slices = [slice(None, None, -1) for _ in range(kernel.ndim)]
+    no_flip = (slice(None, None), slice(None, None))
+    slices[-2:] = no_flip
+    return np.copy(kernel[tuple(slices)])
+
+
 def convert_dense_weights_data_format(weights, previous_feature_map_shape, target_data_format='channels_first'):
     assert target_data_format in {'channels_last', 'channels_first'}
     kernel = np.array(weights, theano.config.floatX)
@@ -458,6 +479,26 @@ def ycbcr2rgb(img):
     G = img[:, 0] - .343 * (img[:, 1] - 128.) - .711 * (img[:, 2] - 128.)
     B = img[:, 0] + 1.765 * (img[:, 1] - 128.)
     return T.concatenate((R.dimshuffle((0, 'x', 1, 2)), G.dimshuffle((0, 'x', 1, 2)), B.dimshuffle((0, 'x', 1, 2))), 1)
+
+
+def rgb2yiq(img):
+    if img.ndim != 4:
+        raise ValueError('Input images must have four dimensions, not %d' % img.ndim)
+    n, c, h, w = img.shape
+    A = np.array([[.299, .587, .114], [.596, -.274, -.322], [.211, -.523, .312]], theano.config.floatX)
+    img_mat = (img.dimshuffle(1, 0, 2, 3)).flatten(2)
+    out_mat = T.dot(A, img_mat)
+    return T.reshape(out_mat, (c, n, h, w)).dimshuffle(1, 0, 2, 3)
+
+
+def yiq2rgb(img):
+    if img.ndim != 4:
+        raise ValueError('Input images must have four dimensions, not %d' % img.ndim)
+    n, c, h, w = img.shape
+    A = np.array([[1, .956, .621], [1, -.272, -.647], [1, -1.106, 1.703]], theano.config.floatX)
+    img_mat = (img.dimshuffle(1, 0, 2, 3)).flatten(2)
+    out_mat = T.dot(A, img_mat)
+    return T.reshape(out_mat, (c, n, h, w)).dimshuffle(1, 0, 2, 3)
 
 
 def linspace(start, stop, num):
@@ -1064,4 +1105,4 @@ function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **k
             'tanh': lambda x, **kwargs: T.tanh(x), 'lrelu': lrelu, 'softmax': lambda x, **kwargs: T.nnet.softmax(x),
             'linear': lambda x, **kwargs: x, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,
             'sin': lambda x, **kwargs: T.sin(x), 'cos': lambda x, **kwargs: T.cos(x), 'swish': swish, 'selu': selu,
-            'prelu': prelu}
+            'prelu': prelu, None: lambda x, **kwargs: x}
