@@ -1,6 +1,8 @@
 # Neuralnet
 
 A high level framework for general purpose neural networks written in Theano.
+In my experience, running Visdom on Linux causes sementation fault. Therefore, this version is made to work in Linux. 
+Except the exclusion of Visdom, everything is exactly the same as the master branch.  
 
 ## Requirements
 
@@ -13,8 +15,6 @@ A high level framework for general purpose neural networks written in Theano.
 [Matplotlib](https://matplotlib.org/)
 
 [tqdm](https://github.com/tqdm/tqdm)
-
-[visdom](https://github.com/facebookresearch/visdom)
 
 
 ## Installation
