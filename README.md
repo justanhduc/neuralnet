@@ -21,7 +21,7 @@ A high level framework for general purpose neural networks written in Theano.
 To install a stable version, use the following command
 
 ```
-pip install neuralnet==0.1.0
+pip install neuralnet
 ```
 
 The version in this repo tends to be newer since I am lazy to make a new version available on Pypi when the change is tiny. 
