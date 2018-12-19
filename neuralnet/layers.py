@@ -478,7 +478,8 @@ class ConvolutionalLayer(Layer):
             if self.border_mode == 'ref':
                 output = utils.reflect_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
             else:
-                output = utils.replication_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
+                output = utils.replication_pad(input, (self.filter_shape[3] >> 1, self.filter_shape[3] >> 1,
+                                                       self.filter_shape[2] >> 1, self.filter_shape[2] >> 1))
             output = conv(input=output, filters=self.W, border_mode='valid', subsample=self.subsample,
                           filter_flip=self.filter_flip, filter_shape=self.filter_shape)
 
