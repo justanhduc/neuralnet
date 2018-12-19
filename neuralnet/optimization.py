@@ -21,9 +21,10 @@ __all__ = ['sgd', 'sgdmomentum', 'adadelta', 'adagrad', 'adam', 'adamax', 'nadam
 
 
 class Optimizer(Net, metaclass=abc.ABCMeta):
-    def __init__(self, eta):
-        self.eta = T.cast(eta, theano.config.floatX)
+    def __init__(self, alpha, **kwargs):
+        self.alpha = T.cast(alpha, theano.config.floatX)
         self.params = []
+        self.name = None
 
     @abc.abstractmethod
     def get_updates(self, params, grads):
@@ -32,16 +33,23 @@ class Optimizer(Net, metaclass=abc.ABCMeta):
     def reset(self):
         pass
 
+    def __repr__(self):
+        return self.name
+
+    def __call__(self, params, grads):
+        return self.get_updates(params, grads)
+
 
 class VanillaSGD(Optimizer):
-    def __init__(self, eta):
-        super(VanillaSGD, self).__init__(eta)
-        print(('Using VANILLA GRADIENT DESCEND. ETA = %s ' % eta))
+    def __init__(self, alpha, **kwargs):
+        super(VanillaSGD, self).__init__(alpha, **kwargs)
+        self.name = 'VANILLA GRADIENT DESCEND. ETA = {}'.format(alpha)
+        print('Using %s' % self)
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
         for param, grad in zip(params, grads):
-            updates[param] = param - self.eta * grad
+            updates[param] = param - self.alpha * grad
         return updates
 
 
@@ -56,11 +64,12 @@ class AdaDelta(Optimizer):
         updates = get_updates(parameter_list, grad_list)
     """
 
-    def __init__(self, rho=.95, epsilon=1e-6):
-        super(AdaDelta, self).__init__(0.)
+    def __init__(self, rho=.95, epsilon=1e-6, **kwargs):
+        super(AdaDelta, self).__init__(0., **kwargs)
         self.rho = T.as_tensor_variable(np.cast[theano.config.floatX](rho))
         self.epsilon = T.as_tensor_variable(np.cast[theano.config.floatX](epsilon))
-        print(('Using ADADELTA. RHO = %s EPSILON = %s ' % (self.rho, self.epsilon)))
+        self.name = 'ADADELTA. RHO = {} EPSILON = {} '.format(self.rho, self.epsilon)
+        print('Using %s' % self)
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -84,17 +93,18 @@ class AdaDelta(Optimizer):
 
 
 class SGDMomentum(Optimizer):
-    def __init__(self, lr, mom, nesterov=False):
-        super(SGDMomentum, self).__init__(lr)
+    def __init__(self, lr, mom, nesterov=False, **kwargs):
+        super(SGDMomentum, self).__init__(lr, **kwargs)
         self.alpha = T.cast(mom, dtype=theano.config.floatX)
         self.nesterov = nesterov
-        print(('Using STOCHASTIC GRADIENT DESCENT MOMENTUM. ETA = %s MOMENTUM = %s NESTEROV = %s'
-              % (lr, mom, nesterov)))
+        self.name = 'STOCHASTIC GRADIENT DESCENT MOMENTUM. ETA = {} MOMENTUM = {} NESTEROV = {}'.\
+            format(lr, mom, nesterov)
+        print('Using %s' % self)
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
         for param, grad in zip(params, grads):
-            updates[param] = param - self.eta * grad
+            updates[param] = param - self.alpha * grad
         if not self.nesterov:
             updates = self.apply_momentum(updates)
         else:
@@ -205,10 +215,11 @@ class SGDMomentum(Optimizer):
 
 
 class AdaGrad(Optimizer):
-    def __init__(self, eta, epsilon=1e-6):
-        super(AdaGrad, self).__init__(eta)
+    def __init__(self, alpha, epsilon=1e-6, **kwargs):
+        super(AdaGrad, self).__init__(alpha, **kwargs)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        print(('Using ADAGRAD. ETA = %s ' % eta))
+        self.name = 'ADAGRAD. ETA = %s '.format(alpha)
+        print('Using %s' % self)
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -218,7 +229,7 @@ class AdaGrad(Optimizer):
             self.params.append(grad_prev)
 
             updates[grad_prev] = grad_prev + grad**2
-            updates[param] = self.eta * grad / T.sqrt(self.epsilon + grad_prev)
+            updates[param] = self.alpha * grad / T.sqrt(self.epsilon + grad_prev)
         return updates
 
     def reset(self):
@@ -227,11 +238,12 @@ class AdaGrad(Optimizer):
 
 
 class RMSprop(Optimizer):
-    def __init__(self, eta=1e-3, gamma=0.9, epsilon=1e-6):
-        super(RMSprop, self).__init__(eta)
+    def __init__(self, alpha=1e-3, gamma=0.9, epsilon=1e-6, **kwargs):
+        super(RMSprop, self).__init__(alpha, **kwargs)
         self.gamma = T.cast(gamma, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        print(('Using RMSPROP. ETA = %s GAMMA = %s ' % (eta, gamma)))
+        self.name = 'RMSPROP. ETA = {} GAMMA = {} '.format(alpha, gamma)
+        print('Using %s' % self)
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -241,7 +253,7 @@ class RMSprop(Optimizer):
             self.params.append(grad2_prev)
 
             updates[grad2_prev] = self.gamma * grad2_prev + (1. - self.gamma) * grad ** 2
-            updates[param] = param - self.eta * grad / T.sqrt(grad2_prev + self.epsilon)
+            updates[param] = param - self.alpha * grad / T.sqrt(grad2_prev + self.epsilon)
         return updates
 
     def reset(self):
@@ -250,12 +262,13 @@ class RMSprop(Optimizer):
 
 
 class Adam(Optimizer):
-    def __init__(self, alpha=1e-3, beta1=0.9, beta2=0.999, epsilon=1e-8):
-        super(Adam, self).__init__(alpha)
+    def __init__(self, alpha=1e-3, beta1=0.9, beta2=0.999, epsilon=1e-8, **kwargs):
+        super(Adam, self).__init__(alpha, **kwargs)
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = epsilon
-        print(('Using ADAM. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
+        self.name = 'ADAM. ETA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
+        print('Using %s' % self)
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -265,7 +278,7 @@ class Adam(Optimizer):
 
         one = T.constant(1)
         t = t_prev + 1
-        a_t = self.eta * T.sqrt(one - self.beta2 ** t) / (one - self.beta1 ** t)
+        a_t = self.alpha * T.sqrt(one - self.beta2 ** t) / (one - self.beta1 ** t)
         for param, g_t in zip(params, grads):
             value = param.get_value(borrow=True)
             m_prev = theano.shared(np.zeros_like(value), param.name + '_grad_mva', broadcastable=param.broadcastable)
@@ -289,12 +302,13 @@ class Adam(Optimizer):
 
 
 class AdaMax(Optimizer):
-    def __init__(self, alpha=2e-3, beta1=0.9, beta2=0.999, epsilon=1e-8):
-        super(AdaMax, self).__init__(alpha)
+    def __init__(self, alpha=2e-3, beta1=0.9, beta2=0.999, epsilon=1e-8, **kwargs):
+        super(AdaMax, self).__init__(alpha, **kwargs)
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        print(('Using ADAMAX. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2)))
+        self.name = 'ADAMAX. ETA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
+        print('Using %s' % self)
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -303,7 +317,7 @@ class AdaMax(Optimizer):
 
         one = T.constant(1)
         t = t_prev + 1
-        a_t = self.eta / (one - self.beta1 ** t)
+        a_t = self.alpha / (one - self.beta1 ** t)
         for param, g_t in zip(params, grads):
             value = param.get_value(borrow=True)
             m_prev = theano.shared(np.zeros_like(value), param.name+'_grad_mva', broadcastable=param.broadcastable)
@@ -327,22 +341,24 @@ class AdaMax(Optimizer):
 
 
 class NAdam(Optimizer):
-    def __init__(self, alpha=1e-3, beta1=.99, beta2=.999, epsilon=1e-8, decay=lambda x, t: x * (1. - .5 * .96 ** (t / 250.))):
-        super(NAdam, self).__init__(alpha)
+    def __init__(self, alpha=1e-3, beta1=.99, beta2=.999, epsilon=1e-8,
+                 decay=lambda x, t: x * (1. - .5 * .96 ** (t / 250.)), **kwargs):
+        super(NAdam, self).__init__(alpha, **kwargs)
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
         self.decay = decay
-        print('Using NESTEROV ADAM. ETA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2))
+        self.name = 'NESTEROV ADAM. ETA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
+        print('Using %s' % self)
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
 
-        beta1_acc = theano.shared(1., 'beta1 accumulation')
-        t_prev = theano.shared(0, 'time')
+        beta1_acc = theano.shared(np.float32(1.), 'beta1 accumulation')
+        t_prev = theano.shared(np.float32(0), 'time')
         self.params += [beta1_acc, t_prev]
 
-        t = t_prev + 1
+        t = t_prev + 1.
         for param, g_t in zip(params, grads):
             value = param.get_value(borrow=True)
             m_prev = theano.shared(np.zeros_like(value), param.name+'_grad_mva', broadcastable=param.broadcastable)
@@ -350,17 +366,17 @@ class NAdam(Optimizer):
             self.params += [m_prev, n_prev]
 
             beta1_t = self.decay(self.beta1, t)
-            beta1_tp1 = self.decay(self.beta1, t+1)
+            beta1_tp1 = self.decay(self.beta1, t+1.)
             beta1_acc_t = beta1_acc * beta1_t
 
             g_hat_t = g_t / (1. - beta1_acc_t)
-            m_t = self.beta1 * m_prev + (1 - self.beta1) * g_t
-            m_hat_t = m_t / (1 - beta1_acc_t * beta1_tp1)
-            n_t = self.beta2 * n_prev + (1 - self.beta2) * g_t ** 2
+            m_t = self.beta1 * m_prev + (1. - self.beta1) * g_t
+            m_hat_t = m_t / (1. - beta1_acc_t * beta1_tp1)
+            n_t = self.beta2 * n_prev + (1 - self.beta2) * g_t ** 2.
             n_hat_t = n_t / (1. - self.beta2 ** t)
-            m_bar_t = (1 - self.beta1) * g_hat_t + beta1_tp1 * m_hat_t
+            m_bar_t = (1. - self.beta1) * g_hat_t + beta1_tp1 * m_hat_t
 
-            updates[param] = param - self.eta * m_bar_t / (T.sqrt(n_hat_t) + self.epsilon)
+            updates[param] = param - self.alpha * m_bar_t / (T.sqrt(n_hat_t) + self.epsilon)
             updates[beta1_acc] = beta1_acc_t
             updates[m_prev] = m_t
             updates[n_prev] = n_t
@@ -374,13 +390,14 @@ class NAdam(Optimizer):
 
 
 class AMSGrad(Optimizer):
-    def __init__(self, alpha=1e-3, beta1=.9, beta2=.99, epsilon=1e-8, decay=lambda x, t: x):
-        super(AMSGrad, self).__init__(alpha)
+    def __init__(self, alpha=1e-3, beta1=.9, beta2=.99, epsilon=1e-8, decay=lambda x, t: x, **kwargs):
+        super(AMSGrad, self).__init__(alpha, **kwargs)
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
         self.decay = decay
-        print('Using AMSGRAD. ALPHA = %s BETA1 = %s BETA2 = %s' % (alpha, beta1, beta2))
+        self.name = 'AMSGRAD. ALPHA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
+        print('Using %s' % self)
 
     def get_updates(self, params, grads):
         updates = OrderedDict()
@@ -389,7 +406,7 @@ class AMSGrad(Optimizer):
         self.params.append(t_prev)
 
         t = t_prev + 1.
-        eta_t = self.decay(self.eta, t)
+        eta_t = self.decay(self.alpha, t)
         a_t = eta_t * T.sqrt(T.constant(1.) - self.beta2 ** t) / (T.constant(1.) - self.beta1 ** t)
         for param, g_t in zip(params, grads):
             value = param.get_value(borrow=True)
@@ -415,78 +432,76 @@ class AMSGrad(Optimizer):
             param.set_value(param.get_value() * np.float32(0))
 
 
-def sgd(cost, params, lr=1e-3, clip_by_norm=False, return_op=False, **kwargs):
+def sgd(cost, params, lr=1e-3, clip_by_norm=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
-        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
+        grads = total_norm_constraint(grads, clip_by_norm)
     sgd_op = VanillaSGD(lr)
-    return (sgd_op, sgd_op.get_updates(params, grads)) if return_op else sgd_op.get_updates(params, grads)
+    return sgd_op(params, grads), sgd_op, grads
 
 
-def adadelta(cost, params, mom=.95, epsilon=1e-6, clip_by_norm=False, return_op=False, **kwargs):
+def adadelta(cost, params, mom=.95, epsilon=1e-6, clip_by_norm=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
-        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
+        grads = total_norm_constraint(grads, clip_by_norm)
     adadelta_op = AdaDelta(mom, epsilon)
-    return (adadelta_op, adadelta_op.get_updates(params, grads)) if return_op else adadelta_op.get_updates(params, grads)
+    return adadelta_op(params, grads), adadelta_op, grads
 
 
-def adam(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by_norm=False, return_op=False, **kwargs):
+def adam(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by_norm=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
-        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
+        grads = total_norm_constraint(grads, clip_by_norm)
     adam_op = Adam(lr, beta1, beta2, epsilon)
-    return (adam_op, adam_op.get_updates(params, grads)) if return_op else adam_op.get_updates(params, grads)
+    return adam_op(params, grads), adam_op, grads
 
 
-def amsgrad(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x, clip_by_norm=False,
-            return_op=False, **kwargs):
+def amsgrad(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x, clip_by_norm=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
-        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
+        grads = total_norm_constraint(grads, clip_by_norm)
     amsgrad_op = AMSGrad(lr, beta1, beta2, epsilon, decay)
-    return (amsgrad_op, amsgrad_op.get_updates(params, grads)) if return_op else amsgrad_op.get_updates(params, grads)
+    return amsgrad_op(params, grads), amsgrad_op, grads
 
 
-def sgdmomentum(cost, params, lr, mom=.95, nesterov=False, clip_by_norm=False, return_op=False, **kwargs):
+def sgdmomentum(cost, params, lr, mom=.95, nesterov=False, clip_by_norm=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
-        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
+        grads = total_norm_constraint(grads, clip_by_norm)
     sgdmom_op = SGDMomentum(lr, mom, nesterov)
-    return (sgdmom_op, sgdmom_op.get_updates(params, grads)) if return_op else sgdmom_op.get_updates(params, grads)
+    return sgdmom_op(params, grads), sgdmom_op, grads
 
 
-def rmsprop(cost, params, lr=1e-3, mom=.9, epsilon=1e-6, clip_by_norm=False, return_op=False, **kwargs):
+def rmsprop(cost, params, lr=1e-3, mom=.9, epsilon=1e-6, clip_by_norm=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
-        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
+        grads = total_norm_constraint(grads, clip_by_norm)
     rmsprop_op = RMSprop(lr, mom, epsilon)
-    return (rmsprop_op, rmsprop_op.get_updates(params, grads)) if return_op else rmsprop_op.get_updates(params, grads)
+    return rmsprop_op(params, grads), rmsprop_op, grads
 
 
-def adagrad(cost, params, lr, epsilon=1e-6, clip_by_norm=False, return_op=False, **kwargs):
+def adagrad(cost, params, lr, epsilon=1e-6, clip_by_norm=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
-        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
+        grads = total_norm_constraint(grads, clip_by_norm)
     adagrad_op = AdaGrad(lr, epsilon)
-    return (adagrad_op, adagrad_op.get_updates(params, grads)) if return_op else adagrad_op.get_updates(params, grads)
+    return adagrad_op(params, grads), adagrad_op, grads
 
 
-def nadam(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x, clip_by_norm=False,
-          return_op=False, **kwargs):
+def nadam(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, decay=lambda x, t: x, clip_by_norm=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
-        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
+        grads = total_norm_constraint(grads, clip_by_norm)
     nadam_op = NAdam(lr, beta1, beta2, epsilon, decay)
-    return (nadam_op, nadam_op.get_updates(params, grads)) if return_op else nadam_op.get_updates(params, grads)
+    return nadam_op(params, grads), nadam_op, grads
 
 
-def adamax(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by_norm=False, return_op=False, **kwargs):
+def adamax(cost, params, lr=1e-3, beta1=.9, beta2=.999, epsilon=1e-8, clip_by_norm=False, **kwargs):
     grads = T.grad(cost, params)
     if clip_by_norm:
-        grads = total_norm_constraint(grads, clip_by_norm, clip_by_norm)
+        grads = total_norm_constraint(grads, clip_by_norm)
     adamax_op = AdaMax(lr, beta1, beta2, epsilon)
-    return (adamax_op, adamax_op.get_updates(params, grads)) if return_op else adamax_op.get_updates(params, grads)
+    return adamax_op(params, grads), adamax_op, grads
 
 
 def anneal_learning_rate(lr, t, method='half-life', **kwargs):
@@ -594,8 +609,7 @@ def norm_constraint(tensor_var, max_norm, norm_axes=None, epsilon=1e-7):
     return constrained_output
 
 
-def total_norm_constraint(tensor_vars, max_norm, epsilon=1e-7,
-                          return_norm=False):
+def total_norm_constraint(tensor_vars, max_norm, epsilon=1e-7, return_norm=False):
     """Rescales a list of tensors based on their combined norm
     If the combined norm of the input tensors exceeds the threshold then all
     tensors are rescaled such that the combined norm is equal to the threshold.
@@ -631,9 +645,9 @@ def total_norm_constraint(tensor_vars, max_norm, epsilon=1e-7,
     _______
     Copied from Lasagne
     """
-    norm = T.sqrt(sum(T.sum(tensor**2) for tensor in tensor_vars))
+    norm = T.sqrt(sum(T.sum(tensor**2.) for tensor in tensor_vars))
     dtype = np.dtype(theano.config.floatX).type
-    target_norm = T.clip(norm, 0, dtype(max_norm))
+    target_norm = T.clip(norm, 0., dtype(max_norm))
     multiplier = target_norm / (dtype(epsilon) + norm)
     tensor_vars_scaled = [step*multiplier for step in tensor_vars]
 

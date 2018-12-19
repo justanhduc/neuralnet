@@ -13,6 +13,6 @@ from .build_training import *
 from .monitor import *
 from .build_optimization import *
 from .model import Model
-from . import read_data
+from . import data_loader
 from . import transforms
 from . import model_zoo

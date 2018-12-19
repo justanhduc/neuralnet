@@ -14,7 +14,7 @@ int_types = (numbers.Integral, np.integer)
 __all__ = ['PixelShuffleLayer', 'ConvMeanPoolLayer', 'MeanPoolConvLayer', 'ReshapingLayer', 'UpsamplingLayer',
            'PoolingLayer', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'GlobalAveragePoolingLayer',
            'MaxPoolingLayer', 'AveragePoolingLayer', 'UpProjectionUnit', 'DownProjectionUnit',
-           'ReflectPaddingConv', 'ReflectLayer']
+           'ReflectPaddingConv', 'ReflectPaddingLayer']
 
 
 class DownsamplingLayer(Layer):
@@ -64,8 +64,7 @@ class DownsamplingLayer(Layer):
                                                                                   kernel_width)
         # note that `kernel width` will be different to actual size for phase = 1/2
         kernel = utils.get_kernel(factor, kernel_type_, phase, kernel_width, support=support, sigma=sigma)
-        self.kernel = utils.make_tensor_kernel_from_numpy((input_shape[1], input_shape[1], kernel_width, kernel_width),
-                                                          kernel)
+        self.kernel = utils.make_tensor_kernel_from_numpy((input_shape[1], input_shape[1]), kernel)
         self.preserve_size = preserve_size
 
         if preserve_size:
@@ -73,11 +72,11 @@ class DownsamplingLayer(Layer):
                 pad = int((kernel_width - 1) / 2.)
             else:
                 pad = int((kernel_width - factor) / 2.)
-            self.padding = partial(utils.replication_pad, padding=pad)
+            self.pad = partial(utils.replication_pad, padding=pad)
 
     def get_output(self, input):
         if self.preserve_size:
-            x = self.padding(input)
+            x = self.pad(input)
         else:
             x = input
         out = conv(x, self.kernel, subsample=(self.factor, self.factor),
@@ -104,15 +103,18 @@ class PoolingLayer(Layer):
         :param layer_name:
         """
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
+        assert isinstance(window_size,
+                          (list, tuple, int)), 'window_size must be an int or a list/tuple, got %s.' % type(window_size)
         assert mode in ('max', 'sum', 'average_inc_pad', 'average_exc_pad'), 'Invalid pooling mode. ' \
                                                                              'Mode should be \'max\', \'sum\', ' \
                                                                              '\'average_inc_pad\' or \'average_exc_pad\', ' \
                                                                              'got %s' % mode
 
         super(PoolingLayer, self).__init__(input_shape, layer_name)
-        self.ws = window_size
+        self.ws = window_size if isinstance(window_size, (list, tuple)) else (window_size, window_size)
         self.ignore_border = ignore_border
-        self.stride = stride if stride else tuple(window_size)
+        self.stride = stride if stride and isinstance(stride, (list, tuple)) \
+            else (stride, stride) if stride and isinstance(stride, int) else tuple(self.ws)
         self.mode = mode
         if isinstance(pad, (list, tuple)):
             self.pad = tuple(pad)
@@ -192,7 +194,7 @@ class DetailPreservingPoolingLayer(Layer):
                                                                                   self.output_shape)
 
     def __downsampling(self, input):
-        output = pool(input, self.ws, self.stride, 'average_exc_pad')
+        output = pool(input, self.ws, stride=self.ws, mode='average_exc_pad')
         output = conv(output, self.kern, border_mode='half')
         return output
 
@@ -209,8 +211,8 @@ class DetailPreservingPoolingLayer(Layer):
         down = self.__downsampling(input)
         down_up = utils.unpool(down, self.ws)
         W = alpha + self.__penalty(input - down_up, lam)
-        output = pool(input * W, self.ws, mode='average_exc_pad')
-        weight = 1. / pool(W, self.ws, mode='average_exc_pad')
+        output = pool(input * W, self.ws, stride=self.ws, mode='average_exc_pad')
+        weight = 1. / pool(W, self.ws, stride=self.ws, mode='average_exc_pad')
         return output * weight
 
     @property
@@ -392,9 +394,9 @@ class ReshapingLayer(Layer):
             return tuple(self.new_shape)
 
 
-class ReflectLayer(Layer):
-    def __init__(self, input_shape, width, batch_ndim=2, layer_name='Reflect Layer'):
-        super(ReflectLayer, self).__init__(input_shape, layer_name)
+class ReflectPaddingLayer(Layer):
+    def __init__(self, input_shape, width, batch_ndim=2, layer_name='Reflect Padding Layer'):
+        super(ReflectPaddingLayer, self).__init__(input_shape, layer_name)
         self.width = width
         self.batch_ndim = batch_ndim
         self.descriptions = '{} Reflect layer: width {} no padding before {}'.format(layer_name, width, batch_ndim)
@@ -454,7 +456,7 @@ def ReflectPaddingConv(input_shape, num_filters, filter_size=3, stride=1, activa
     assert filter_size % 2 == 1
     pad_size = filter_size >> 1
     block = Sequential(input_shape=input_shape, layer_name=layer_name)
-    block.append(ReflectLayer(block.output_shape, pad_size, layer_name=layer_name+'/Reflect'))
+    block.append(ReflectPaddingLayer(block.output_shape, pad_size, layer_name=layer_name + '/Reflect'))
     if use_batchnorm:
         block.append(
             ConvNormAct(block.output_shape, num_filters, filter_size, Normal(.02), border_mode=0, stride=stride,
@@ -524,13 +526,21 @@ class PaddingLayer(Layer):
         return tuple(shape)
 
 
-def GlobalAveragePoolingLayer(input_shape, layer_name='GlbAvg Pooling'):
-    return PoolingLayer(input_shape, input_shape[2:], True, (1, 1), (0, 0), 'average_exc_pad', layer_name)
+class GlobalAveragePoolingLayer(PoolingLayer):
+    def __init__(self, input_shape, layer_name='GlbAvg Pooling'):
+        super(GlobalAveragePoolingLayer, self).__init__(input_shape, input_shape[2:], True, (1, 1), 0,
+                                                        'average_exc_pad', layer_name)
+        self.descriptions = '{} Global Average Pooling Layer: {} -> {}'.format(layer_name, self.input_shape,
+                                                                               self.output_shape)
 
 
-def MaxPoolingLayer(input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='Max Pooling'):
-    return PoolingLayer(input_shape, ws, ignore_border, stride, pad, 'max', layer_name)
+class MaxPoolingLayer(PoolingLayer):
+    def __init__(self, input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='Max Pooling'):
+        super(MaxPoolingLayer, self).__init__(input_shape, ws, ignore_border, stride, pad, 'max', layer_name)
+        self.descriptions = '{} Max Pooling Layer: {} -> {}'.format(layer_name, self.input_shape, self.output_shape)
 
-
-def AveragePoolingLayer(input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='Avg Pooling'):
-    return PoolingLayer(input_shape, ws, ignore_border, stride, pad, 'average_exc_pad', layer_name)
+class AveragePoolingLayer(PoolingLayer):
+    def __init__(self, input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='Avg Pooling'):
+        super(AveragePoolingLayer, self).__init__(input_shape, ws, ignore_border, stride, pad, 'average_exc_pad',
+                                                  layer_name)
+        self.descriptions = '{} Average Pooling Layer: {} -> {}'.format(layer_name, self.input_shape, self.output_shape)

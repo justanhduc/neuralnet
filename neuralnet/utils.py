@@ -17,6 +17,7 @@ from neuralnet import __version__
 
 __all__ = ['ConfigParser', 'DataManager', 'placeholder']
 thread_lock = threading.Lock()
+srng = theano.sandbox.rng_mrg.MRG_RandomStreams(np.random.RandomState(int(time.time())).randint(1, int(time.time())))
 
 
 def validate(func):
@@ -81,26 +82,25 @@ class DataManager(ConfigParser, metaclass=abc.ABCMeta):
     A class to manage data loader.
     """
 
-    def __init__(self, config_file=None, placeholders=None, path=None, batch_size=None, n_epochs=None, *args, **kwargs):
+    def __init__(self, config_file=None, placeholders=None, batch_size=None, n_epochs=None, *args, **kwargs):
         """
         Either a config_file specifying path, batch_size, and n_epochs or these parameters themselvesshould be provided.
         A placeholder of a list (tuple) of placeholders should be provided if gpu is to be used. In that case, the
         returned object when being iterated is the iteration index. Otherwise, a tuple of data shall be returned.
         :param config_file:
         :param placeholders:
-        :param path:
         :param batch_size:
         :param n_epochs:
         :param args:
         :param kwargs:
         """
         super(DataManager, self).__init__(config_file)
-        self.path = path if path else self.config['data'].pop('path', None)
         self.batch_size = batch_size if batch_size else self.config['training'].pop('batch_size', None)
         self.n_epochs = n_epochs if n_epochs else self.config['training'].pop('n_epochs', None)
-        if self.path is None or self.batch_size is None or self.n_epochs is None:
+        if self.batch_size is None or self.n_epochs is None:
             raise ValueError('path, batch_size and n_epochs must be provided.')
 
+        self.path = self.config['data'].get('path') if config_file else kwargs.pop('path', None)
         self.shuffle = self.config['data'].get('shuffle') if config_file else kwargs.pop('shuffle', False)
         self.num_cached = self.config['data'].get('num_cached') if config_file else kwargs.pop('num_cached', 10)
         self.augmentation = kwargs.pop('augmentation', None)
@@ -170,9 +170,17 @@ class DataManager(ConfigParser, metaclass=abc.ABCMeta):
                 batches = self.augment_minibatches(batches)
             batches = self.generate_in_background(batches)
             for it, batch in enumerate(batches):
-                self.update_input(batch)
-                yield (self.cur_epoch * num_batches + it) if self.placeholders is not None \
-                          else ((self.cur_epoch * num_batches + it), batch)
+                if isinstance(self.placeholders, (list, tuple)):
+                    self.update_input(batch[:len(self.placeholders)])
+                    yield (self.cur_epoch * num_batches + it) if not batch[len(self.placeholders):] \
+                        else (self.cur_epoch * num_batches + it,) + tuple(batch[len(self.placeholders):])
+                elif isinstance(batch, (list, tuple)) and isinstance(self.placeholders, theano.gpuarray.type.GpuArraySharedVariable):
+                    self.update_input(batch[0])
+                    yield (self.cur_epoch * num_batches + it,) + tuple(batch[1:])
+                else:
+                    self.update_input(batch)
+                    yield (self.cur_epoch * num_batches + it) if self.placeholders is not None \
+                              else ((self.cur_epoch * num_batches + it), batch)
 
     def generate_in_background(self, generator):
         """
@@ -501,13 +509,19 @@ def yiq2rgb(img):
     return T.reshape(out_mat, (c, n, h, w)).dimshuffle(1, 0, 2, 3)
 
 
-def linspace(start, stop, num):
+def linspace(start, stop, num=50):
     # Theano linspace. Behaves similar to np.linspace
     start = T.cast(start, theano.config.floatX)
     stop = T.cast(stop, theano.config.floatX)
     num = T.cast(num, theano.config.floatX)
     step = (stop-start)/(num-1)
     return T.arange(num, dtype=theano.config.floatX)*step+start
+
+
+def meshgrid(x, y):
+    x_t = T.dot(T.ones((y.shape[0], 1), x.dtype), x. dimshuffle('x', 0))
+    y_t = T.dot(y.dimshuffle(0, 'x'), T.ones((1, x.shape[0]), y.dtype))
+    return x_t, y_t
 
 
 def _meshgrid(height, width):
@@ -1013,6 +1027,17 @@ def space_to_depth(x, downscale_factor):
     return T.reshape(z, (n, oc, oh, ow))
 
 
+def gauss_reparametrize(mu, logvar, n_sample=1, clip=None):
+    """Gaussian reparametrization"""
+    std = T.exp(.5 * logvar)
+    size = (n_sample, std.shape[0], std.shape[1])
+    eps = srng.normal(size)
+    z = eps * T.shape_padleft(std) + T.shape_padleft(mu)
+    if clip:
+        z = T.clip(z, -clip, clip)
+    return T.reshape(z, (z.shape[0] * z.shape[1], z.shape[2]))
+
+
 def save(obj, file):
     with open(file, 'wb') as f:
         cpkl.dump(obj, f, pkl.HIGHEST_PROTOCOL)
@@ -1025,8 +1050,8 @@ def numpy2shared(numpy_vars, shared_vars=None):
     if shared_vars is not None:
         assert isinstance(shared_vars, (list, tuple, T.sharedvar.ScalarSharedVariable, T.sharedvar.TensorSharedVariable)), \
             'shared_vars must be a list or tuple of numpy arrays, got %s' % type(shared_vars)
-        return shared_vars.set_value(numpy_vars) if isinstance(numpy_vars, np.ndarray) else [sv.set_value(nv) for sv, nv
-                                                                                             in zip(shared_vars, numpy_vars)]
+        shared_vars.set_value(numpy_vars) if isinstance(numpy_vars, np.ndarray) else [sv.set_value(nv) for sv, nv in
+                                                                                      zip(shared_vars, numpy_vars)]
     else:
         shared_vars = placeholder(numpy_vars.shape, numpy_vars.dtype, numpy_vars) if isinstance(numpy_vars,
                                                                                                 np.ndarray) else [
@@ -1053,12 +1078,12 @@ def load_batch_checkpoints(files, weights):
             w.set_value(w_np)
 
 
-def lp_normalize(v, p=2, eps=1e-12):
-    return v / (lp_norm(v, p) + eps)
+def p_normalize(v, p=2, eps=1e-12):
+    return v / (p_norm(v, p) + eps)
 
 
-def lp_norm(v, p=2):
-    return T.sum(v ** p) ** np.float32(1 / p)
+def p_norm(v, p=2, axis=None):
+    return T.sum(v ** p, axis=axis) ** np.float32(1 / p)
 
 
 def max_singular_value(W, u=None, lp=1):
@@ -1072,8 +1097,8 @@ def max_singular_value(W, u=None, lp=1):
         u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype(theano.config.floatX), 'u')
     _u = u
     for _ in range(lp):
-        _v = lp_normalize(T.dot(_u, W))
-        _u = lp_normalize(T.dot(_v, W.T))
+        _v = p_normalize(T.dot(_u, W))
+        _u = p_normalize(T.dot(_v, W.T))
     sigma = T.sum(T.dot(T.dot(_u, W), _v.T))
     return sigma, _u, _v
 
@@ -1099,6 +1124,26 @@ def placeholder(shape=None, dtype=theano.config.floatX, value=None, name=None, b
     else:
         x = theano.shared(np.zeros(shape, dtype), name, borrow=borrow)
     return x
+
+
+def rfft2(x, norm=None):
+    assert x.ndim == 4, 'Input must be a 4D tensor'
+
+    def _rfft2(y):
+        return T.fft.rfft(y, norm)
+
+    out, _ = theano.scan(_rfft2, x)
+    return out
+
+
+def irfft2(x, norm=None, is_odd=False):
+    assert x.ndim == 5, 'Input must be a 5D tensor'
+
+    def _irfft2(y):
+        return T.fft.irfft(y, norm, is_odd)
+
+    out, _ = theano.scan(_irfft2, x)
+    return out
 
 
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),

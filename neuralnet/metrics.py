@@ -11,7 +11,7 @@ __all__ = ['manhattan_distance', 'mean_classification_error', 'mean_squared_erro
            'multinoulli_cross_entropy', 'root_mean_squared_error', 'psnr', 'psnr255', 'pearson_correlation',
            'ssim', 'spearman', 'first_derivative_error', 'huber_loss', 'binary_cross_entropy', 'norm_error',
            'gradient_difference', 'total_variation', 'pulling_away', 'vgg16_loss', 'dog_loss',
-           'log_loss', 'gram_vgg19_loss', 'l1_reg', 'l2_reg']
+           'log_loss', 'gram_vgg19_loss', 'kld_std_gauss', 'neg_log_prob_gaussian', 'gan_loss', 'l1_reg', 'l2_reg']
 
 
 def manhattan_distance(y_pred, y):
@@ -53,6 +53,19 @@ def huber_loss(x, y, thres=1.):
     less_than = .5 * e**2
     mask = T.cast(e >= thres, theano.config.floatX)
     return T.mean(mask * larger_than_equal_to + (1. - mask) * less_than)
+
+
+def multinoulli_cross_entropy(p_y_given_x, y):
+    print('Using multinoulli cross entropy')
+    cost = T.nnet.categorical_crossentropy(p_y_given_x, y).mean()
+    return cost
+
+
+def binary_cross_entropy(p_y_given_x, y):
+    print('Using binary cross entropy')
+    if y.ndim != p_y_given_x.ndim:
+        raise TypeError('y should have the same shape as p_y_given_x', ('y', y.type, 'p_y_given_x', p_y_given_x.type))
+    return T.nnet.binary_crossentropy(p_y_given_x + 1e-7, y).mean()
 
 
 def first_derivative_error(x, y, p=2, depth=3):
@@ -156,16 +169,47 @@ def pulling_away(x, y=None):
         return corr / 2.
 
 
-def l2_reg(params):
+def kld_std_gauss(mu, log_var):
+    """
+    from Appendix B from VAE paper:
+    Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
+    https://arxiv.org/abs/1312.6114
+    KL = -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+    """
+    kld = -.5 * T.sum(log_var + 1. - mu**2. - T.exp(log_var), axis=1)
+    return T.mean(kld)
+
+
+def neg_log_prob_gaussian(z, mu, log_var):
+    res = - .5 * log_var - ((z - mu)**2. / (2. * T.exp(log_var)))
+    return -T.mean(res - np.float32(.5 * np.log(2. * np.pi)))
+
+
+def gan_loss(pred, target_is_real, div=binary_cross_entropy):
+    target = T.ones_like(pred) if target_is_real else T.zeros_like(pred)
+    return div(pred, target)
+
+
+def l2_reg(params, mode='sum'):
     print('Using L2 regularization')
-    l2 = sum([T.sum(p ** 2) for p in params])
-    return l2
+    l2 = [T.sum(p ** 2) for p in params]
+    if mode == 'sum':
+        return sum(l2)
+    elif mode == 'mean':
+        return T.mean(l2)
+    else:
+        raise ValueError('mode must be \'sum\' or \'mean\'.')
 
 
-def l1_reg(params):
+def l1_reg(params, mode='sum'):
     print('Using L1 regularization')
-    l1 = sum([T.sum(T.abs_(p)) for p in params])
-    return l1
+    l1 = [T.sum(T.abs_(p)) for p in params]
+    if mode == 'sum':
+        return sum(l1)
+    elif mode == 'mean':
+        return T.mean(l1)
+    else:
+        raise ValueError('mode must be \'sum\' or \'mean\'.')
 
 
 def spearman(ypred, y, axis=None, eps=1e-8):
@@ -194,19 +238,6 @@ def pearson_correlation(x, y):
     numerator = T.sum(T.mul(x - muy_ypred, y - muy_y))
     denominator = T.mul(T.sqrt(T.sum(T.square(x - muy_ypred))), T.sqrt(T.sum(T.sqr(y - muy_y)))) + 1e-10
     return numerator / denominator
-
-
-def multinoulli_cross_entropy(p_y_given_x, y):
-    print('Using multinoulli cross entropy')
-    cost = T.nnet.categorical_crossentropy(p_y_given_x, y).mean()
-    return cost
-
-
-def binary_cross_entropy(p_y_given_x, y):
-    print('Using binary cross entropy')
-    if y.ndim != p_y_given_x.ndim:
-        raise TypeError('y should have the same shape as p_y_given_x', ('y', y.type, 'p_y_given_x', p_y_given_x.type))
-    return T.nnet.binary_crossentropy(p_y_given_x + 1e-7, y).mean()
 
 
 def mean_classification_error(p_y_given_x, y, binary_threshold=0.5):

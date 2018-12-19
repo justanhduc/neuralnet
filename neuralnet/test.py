@@ -9,6 +9,116 @@ def assert_allclose(x, y):
     assert np.all(np.isclose(x, y))
 
 
+def test_meshgrid():
+    height = 10.
+    width = 100.
+
+    h = T.scalar()
+    w = T.scalar()
+    x, y = nn.utils.linspace(0, w, w), nn.utils.linspace(0, h, h)
+    X, Y = nn.utils.meshgrid(x, y)
+    f = nn.function([w, h], [X, Y])
+
+    X_th, Y_th = f(width, height)
+
+    x, y = np.linspace(0, width, width), np.linspace(0, height, height)
+    X_np, Y_np = np.meshgrid(x, y)
+
+    assert_allclose(X_th, X_np)
+    assert_allclose(Y_th, Y_np)
+
+
+def test_rfft2():
+    X = T.tensor4('input')
+    Y = nn.utils.rfft2(X)
+    Y_i = nn.utils.irfft2(Y)
+    rfft2 = nn.function([X], [Y, Y_i])
+
+    from imageio import imread
+    x = imread('test_files/lena_small.png').astype('float32') / 255.
+    x = np.transpose(x, (2, 0, 1))
+    x_fft_np = np.fft.rfft2(x)
+
+    x = x[None]
+    x_fft_th, x_ifft_th = rfft2(x)
+    x_fft_th = x_fft_th[0]
+
+    assert_allclose(np.real(x_fft_np), x_fft_th[..., 0])
+    assert_allclose(np.imag(x_fft_np), x_fft_th[..., 1])
+    np.allclose(x_ifft_th, x, 1e-4)
+
+
+def test_monitor_dump():
+    shape = (128, 256, 3, 3)
+    n_iters = 10
+    print_freq = 2
+
+    a = np.random.rand(*shape).astype('float32')
+
+    import os
+    import shutil
+    if os.path.exists('results'):
+        shutil.rmtree('results')
+    mon = nn.Monitor(print_freq=print_freq)
+    res = []
+    for i in range(n_iters):
+        a += 1.
+        res.append(np.copy(a))
+        with mon:
+            mon.dump(a, 'foo.npy', 3)
+    mon.flush()
+
+    mon = nn.Monitor(current_folder='results/my_model/run1')
+    loaded_a = [mon.load('foo.npy', version) for version in (6, 8, 10)]
+    assert_allclose(np.array(res)[[6, 8, 9]], loaded_a)
+
+
+def test_downsample():
+    shape = (1, 3, 220, 220)
+    kernel_type = 'gauss1sq2'
+
+    x = T.tensor4('input')
+    downsample = nn.DownsamplingLayer(shape, 4, kernel_type=kernel_type)
+    y = downsample(x)
+    f = nn.function([x], y)
+
+    from imageio import imwrite, imread
+    x = imread('test_files/lena_small.png').astype('float32') / 255.
+    x = np.transpose(x[None], (0, 3, 1, 2))
+    out = f(x)
+    out = np.transpose(out[0], (1, 2, 0))
+    imwrite('test_files/lena_small_downsampled.jpg', out)
+
+
+def test_partial_conv_based_padding():
+    shape = (1, 3, 5, 5)
+    num_filters = 2
+    filter_size = 3
+
+    x = T.ones(shape)
+    conv = nn.Conv2DLayer(shape, num_filters, filter_size, border_mode='partial')
+    y = conv(x)
+    f = nn.function([], y)
+    print(f())
+    print(conv.update_mask.eval())
+    print(conv.mask_ratio)
+
+
+def test_monitor_plot():
+    valid_freq = 2
+    n_iters = 20
+
+    import os
+    import shutil
+    if os.path.exists('results'):
+        shutil.rmtree('results')
+    mon = nn.Monitor(print_freq=valid_freq)
+    for i in range(n_iters):
+        with mon:
+            mon.plot('dummy plot', np.exp(-i))
+    mon.flush()
+
+
 def test_tracking():
     trivial_loops = 5
     shape = (3, 3)
@@ -447,11 +557,13 @@ def test_monitor_hist():
     import shutil
     if os.path.exists('results'):
         shutil.rmtree('results')
-    mon = nn.Monitor(valid_freq=valid_freq)
-    filter = np.random.uniform(-1, 1, size)
+    mon = nn.Monitor(print_freq=valid_freq, hist_last=True)
+    filter = np.random.normal(scale=.25, size=size)
     for i in range(n_iters):
         with mon:
-            mon.hist('filter%d' % i, filter + i / 10. * np.random.normal(.5, size=size))
+            mon.plot('foo', i**2 / 4.)
+            mon.hist('filter_last', filter * (i + 1) * .25 + i / 10., last_only=True, n_bins=10)
+            mon.hist('filter', filter * (i + 1) * .25 + i / 15.)
     mon.flush()
 
 
@@ -600,34 +712,3 @@ def test_lstm_dnn():
     out = func(x_val)
     print(out.shape)
     print(out)
-
-
-if __name__ == '__main__':
-    from theano.tensor.nnet import conv2d
-    from theano.tensor.nnet.conv3d2d import conv3d
-
-    x = T.tensor4()
-    h = T.tensor4()
-    # conv2d_temp = []
-    # for patch_num in range(36):
-    #     input = T.concatenate([x[patch_num, :, :, :].dimshuffle(0, 'x', 1, 2)]*512, 1)
-    #     filter = h[patch_num, :, :, :].dimshuffle('x', 0, 1, 2)
-    #     conv2d_temp.append(conv2d(input, filter,
-    #                                border_mode='half'
-    #                               ))
-    # conv_out = T.concatenate(conv2d_temp, axis=0)
-
-    x_con = T.concatenate([x] * 512, 1)
-    x_prime = x_con.dimshuffle(0, 'x', 1, 2, 3)
-    conv_out3 = conv3d(x_prime, h.dimshuffle('x', 0, 1, 2, 3), border_mode='half')
-    conv_out3 = T.stack([conv_out3[i, i] for i in range(36)])
-
-    # func = nn.function([x, h], conv_out)
-    func_3 = nn.function([x, h], conv_out3)
-
-    x = np.random.rand(36, 1, 10, 10).astype('float32')
-    h = np.random.rand(36, 512, 3, 3).astype('float32')
-
-    print(func_3(x, h).shape)
-    # print(func(x, h).shape)
-    # assert np.allclose(func(x, h), func_3(x, h))
