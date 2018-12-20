@@ -2,11 +2,12 @@
 read some common datasets
 '''
 
-import pickle as pkl
 import os
+import pickle as pkl
+import sys
+
 import numpy as np
 import tqdm
-import sys
 
 
 def read_cifar10(cifar_folder, new_size=(32, 32), validation=0.2, shuffle=False):
@@ -48,8 +49,10 @@ def read_cifar10(cifar_folder, new_size=(32, 32), validation=0.2, shuffle=False)
         train_data = train_data[index]
         train_label = train_label[index]
     print('DATA PREPARED!')
-    return (train_data[:int((1 - validation) * train_data.shape[0])], train_label[:int((1 - validation) * train_data.shape[0])]), \
-           (train_data[int((1 - validation) * train_data.shape[0]):], train_label[int((1 - validation) * train_data.shape[0]):]), \
+    return (train_data[:int((1 - validation) * train_data.shape[0])],
+            train_label[:int((1 - validation) * train_data.shape[0])]), \
+           (train_data[int((1 - validation) * train_data.shape[0]):],
+            train_label[int((1 - validation) * train_data.shape[0]):]), \
            (test_data, test_label)
 
 
@@ -95,7 +98,7 @@ def load_dataset(path, normalize=False, new_shape=None):
 
     # training data
     data = [pkl.load(open(os.path.join(path, 'cifar-10-batches-py',
-                             'data_batch_%d' % (i + 1)), 'rb'), encoding='latin-1') for i in range(5)]
+                                       'data_batch_%d' % (i + 1)), 'rb'), encoding='latin-1') for i in range(5)]
     X_train = np.vstack([d['data'] for d in data])
     y_train = np.hstack([np.asarray(d['labels'], np.int8) for d in data])
 

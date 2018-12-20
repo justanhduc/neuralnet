@@ -1,6 +1,6 @@
+import numpy as np
 import theano
 from theano import tensor as T
-import numpy as np
 
 import neuralnet as nn
 
@@ -129,7 +129,7 @@ def test_tracking():
 
     def foo(x, y):
         for i in range(trivial_loops):
-            nn.track('loop %d' % (i+1), x)
+            nn.track('loop %d' % (i + 1), x)
             x += y
         return x
 
@@ -163,12 +163,12 @@ def test_yiq():
 def test_diff_of_gaussians():
     size1 = 21
     size2 = 51
-    
+
     x = T.tensor4('image')
     x1 = nn.utils.difference_of_gaussian(x, size1)
     x2 = nn.utils.difference_of_gaussian(x, size2)
     func = nn.function([x], [x1, x2])
-    
+
     from scipy import misc
     im = misc.imread('test_files/lena_small.png').astype(theano.config.floatX) / 255.
     im = np.transpose(im[None], (0, 3, 1, 2))
@@ -231,7 +231,7 @@ def test_lr_annealing():
         for it in range(n_iters):
             func(it + 1)
             vals_th.append(lr_.get_value())
-            lr = anneal_learning_rate(lr if method in ('step', 'half-life') else base_lr, it+1, method,
+            lr = anneal_learning_rate(lr if method in ('step', 'half-life') else base_lr, it + 1, method,
                                       num_iters=n_iters, decay=decay, step=step)
             vals_np.append(lr)
         assert_allclose(vals_th, vals_np)
@@ -316,7 +316,7 @@ def test_model_zoo_resnet18():
     results = []
     for fname in image_list:
         print(fname)
-        rawim, im = nn.utils.prep_image2(root+fname, mean_rgb, std_rgb)
+        rawim, im = nn.utils.prep_image2(root + fname, mean_rgb, std_rgb)
         prob = test(im)[0]
         res = sorted(zip(classes, prob), key=lambda t: t[1], reverse=True)[:top]
         for c, p in res:
@@ -355,7 +355,7 @@ def test_model_zoo_resnet34():
     results = []
     for fname in image_list:
         print(fname)
-        rawim, im = nn.utils.prep_image2(root+fname, mean_rgb, std_rgb)
+        rawim, im = nn.utils.prep_image2(root + fname, mean_rgb, std_rgb)
         prob = test(im)[0]
         res = sorted(zip(classes, prob), key=lambda t: t[1], reverse=True)[:top]
         for c, p in res:
@@ -394,7 +394,7 @@ def test_model_zoo_resnet50():
     results = []
     for fname in image_list:
         print(fname)
-        rawim, im = nn.utils.prep_image2(root+fname, mean_rgb, std_rgb)
+        rawim, im = nn.utils.prep_image2(root + fname, mean_rgb, std_rgb)
         prob = test(im)[0]
         res = sorted(zip(classes, prob), key=lambda t: t[1], reverse=True)[:top]
         for c, p in res:
@@ -433,7 +433,7 @@ def test_model_zoo_resnet101():
     results = []
     for fname in image_list:
         print(fname)
-        rawim, im = nn.utils.prep_image2(root+fname, mean_rgb, std_rgb)
+        rawim, im = nn.utils.prep_image2(root + fname, mean_rgb, std_rgb)
         prob = test(im)[0]
         res = sorted(zip(classes, prob), key=lambda t: t[1], reverse=True)[:top]
         for c, p in res:
@@ -472,7 +472,7 @@ def test_model_zoo_resnet152():
     results = []
     for fname in image_list:
         print(fname)
-        rawim, im = nn.utils.prep_image2(root+fname, mean_rgb, std_rgb)
+        rawim, im = nn.utils.prep_image2(root + fname, mean_rgb, std_rgb)
         prob = test(im)[0]
         res = sorted(zip(classes, prob), key=lambda t: t[1], reverse=True)[:top]
         for c, p in res:
@@ -561,7 +561,7 @@ def test_monitor_hist():
     filter = np.random.normal(scale=.25, size=size)
     for i in range(n_iters):
         with mon:
-            mon.plot('foo', i**2 / 4.)
+            mon.plot('foo', i ** 2 / 4.)
             mon.hist('filter_last', filter * (i + 1) * .25 + i / 10., last_only=True, n_bins=10)
             mon.hist('filter', filter * (i + 1) * .25 + i / 15.)
     mon.flush()
@@ -594,7 +594,7 @@ def test_model_zoo_vgg16():
     results = []
     for fname in image_list:
         print(fname)
-        rawim, im = nn.utils.prep_image2(root+fname, mean_rgb, std_rgb)
+        rawim, im = nn.utils.prep_image2(root + fname, mean_rgb, std_rgb)
         prob = test(im)[0]
         res = sorted(zip(classes, prob), key=lambda t: t[1], reverse=True)[:top]
         for c, p in res:
@@ -633,7 +633,7 @@ def test_model_zoo_vgg19():
     results = []
     for fname in image_list:
         print(fname)
-        rawim, im = nn.utils.prep_image2(root+fname, mean_rgb, std_rgb)
+        rawim, im = nn.utils.prep_image2(root + fname, mean_rgb, std_rgb)
         prob = test(im)[0]
         res = sorted(zip(classes, prob), key=lambda t: t[1], reverse=True)[:top]
         for c, p in res:
@@ -641,7 +641,8 @@ def test_model_zoo_vgg19():
             results.append(c)
         print('\n')
 
-    sample_res = ['rock python, rock snake, Python sebae', 'ski', 'Shetland sheepdog, Shetland sheep dog, Shetland', 'soup bowl', 'bassinet']
+    sample_res = ['rock python, rock snake, Python sebae', 'ski', 'Shetland sheepdog, Shetland sheep dog, Shetland',
+                  'soup bowl', 'bassinet']
     assert results == sample_res
 
 

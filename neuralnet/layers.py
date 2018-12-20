@@ -3,15 +3,16 @@ Written and collected by Duc Nguyen
 """
 __author__ = 'Duc Nguyen'
 
-import time
 import abc
-import theano
+import time
+from collections import OrderedDict
+from functools import partial
+
 import numpy as np
+import theano
 from theano import tensor as T
 from theano.tensor.nnet import conv2d as conv
 from theano.tensor.nnet import conv3d as conv3
-from collections import OrderedDict
-from functools import partial
 
 from neuralnet import utils
 from neuralnet.init import *
@@ -67,6 +68,7 @@ class Sequential(OrderedDict, NetMethod):
     """
     Mimicking Pytorch Sequential class but inheriting OrderedDict
     """
+
     def __init__(self, layer_list=(), input_shape=None, layer_name='Sequential'):
         assert layer_list or input_shape, 'Either layer_list or input_shape must be specified.'
         assert isinstance(layer_list, (list, tuple, Sequential)), 'layer_list must be a list or tuple, got %s.' % type(
@@ -277,7 +279,8 @@ class DropoutLayer(Layer):
                                dtype=theano.config.floatX)
         if self.training_flag:
             shape = input.shape if self.position == 'per-activation' else input.shape[:2]
-            mask = self.srng.normal(shape, avg=1., std=np.sqrt(self.dropout_prob / (1. - self.dropout_prob))) if self.gaussian \
+            mask = self.srng.normal(shape, avg=1.,
+                                    std=np.sqrt(self.dropout_prob / (1. - self.dropout_prob))) if self.gaussian \
                 else self.srng.binomial(n=1, p=keep_prob, size=shape, dtype=theano.config.floatX)
             if self.position == 'per-channel':
                 mask = mask.dimshuffle(0, 1, 'x', 'x')
@@ -331,7 +334,7 @@ class FullyConnectedLayer(Layer):
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
-        self.descriptions = '{} FC: {} x {} -> {} activation: {}'\
+        self.descriptions = '{} FC: {} x {} -> {} activation: {}' \
             .format(self.layer_name, self.input_shape, (self.input_shape[1], num_nodes), self.output_shape, activation)
 
     def get_output(self, input, *args, **kwargs):
@@ -362,8 +365,8 @@ class SqueezeAndExcitationBlock(Sequential):
         self.activation = activation
         self.kwargs = kwargs
         self.descriptions = '{} SE Block: ratio {} act {}'.format(layer_name, ratio, activation)
-        block = Sequential(input_shape=input_shape, layer_name=layer_name+'/scaling')
-        block.append(GlobalAveragePoolingLayer(block.output_shape, block.layer_name+'/gap'))
+        block = Sequential(input_shape=input_shape, layer_name=layer_name + '/scaling')
+        block.append(GlobalAveragePoolingLayer(block.output_shape, block.layer_name + '/gap'))
         block.append(FullyConnectedLayer(block.output_shape, input_shape[1] // ratio, activation=activation,
                                          layer_name=block.layer_name + '/fc1'))
         block.append(FullyConnectedLayer(block.output_shape, input_shape[1], activation='sigmoid',
@@ -371,7 +374,7 @@ class SqueezeAndExcitationBlock(Sequential):
         self.append(block)
 
     def get_output(self, input, *args, **kwargs):
-        scale = self[self.layer_name+'/scaling'](input)
+        scale = self[self.layer_name + '/scaling'](input)
         return input * scale.dimshuffle(0, 1, 'x', 'x')
 
     @property
@@ -381,7 +384,8 @@ class SqueezeAndExcitationBlock(Sequential):
 
 
 class ConvolutionalLayer(Layer):
-    def __init__(self, input_shape, num_filters, filter_size, init=HeNormal(gain='relu'), no_bias=True, border_mode='half',
+    def __init__(self, input_shape, num_filters, filter_size, init=HeNormal(gain='relu'), no_bias=True,
+                 border_mode='half',
                  stride=1, dilation=1, layer_name='Conv Layer', activation='relu', **kwargs):
         """
 
@@ -400,19 +404,26 @@ class ConvolutionalLayer(Layer):
         assert len(input_shape) in (4, 5), 'input_shape must have 4 or 5 elements. Received %d' % len(input_shape)
         assert isinstance(num_filters, int) and isinstance(filter_size, (int, list, tuple))
         assert isinstance(border_mode, (int, list, tuple, str)), 'border_mode should be either \'int\', ' \
-                                                                 '\'list\', \'tuple\' or \'str\', got {}'.format(type(border_mode))
+                                                                 '\'list\', \'tuple\' or \'str\', got {}'.format(
+            type(border_mode))
         assert isinstance(stride,
                           (int, list, tuple)), 'stride must be an  \'int\', \'list\' or \'tuple\'. Got %s.' % type(
             stride)
 
         super(ConvolutionalLayer, self).__init__(input_shape, layer_name)
         if len(input_shape) == 4:
-            self.filter_shape = (num_filters, input_shape[1], filter_size[0], filter_size[1]) if isinstance(filter_size, (
-                list, tuple)) else (num_filters, input_shape[1], filter_size, filter_size)
+            self.filter_shape = (num_filters, input_shape[1], filter_size[0], filter_size[1]) if isinstance(filter_size,
+                                                                                                            (
+                                                                                                                list,
+                                                                                                                tuple)) else (
+            num_filters, input_shape[1], filter_size, filter_size)
         else:
             self.filter_shape = (
-                num_filters, input_shape[1], filter_size[0], filter_size[1], filter_size[2]) if isinstance(filter_size, (
-                list, tuple)) else (num_filters, input_shape[1], filter_size, filter_size, filter_size)
+                num_filters, input_shape[1], filter_size[0], filter_size[1], filter_size[2]) if isinstance(filter_size,
+                                                                                                           (
+                                                                                                               list,
+                                                                                                               tuple)) else (
+            num_filters, input_shape[1], filter_size, filter_size, filter_size)
         self.no_bias = no_bias
         self.activation = utils.function[activation] if not callable(activation) else activation
         self.border_mode = border_mode
@@ -451,12 +462,14 @@ class ConvolutionalLayer(Layer):
 
         self.regularizable += [self.W]
         self.descriptions = ''.join(('{} Conv Layer: '.format(self.layer_name), 'border mode: {} '.format(border_mode),
-                                     'subsampling: {} dilation {} '.format(stride, dilation), '{} x '.format(input_shape),
+                                     'subsampling: {} dilation {} '.format(stride, dilation),
+                                     '{} x '.format(input_shape),
                                      '{} '.format(self.filter_shape), '-> output shape {} '.format(self.output_shape),
                                      'activation: {} '.format(activation)))
 
     def _get_mask_ratio(self, input=None):
-        mask = T.ones((1, 1) + self.input_shape[2:]) if input is None else T.ones((1, 1, input.shape[2], input.shape[3]))
+        mask = T.ones((1, 1) + self.input_shape[2:]) if input is None else T.ones(
+            (1, 1, input.shape[2], input.shape[3]))
         self.update_mask = conv(mask, self.weight_mask_updater, border_mode=self.padding, filter_flip=self.filter_flip,
                                 subsample=self.subsample, filter_dilation=self.dilation)
         mask_ratio = self.slide_winsize / (self.update_mask + 1e-8)
@@ -469,7 +482,8 @@ class ConvolutionalLayer(Layer):
             if not self.training_flag:
                 self.mask_ratio = self._get_mask_ratio(input)
 
-            output = conv(input, self.W, border_mode=self.padding, subsample=self.subsample, filter_flip=self.filter_flip,
+            output = conv(input, self.W, border_mode=self.padding, subsample=self.subsample,
+                          filter_flip=self.filter_flip,
                           filter_dilation=self.dilation)
             output = output * self.mask_ratio
 
@@ -545,27 +559,30 @@ class PerturbativeLayer(Layer):
         self.no_bias = no_bias
         self.kwargs = kwargs
 
-        self.noise = (2. * T.as_tensor_variable(np.random.rand(*input_shape[1:]).astype(theano.config.floatX)) - 1.) * noise_level
+        self.noise = (2. * T.as_tensor_variable(
+            np.random.rand(*input_shape[1:]).astype(theano.config.floatX)) - 1.) * noise_level
         self.W_values = init((num_filters, input_shape[1]))
-        self.W = theano.shared(self.W_values, layer_name+'/W', borrow=True)
+        self.W = theano.shared(self.W_values, layer_name + '/W', borrow=True)
         self.params += [self.W]
         self.trainable += [self.W]
         self.regularizable += [self.W]
 
         if not no_bias:
-            self.b = theano.shared(np.zeros((num_filters,), theano.config.floatX), layer_name+'/b', borrow=True)
+            self.b = theano.shared(np.zeros((num_filters,), theano.config.floatX), layer_name + '/b', borrow=True)
             self.params += [self.b]
             self.trainable += [self.b]
 
         if activation == 'prelu':
-            self.alpha = theano.shared(.1, layer_name+'/alpha')
+            self.alpha = theano.shared(.1, layer_name + '/alpha')
             self.kwargs['alpha'] = self.alpha
             self.params += [self.alpha]
             self.trainable += [self.alpha]
 
         self.descriptions = '{} Perturbative layer: {} -> {}, noise level {} activation {}'.format(layer_name,
-                                                                                                   input_shape, self.output_shape,
-                                                                                                   noise_level, activation)
+                                                                                                   input_shape,
+                                                                                                   self.output_shape,
+                                                                                                   noise_level,
+                                                                                                   activation)
 
     def get_output(self, input, *args, **kwargs):
         input += self.noise.dimshuffle('x', 0, 1, 2)
@@ -599,21 +616,26 @@ class InceptionModule1(Layer):
 
         self.module = [[], [], [], []]
         self.module[0].append(ConvNormAct(input_shape, num_filters, (1, 1), border_mode=border_mode,
-                                          stride=(1, 1), activation=activation, layer_name=layer_name + '/branch1_conv1x1'))
-        self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters * 4 // 3, 3, border_mode=border_mode,
-                                          stride=(1, 1), activation=activation, layer_name=layer_name + '/branch1_conv3x3'))
-        self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters * 4 // 3, 3, border_mode=border_mode,
-                                          stride=stride, activation=activation, layer_name=layer_name + '/branch1_conv3x3'))
+                                          stride=(1, 1), activation=activation,
+                                          layer_name=layer_name + '/branch1_conv1x1'))
+        self.module[0].append(
+            ConvNormAct(self.module[0][-1].output_shape, num_filters * 4 // 3, 3, border_mode=border_mode,
+                        stride=(1, 1), activation=activation, layer_name=layer_name + '/branch1_conv3x3'))
+        self.module[0].append(
+            ConvNormAct(self.module[0][-1].output_shape, num_filters * 4 // 3, 3, border_mode=border_mode,
+                        stride=stride, activation=activation, layer_name=layer_name + '/branch1_conv3x3'))
 
         self.module[1].append(ConvNormAct(input_shape, num_filters * 4 // 3, 1, border_mode=border_mode, stride=(1, 1),
                                           activation=activation, layer_name=layer_name + '/branch2_conv1x1'))
         self.module[1].append(ConvNormAct(self.module[1][-1].output_shape, num_filters * 2, 3, border_mode=border_mode,
-                                          stride=stride, activation=activation, layer_name=layer_name + '/branch2_conv3x3'))
+                                          stride=stride, activation=activation,
+                                          layer_name=layer_name + '/branch2_conv3x3'))
 
         self.module[2].append(PoolingLayer(input_shape, (3, 3), stride=stride, mode='average_exc_pad', pad='half',
                                            ignore_border=True, layer_name=layer_name + '/branch3_pooling'))
-        self.module[2].append(ConvNormAct(self.module[2][-1].output_shape, num_filters * 2 // 3, 1, border_mode=border_mode,
-                                          stride=(1, 1), activation=activation, layer_name=layer_name + '/branch3_conv1x1'))
+        self.module[2].append(
+            ConvNormAct(self.module[2][-1].output_shape, num_filters * 2 // 3, 1, border_mode=border_mode,
+                        stride=(1, 1), activation=activation, layer_name=layer_name + '/branch3_conv1x1'))
 
         self.module[3].append(ConvNormAct(input_shape, num_filters * 4 // 3, 1, border_mode=border_mode, stride=stride,
                                           activation=activation, layer_name=layer_name + '/branch4_conv1x1'))
@@ -643,7 +665,8 @@ class InceptionModule1(Layer):
 
 
 class InceptionModule2(Layer):
-    def __init__(self, input_shape, num_filters=128, filter_size=7, border_mode='half', stride=(1, 1), activation='relu',
+    def __init__(self, input_shape, num_filters=128, filter_size=7, border_mode='half', stride=(1, 1),
+                 activation='relu',
                  layer_name='Inception Type 2'):
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
@@ -686,7 +709,8 @@ class InceptionModule2(Layer):
                                           layer_name=layer_name + '/branch3_conv1x1'))
 
         self.module[3].append(ConvNormAct(input_shape, num_filters * 3 // 2, (1, 1), border_mode=border_mode,
-                                          stride=stride, activation=activation, layer_name=layer_name + '/branch4_conv1x1'))
+                                          stride=stride, activation=activation,
+                                          layer_name=layer_name + '/branch4_conv1x1'))
 
         self.descriptions = '{} Inception module 2: {} -> {}'.format(layer_name, input_shape, self.output_shape)
 
@@ -725,7 +749,8 @@ class InceptionModule3(Layer):
 
         self.module = [[], [], [], []]
         self.module[0].append(ConvNormAct(input_shape, num_filters * 7 // 5, (1, 1), border_mode=border_mode,
-                                          stride=(1, 1), activation=activation, layer_name=layer_name + '/branch1_conv1x1'))
+                                          stride=(1, 1), activation=activation,
+                                          layer_name=layer_name + '/branch1_conv1x1'))
         self.module[0].append(ConvNormAct(self.module[0][-1].output_shape, num_filters * 6 // 5, (3, 3),
                                           border_mode=border_mode, stride=(1, 1), activation=activation,
                                           layer_name=layer_name + '/branch1_conv3x3'))
@@ -754,8 +779,9 @@ class InceptionModule3(Layer):
                                           border_mode=border_mode, stride=(1, 1), activation=activation,
                                           layer_name=layer_name + '/branch3_conv1x1'))
 
-        self.module[3].append(ConvNormAct(input_shape, num_filters * 4 // 3, (1, 1), border_mode=border_mode, stride=stride,
-                                          activation=activation, layer_name=layer_name + '/branch4_conv1x1'))
+        self.module[3].append(
+            ConvNormAct(input_shape, num_filters * 4 // 3, (1, 1), border_mode=border_mode, stride=stride,
+                        activation=activation, layer_name=layer_name + '/branch4_conv1x1'))
 
         for block in self.module:
             for layer in block:
@@ -833,7 +859,8 @@ class TransposedConvolutionalLayer(Layer):
             stride)
 
         super(TransposedConvolutionalLayer, self).__init__(input_shape, layer_name)
-        self.filter_shape = (input_shape[1], num_filters, filter_size[0], filter_size[1]) if isinstance(filter_size, (list, tuple)) \
+        self.filter_shape = (input_shape[1], num_filters, filter_size[0], filter_size[1]) if isinstance(filter_size,
+                                                                                                        (list, tuple)) \
             else (input_shape[1], num_filters, filter_size, filter_size)
         self.padding = padding
         self.stride = stride if isinstance(stride, (list, tuple)) else (stride, stride)
@@ -868,7 +895,7 @@ class TransposedConvolutionalLayer(Layer):
         """
         width = self.filter_shape[2]
         height = self.filter_shape[3]
-        f = int(np.ceil(width/2.))
+        f = int(np.ceil(width / 2.))
         c = (2 * f - 1 - f % 2) / (2. * f)
         bilinear = np.zeros([self.filter_shape[2], self.filter_shape[3]])
         for x in range(width):
@@ -904,9 +931,9 @@ class TransposedConvolutionalLayer(Layer):
 
             in_shape = self.input_shape
             h = ((in_shape[2] - 1) * self.stride[0]) + self.filter_shape[2] + \
-                np.mod(in_shape[2]+2*p[0]-self.filter_shape[2], self.stride[0]) - 2*p[0]
+                np.mod(in_shape[2] + 2 * p[0] - self.filter_shape[2], self.stride[0]) - 2 * p[0]
             w = ((in_shape[3] - 1) * self.stride[1]) + self.filter_shape[3] + \
-                np.mod(in_shape[3]+2*p[1]-self.filter_shape[3], self.stride[1]) - 2*p[1]
+                np.mod(in_shape[3] + 2 * p[1] - self.filter_shape[3], self.stride[1]) - 2 * p[1]
             self.output_shape_tmp = [self.output_shape_tmp[0], self.filter_shape[1], h, w]
         return tuple(self.output_shape_tmp)
 
@@ -947,7 +974,8 @@ class ResNetBlock(Sequential):
         self.activation = activation
         self.normalization = normalization
         self.simple_block = lambda name: block(input_shape=self.input_shape, num_filters=self.num_filters,
-                                               stride=self.stride[0], dilation=self.dilation, activation=self.activation,
+                                               stride=self.stride[0], dilation=self.dilation,
+                                               activation=self.activation,
                                                normalization=normalization, block_name=name,
                                                **self.kwargs) if block else self._build_simple_block(name)
         self.se_block = se_block
@@ -969,8 +997,8 @@ class ResNetBlock(Sequential):
         if kwargs.get('downsample', None):
             self.downsample = kwargs.pop('downsample')
         else:
-            if (self.stride != (1, 1)) or (input_shape[1] != self[layer_name+'/main'].output_shape[1]):
-                self.downsample = Sequential(input_shape=input_shape, layer_name=layer_name+'/down')
+            if (self.stride != (1, 1)) or (input_shape[1] != self[layer_name + '/main'].output_shape[1]):
+                self.downsample = Sequential(input_shape=input_shape, layer_name=layer_name + '/down')
                 self.downsample.append(
                     ConvolutionalLayer(self.downsample.output_shape, self[layer_name + '/main'].output_shape[1], 1,
                                        stride=stride, layer_name=layer_name + '/down', activation='linear'))
@@ -980,14 +1008,14 @@ class ResNetBlock(Sequential):
                         self.normalize(self.downsample.output_shape, layer_name=layer_name + '/down_bn',
                                        activation='linear', **kwargs))
             else:
-                self.downsample = IdentityLayer(self.output_shape, layer_name=layer_name+'/identity')
+                self.downsample = IdentityLayer(self.output_shape, layer_name=layer_name + '/identity')
         self.append(self.downsample)
 
         if se_block:
             ratio = kwargs.pop('ratio', 4)
-            self.append(SqueezeAndExcitationBlock(self.output_shape, ratio, activation, layer_name+'/se', **kwargs))
+            self.append(SqueezeAndExcitationBlock(self.output_shape, ratio, activation, layer_name + '/se', **kwargs))
 
-        self.descriptions = '{} ResNet Basic Block {} -> {} {} filters stride {} dilation {} {} {}'.\
+        self.descriptions = '{} ResNet Basic Block {} -> {} {} filters stride {} dilation {} {} {}'. \
             format(layer_name, self.input_shape, self.output_shape, num_filters, stride, dilation, activation,
                    ' '.join([' '.join((k, str(v))) for k, v in kwargs.items()]))
 
@@ -1001,10 +1029,11 @@ class ResNetBlock(Sequential):
                 self.normalize(block[-1].output_shape, activation=self.activation, layer_name=block_name + '/conv1_bn',
                                **self.kwargs))
         else:
-            block.append(ActivationLayer(block[-1].output_shape, self.activation, block_name+'/act1', **self.kwargs))
+            block.append(ActivationLayer(block[-1].output_shape, self.activation, block_name + '/act1', **self.kwargs))
 
-        block.append(ConvolutionalLayer(block[-1].output_shape, self.num_filters, 3, border_mode='half', dilation=self.dilation,
-                                        layer_name=block_name + '/conv2', no_bias=True, activation='linear'))
+        block.append(
+            ConvolutionalLayer(block[-1].output_shape, self.num_filters, 3, border_mode='half', dilation=self.dilation,
+                               layer_name=block_name + '/conv2', no_bias=True, activation='linear'))
 
         if self.normalization:
             block.append(
@@ -1014,11 +1043,11 @@ class ResNetBlock(Sequential):
 
     def get_output(self, input, *args, **kwargs):
         res = input
-        output = self[self.layer_name+'/main'](input, *args, **kwargs)
+        output = self[self.layer_name + '/main'](input, *args, **kwargs)
         res = self.downsample(res, *args, **kwargs)
 
         if self.se_block:
-            output = self[self.layer_name+'/se'](output, *args, **kwargs)
+            output = self[self.layer_name + '/se'](output, *args, **kwargs)
         return utils.function[self.activation](output + res, **self.kwargs)
 
     def reset(self):
@@ -1031,7 +1060,8 @@ class ResNetBottleneckBlock(ResNetBlock):
     upscale_factor = 4
 
     def __init__(self, input_shape, num_filters, stride=1, dilation=(1, 1), activation='relu',
-                 layer_name='Res Bottleneck Block', normalization='bn', groups=32, block=None, se_block=False, **kwargs):
+                 layer_name='Res Bottleneck Block', normalization='bn', groups=32, block=None, se_block=False,
+                 **kwargs):
         """
 
         :param input_shape:
@@ -1044,7 +1074,6 @@ class ResNetBottleneckBlock(ResNetBlock):
         :param layer_name:
         :param kwargs:
         """
-        from neuralnet.normalization import BatchNormLayer, GroupNormLayer
         block = block if block is not None else (
             lambda input_shape, num_filters, stride, dilation, activation, normalization,
                    block_name: self._build_simple_block(self.upscale_factor, block_name))
@@ -1058,13 +1087,14 @@ class ResNetBottleneckBlock(ResNetBlock):
     def _build_simple_block(self, upscale_factor, block_name):
         layers = []
         layers.append(ConvNormAct(self.input_shape, self.num_filters, 1, no_bias=True, activation=self.activation,
-                                  layer_name=block_name+'/conv_bn_act_1', **self.kwargs))
+                                  layer_name=block_name + '/conv_bn_act_1', **self.kwargs))
 
         layers.append(ConvNormAct(layers[-1].output_shape, self.num_filters, 3, activation=self.activation,
-                                  stride=self.stride, layer_name=block_name+'/conv_bn_act_2', no_bias=True, **self.kwargs))
+                                  stride=self.stride, layer_name=block_name + '/conv_bn_act_2', no_bias=True,
+                                  **self.kwargs))
 
         layers.append(ConvNormAct(layers[-1].output_shape, self.num_filters * upscale_factor, 1, activation='linear',
-                                  layer_name=block_name+'/conv_bn_act_3', no_bias=True, **self.kwargs))
+                                  layer_name=block_name + '/conv_bn_act_3', no_bias=True, **self.kwargs))
         return layers
 
 
@@ -1111,38 +1141,44 @@ class NoiseResNetBlock(Layer):
         if self.left_branch:
             self.shortcut = []
             self.shortcut.append(PerturbativeLayer(self.input_shape, self.num_filters, noise_level=self.noise_level,
-                                                   activation=self.activation, no_bias=True, layer_name=layer_name+'/2'))
+                                                   activation=self.activation, no_bias=True,
+                                                   layer_name=layer_name + '/2'))
             if self.normalization:
                 self.shortcut.append(BatchNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '/2_bn',
                                                     activation='linear') if normalization == 'bn'
-                                     else GroupNormLayer(self.shortcut[-1].output_shape, layer_name=layer_name + '/2_gn',
+                                     else GroupNormLayer(self.shortcut[-1].output_shape,
+                                                         layer_name=layer_name + '/2_gn',
                                                          groups=groups, activation='linear'))
             self.params += [p for layer in self.shortcut for p in layer.params]
             self.trainable += [p for layer in self.shortcut for p in layer.trainable]
             self.regularizable += [p for layer in self.shortcut for p in layer.regularizable]
 
-        self.descriptions = '{} ResNet Block 1 {} -> {} {} filters left branch {} {} {}'.\
+        self.descriptions = '{} ResNet Block 1 {} -> {} {} filters left branch {} {} {}'. \
             format(layer_name, self.input_shape, self.output_shape, num_filters, left_branch, activation, ' '.
                    join([' '.join((k, str(v))) for k, v in kwargs.items()]))
 
     def _build_simple_block(self, block_name):
         from neuralnet.normalization import BatchNormLayer, GroupNormLayer
         block = [PerturbativeLayer(self.input_shape, self.num_filters, noise_level=self.noise_level,
-                                   activation=self.activation, no_bias=True, layer_name=self.layer_name+'_noise1')]
+                                   activation=self.activation, no_bias=True, layer_name=self.layer_name + '_noise1')]
 
         if self.normalization:
             block.append(BatchNormLayer(block[-1].output_shape, activation='linear',
-                                        layer_name=block_name + '/noise1_bn', **self.kwargs) if self.normalization == 'bn'
+                                        layer_name=block_name + '/noise1_bn',
+                                        **self.kwargs) if self.normalization == 'bn'
                          else GroupNormLayer(block[-1].output_shape, activation='linear',
-                                             layer_name=block_name+'/noise1_gn', groups=self.groups, **self.kwargs))
+                                             layer_name=block_name + '/noise1_gn', groups=self.groups, **self.kwargs))
 
         block.append(PerturbativeLayer(block[-1].output_shape, self.num_filters, noise_level=self.noise_level,
-                                       activation=self.activation, no_bias=True, layer_name=self.layer_name+'/noise2'))
+                                       activation=self.activation, no_bias=True,
+                                       layer_name=self.layer_name + '/noise2'))
 
         if self.normalization:
-            block.append(BatchNormLayer(block[-1].output_shape, layer_name=block_name + '/noise2_bn', activation='linear')
-                         if self.normalization == 'bn' else GroupNormLayer(block[-1].output_shape, activation='linear',
-                                                                           layer_name=block_name + '/noise2_gn', groups=self.groups))
+            block.append(
+                BatchNormLayer(block[-1].output_shape, layer_name=block_name + '/noise2_bn', activation='linear')
+                if self.normalization == 'bn' else GroupNormLayer(block[-1].output_shape, activation='linear',
+                                                                  layer_name=block_name + '/noise2_gn',
+                                                                  groups=self.groups))
         return block
 
     def get_output(self, input, *args, **kwargs):
@@ -1174,10 +1210,11 @@ class NoiseResNetBlock(Layer):
 
 
 class RecursiveResNetBlock(Layer):
-    def __init__(self, input_shape, num_filters, filter_size, recursive=1, stride=(1, 1), dilation=(1, 1), activation='relu',
+    def __init__(self, input_shape, num_filters, filter_size, recursive=1, stride=(1, 1), dilation=(1, 1),
+                 activation='relu',
                  layer_name='Recursive Res Block', normalization='bn', groups=32, **kwargs):
         assert normalization in (
-        None, 'bn', 'gn'), 'normalization must be either None, \'bn\' or \'gn\', got %s.' % normalization
+            None, 'bn', 'gn'), 'normalization must be either None, \'bn\' or \'gn\', got %s.' % normalization
         assert len(input_shape) == 4, 'input_shape must have 4 elements. Received %d' % len(input_shape)
 
         super(RecursiveResNetBlock, self).__init__(input_shape, layer_name)
@@ -1197,7 +1234,7 @@ class RecursiveResNetBlock(Layer):
             self.kwargs['alpha'] = self.alpha
 
         self.first_conv = ConvolutionalLayer(input_shape, num_filters, filter_size, stride=stride,
-                                             layer_name=layer_name+'/first_conv', activation='linear')
+                                             layer_name=layer_name + '/first_conv', activation='linear')
         if normalization:
             self.normalization = partial(BatchNormLayer, activation='linear') \
                 if normalization == 'bn' else partial(GroupNormLayer, groups=groups, activation='linear')
@@ -1208,21 +1245,21 @@ class RecursiveResNetBlock(Layer):
         self.params += self.first_conv.params + self.block.params
         self.trainable += self.first_conv.trainable + self.block.trainable
         self.regularizable += self.first_conv.regularizable + self.block.regularizable
-        self.descriptions = '{} Recursive Residual Block: {} -> {} stride {} activation {}'.\
+        self.descriptions = '{} Recursive Residual Block: {} -> {} stride {} activation {}'. \
             format(layer_name, input_shape, self.output_shape, stride, activation)
 
     def _recursive_block(self):
         shape = self.first_conv.output_shape
         block = []
         if self.normalization:
-            block.append(self.normalization(shape, self.layer_name+'/norm1'))
+            block.append(self.normalization(shape, self.layer_name + '/norm1'))
         block += [
             ActivationLayer(shape, self.activation, self.layer_name + '/act1', **self.kwargs),
-            ConvolutionalLayer(shape, self.num_filters, self.filter_size, layer_name=self.layer_name+'/conv1',
+            ConvolutionalLayer(shape, self.num_filters, self.filter_size, layer_name=self.layer_name + '/conv1',
                                activation='linear')
-            ]
+        ]
         if self.normalization:
-            block.append(self.normalization(shape, self.layer_name+'/norm2'))
+            block.append(self.normalization(shape, self.layer_name + '/norm2'))
         block += [
             ActivationLayer(shape, self.activation, self.layer_name + '/act2', **self.kwargs),
             ConvolutionalLayer(shape, self.num_filters, self.filter_size, layer_name=self.layer_name + '/conv2',
@@ -1246,7 +1283,9 @@ class RecursiveResNetBlock(Layer):
             if unroll or isinstance(self.normalization, BatchNormLayer):
                 output = utils.unroll_scan(step, None, input, non_seqs, self.recursive - 1)
             else:
-                output = theano.scan(step, outputs_info=input, non_sequences=non_seqs, n_steps=self.recursive - 1, strict=True)[0]
+                output = \
+                theano.scan(step, outputs_info=input, non_sequences=non_seqs, n_steps=self.recursive - 1, strict=True)[
+                    0]
             output = output[-1]
         else:
             output = input
@@ -1300,10 +1339,12 @@ class DenseBlock(Layer):
             self.block = self._transition(self.input_shape, self.dropout, self.activation,
                                           self.layer_name + '/transition')
 
-        self.descriptions = '{} Dense Block: {} -> {} {} conv layers growth rate {} transit {} dropout {} {}'.\
-            format(layer_name, input_shape, self.output_shape, num_conv_layer, growth_rate, transit, dropout, activation)
+        self.descriptions = '{} Dense Block: {} -> {} {} conv layers growth rate {} transit {} dropout {} {}'. \
+            format(layer_name, input_shape, self.output_shape, num_conv_layer, growth_rate, transit, dropout,
+                   activation)
 
-    def _bn_act_conv(self, input_shape, num_filters, filter_size, dropout, activation, stride=1, layer_name='bn_re_conv'):
+    def _bn_act_conv(self, input_shape, num_filters, filter_size, dropout, activation, stride=1,
+                     layer_name='bn_re_conv'):
         block = [
             self.normalization(input_shape, activation=activation, layer_name=layer_name + '/bn', **self.kwargs),
             ConvolutionalLayer(input_shape, num_filters, filter_size, stride=stride, activation='linear',
@@ -1324,14 +1365,16 @@ class DenseBlock(Layer):
             block.append(PoolingLayer(block[-1].output_shape, (2, 2), mode='average_inc_pad', ignore_border=False,
                                       layer_name=layer_name + 'pooling'))
         else:
-            block = self._bn_act_conv(input_shape, input_shape[1], 1, dropout, activation, stride=2, layer_name=layer_name)
+            block = self._bn_act_conv(input_shape, input_shape[1], 1, dropout, activation, stride=2,
+                                      layer_name=layer_name)
         return block
 
     def _dense_block(self, input_shape, num_layers, growth_rate, dropout, activation, layer_name='dense_block'):
         block, input_channels = [], input_shape[1]
         i_shape = list(input_shape)
         for n in range(num_layers):
-            block.append(self._bn_act_conv(i_shape, growth_rate, 3, dropout, activation, layer_name=layer_name + '_%d' % n))
+            block.append(
+                self._bn_act_conv(i_shape, growth_rate, 3, dropout, activation, layer_name=layer_name + '_%d' % n))
             input_channels += growth_rate
             i_shape[1] = input_channels
         return block
@@ -1415,10 +1458,12 @@ class WarpingLayer(Layer):
         def meshgrid(height, width):
             x_t = T.dot(T.ones(shape=[height, 1]),
                         T.transpose(
-                            T.as_tensor_variable(np.linspace(-1.0, 1.0, width, dtype=theano.config.floatX)).dimshuffle(0, 'x'),
+                            T.as_tensor_variable(np.linspace(-1.0, 1.0, width, dtype=theano.config.floatX)).dimshuffle(
+                                0, 'x'),
                             [1, 0]))
-            y_t = T.dot(T.as_tensor_variable(np.linspace(-1.0, 1.0, height, dtype=theano.config.floatX)).dimshuffle(0, 'x'),
-                        T.ones(shape=[1, width]))
+            y_t = T.dot(
+                T.as_tensor_variable(np.linspace(-1.0, 1.0, height, dtype=theano.config.floatX)).dimshuffle(0, 'x'),
+                T.ones(shape=[1, width]))
             x_t_flat = T.reshape(x_t, (1, -1))
             y_t_flat = T.reshape(y_t, (1, -1))
             grid_x = T.reshape(x_t_flat, [1, height, width])
@@ -1473,7 +1518,8 @@ class SlicingLayer(Layer):
         self.to_idx = to_idx
         self.axes = axes
         self.descriptions = '{} Slicing Layer: {} slice from {} to {} at {} -> {}'.format(layer_name, input_shape,
-                                                                                          from_idx, to_idx, axes, self.output_shape)
+                                                                                          from_idx, to_idx, axes,
+                                                                                          self.output_shape)
 
     def get_output(self, input, *args, **kwargs):
         assign = dict({0: lambda x, fr, to: x[fr:to], 1: lambda x, fr, to: x[:, fr:to],
@@ -1504,8 +1550,9 @@ class ConcatLayer(Layer):
     def __init__(self, input_shapes, axis=1, layer_name='Concat Layer'):
         super(ConcatLayer, self).__init__(input_shapes, layer_name=layer_name)
         self.axis = axis
-        self.descriptions = ''.join(('%s Concat Layer: axis %d' % (layer_name, axis), ' '.join([str(x) for x in input_shapes]),
-                                     ' -> {}'.format(self.output_shape)))
+        self.descriptions = ''.join(
+            ('%s Concat Layer: axis %d' % (layer_name, axis), ' '.join([str(x) for x in input_shapes]),
+             ' -> {}'.format(self.output_shape)))
 
     def get_output(self, *input, **kwargs):
         return T.concatenate(input, self.axis)
@@ -1583,6 +1630,7 @@ class ScalingLayer(Layer):
     >>> layer.scales.get_value().shape
     (30, 50)
     """
+
     def __init__(self, input_shape, scales=1, shared_axes='auto', layer_name='Scale Layer'):
         super(ScalingLayer, self).__init__(input_shape, layer_name)
         if shared_axes == 'auto':
@@ -1597,7 +1645,8 @@ class ScalingLayer(Layer):
         if any(size is None for size in shape):
             raise ValueError("ScaleLayer needs specified input sizes for "
                              "all axes that scales are not shared over.")
-        self.scales = theano.shared(scales * np.ones(shape, theano.config.floatX), name=layer_name + 'scales', borrow=True)
+        self.scales = theano.shared(scales * np.ones(shape, theano.config.floatX), name=layer_name + 'scales',
+                                    borrow=True)
         self.params.append(self.scales)
         self.trainable.append(self.scales)
         self.descriptions = '{} ScaleLayer: scales = {}'.format(layer_name, scales)
@@ -1648,6 +1697,7 @@ class Gate:
            forget: Continual prediction with LSTM." Neural computation 12.10
            (2000): 2451-2471.
     """
+
     def __init__(self, shape, W_in=Normal(std=.1), W_hid=Normal(.1), W_cell=False, b=Constant(0.), activation='sigmoid',
                  layer_name='Gate'):
         assert isinstance(shape, (list, tuple)), 'shape must be a list or tuple, got %s.' % type(shape)
@@ -1655,14 +1705,14 @@ class Gate:
 
         self.shape = shape
         hid_shape = tuple([shape[0], shape[0]] + list(shape[2:])) if len(shape) == 4 else (shape[1], shape[1])
-        self.W_in = theano.shared(W_in(shape), layer_name+'/W_in')
-        self.W_hid = theano.shared(W_hid(hid_shape), layer_name+'/W_hid')
+        self.W_in = theano.shared(W_in(shape), layer_name + '/W_in')
+        self.W_hid = theano.shared(W_hid(hid_shape), layer_name + '/W_hid')
         self.params = [self.W_in, self.W_hid]
         self.trainable = [self.W_in, self.W_hid]
         self.regularizable = [self.W_in, self.W_hid]
 
         if W_cell:
-            self.W_cell = theano.shared(W_cell(hid_shape), layer_name+'/W_cell')
+            self.W_cell = theano.shared(W_cell(hid_shape), layer_name + '/W_cell')
             self.params.append(self.W_cell)
             self.trainable.append(self.W_cell)
             self.regularizable.append(self.W_cell)
@@ -1721,8 +1771,10 @@ class LSTMCell(Layer):
     def get_output(self, input, *args, **kwargs):
         input = input.dimshuffle(1, 0, 2)
         seq_len, num_batch, _ = input.shape
-        W_in_stacked = T.concatenate([self.in_gate.W_in, self.forget_gate.W_in, self.cell_gate.W_in, self.out_gate.W_in], 1)
-        W_hid_stacked = T.concatenate([self.in_gate.W_hid, self.forget_gate.W_hid, self.cell_gate.W_hid, self.out_gate.W_hid], 1)
+        W_in_stacked = T.concatenate(
+            [self.in_gate.W_in, self.forget_gate.W_in, self.cell_gate.W_in, self.out_gate.W_in], 1)
+        W_hid_stacked = T.concatenate(
+            [self.in_gate.W_hid, self.forget_gate.W_hid, self.cell_gate.W_hid, self.out_gate.W_hid], 1)
         b_stacked = T.concatenate([self.in_gate.b, self.forget_gate.b, self.cell_gate.b, self.out_gate.b], 0)
 
         def slice_w(x, n):
@@ -1795,10 +1847,12 @@ class RNNBlockDNN(Layer):
         self.trainable.append(self.W)
         self.regularizable.append(self.W)
 
-        self.init = [theano.shared(np.zeros((1, 1, num_units), theano.config.floatX), layer_name + '_' + type + '/hid_init')]
+        self.init = [
+            theano.shared(np.zeros((1, 1, num_units), theano.config.floatX), layer_name + '_' + type + '/hid_init')]
         if type == 'lstm':
             self.init.append(
-                theano.shared(np.zeros((1, 1, num_units), theano.config.floatX), layer_name + '_' + type + '/cell_init'))
+                theano.shared(np.zeros((1, 1, num_units), theano.config.floatX),
+                              layer_name + '_' + type + '/cell_init'))
         if learn_init:
             self.trainable += self.init
 
@@ -1814,7 +1868,8 @@ class RNNBlockDNN(Layer):
 
 
 class GRUCell(Layer):
-    def __init__(self, input_shape, num_units, backwards=False, learn_init=False, grad_steps=-1, grad_clip=0, layer_name='GRUCell', **kwargs):
+    def __init__(self, input_shape, num_units, backwards=False, learn_init=False, grad_steps=-1, grad_clip=0,
+                 layer_name='GRUCell', **kwargs):
         assert isinstance(input_shape, (list, tuple)), 'input_shape must be a list or tuple, got %s.' % input_shape
         assert len(input_shape) == 3, 'input_shape must contain exactly 3 elements, got %d.' % len(input_shape)
 
@@ -1923,7 +1978,7 @@ class ConvLSTMCell(Layer):
         if self.learn_init:
             self.trainable += [self.cell_init, self.hid_init]
         self.descriptions = '{} ConvLSTMCell: input shape = {} filter shape = {}'.format(self.layer_name, input_shape,
-                                                                                     filter_shape)
+                                                                                         filter_shape)
 
     @property
     def output_shape(self):
@@ -1935,15 +1990,23 @@ class ConvLSTMCell(Layer):
         conv = partial(T.nnet.conv2d, border_mode='half')
 
         def step(input_n, cell_prev, hid_prev, *args):
-            It = self.in_gate.activation(conv(input_n, self.in_gate.W_in) + conv(hid_prev, self.in_gate.W_hid) + self.in_gate.b, **self.kwargs)
-            Ft = self.forget_gate.activation(conv(input_n, self.forget_gate.W_in) + conv(hid_prev, self.forget_gate.W_hid) + self.forget_gate.b, **self.kwargs)
-            Ot = self.out_gate.activation(conv(input_n, self.out_gate.W_in) + conv(hid_prev, self.out_gate.W_hid) + self.out_gate.b, **self.kwargs)
-            Gt = self.cell_gate.activation(conv(input_n, self.cell_gate.W_in) + conv(hid_prev, self.cell_gate.W_hid) + self.cell_gate.b, **self.kwargs)
+            It = self.in_gate.activation(
+                conv(input_n, self.in_gate.W_in) + conv(hid_prev, self.in_gate.W_hid) + self.in_gate.b, **self.kwargs)
+            Ft = self.forget_gate.activation(
+                conv(input_n, self.forget_gate.W_in) + conv(hid_prev, self.forget_gate.W_hid) + self.forget_gate.b,
+                **self.kwargs)
+            Ot = self.out_gate.activation(
+                conv(input_n, self.out_gate.W_in) + conv(hid_prev, self.out_gate.W_hid) + self.out_gate.b,
+                **self.kwargs)
+            Gt = self.cell_gate.activation(
+                conv(input_n, self.cell_gate.W_in) + conv(hid_prev, self.cell_gate.W_hid) + self.cell_gate.b,
+                **self.kwargs)
             Ct = Ft * cell_prev + It * Gt
             Ht = Ot * self.activation(Ct)
             return Ct, Ht
 
-        non_seqs = [self.in_gate.W_in, self.in_gate.W_hid, self.in_gate.b, self.forget_gate.W_in, self.forget_gate.W_hid,
+        non_seqs = [self.in_gate.W_in, self.in_gate.W_hid, self.in_gate.b, self.forget_gate.W_in,
+                    self.forget_gate.W_hid,
                     self.forget_gate.b, self.out_gate.W_in, self.out_gate.W_hid, self.out_gate.b, self.cell_gate.W_in,
                     self.cell_gate.W_hid, self.cell_gate.b]
         cell_out, hid_out = theano.scan(step, input, [self.cell_init, self.hid_init], go_backwards=self.backward,
@@ -1959,7 +2022,8 @@ class AttConvLSTMCell(Layer):
                  grad_clip=0, activation='tanh', layer_name='AttConv LSTMCell', **kwargs):
         assert isinstance(input_shape, (list, tuple)), 'input_shape must be a list or tuple, got %s.' % input_shape
         assert len(input_shape) == 4, 'input_shape must contain exactly 4 elements, got %d.' % len(input_shape)
-        assert isinstance(filter_size, (list, tuple, int)), 'filter_size must be a list, tuple or int, got %s.' % type(filter_size)
+        assert isinstance(filter_size, (list, tuple, int)), 'filter_size must be a list, tuple or int, got %s.' % type(
+            filter_size)
 
         super(AttConvLSTMCell, self).__init__(tuple(input_shape), layer_name)
         filter_shape = (num_filters, input_shape[1], filter_size, filter_size) if isinstance(filter_size, int) \
@@ -1981,9 +2045,9 @@ class AttConvLSTMCell(Layer):
         # self.Va = theano.shared(np.zeros((1, filter_shape[0], filter_shape[2], filter_shape[3]), theano.config.floatX), 'att_kern')
 
         self.params += self.in_gate.params + self.forget_gate.params + self.cell_gate.params + \
-                       self.out_gate.params + self.att_gate.params #+ [self.Va]
+                       self.out_gate.params + self.att_gate.params  # + [self.Va]
         self.trainable += self.in_gate.trainable + self.forget_gate.trainable + self.cell_gate.trainable + \
-                          self.out_gate.trainable + self.att_gate.trainable #+ [self.Va]
+                          self.out_gate.trainable + self.att_gate.trainable  # + [self.Va]
         self.regularizable += self.in_gate.regularizable + self.forget_gate.regularizable + \
                               self.cell_gate.regularizable + self.out_gate.regularizable + self.att_gate.regularizable
         if self.learn_init:
@@ -1993,7 +2057,8 @@ class AttConvLSTMCell(Layer):
                 np.zeros((1, filter_shape[0], input_shape[2], input_shape[3]), theano.config.floatX), 'hid_init')
             self.params += [self.cell_init, self.hid_init]
             self.trainable += [self.cell_init, self.hid_init]
-        self.descriptions = '{} AttConvLSTMCell: input shape = {} filter shape = {}'.format(self.layer_name, input_shape,
+        self.descriptions = '{} AttConvLSTMCell: input shape = {} filter shape = {}'.format(self.layer_name,
+                                                                                            input_shape,
                                                                                             filter_shape)
 
     @property
@@ -2008,8 +2073,10 @@ class AttConvLSTMCell(Layer):
             cell_init = T.tile(self.cell_init, (num_batch, 1, 1, 1))
             hid_init = T.tile(self.hid_init, (num_batch, 1, 1, 1))
         else:
-            cell_init = T.zeros((num_batch, self.filter_shape[0], self.input_shape[2], self.input_shape[3]), theano.config.floatX)
-            hid_init = T.zeros((num_batch, self.filter_shape[0], self.input_shape[2], self.input_shape[3]), theano.config.floatX)
+            cell_init = T.zeros((num_batch, self.filter_shape[0], self.input_shape[2], self.input_shape[3]),
+                                theano.config.floatX)
+            hid_init = T.zeros((num_batch, self.filter_shape[0], self.input_shape[2], self.input_shape[3]),
+                               theano.config.floatX)
 
         def softmax(x):
             exp = T.exp(x)
@@ -2017,32 +2084,45 @@ class AttConvLSTMCell(Layer):
 
         def step(Xt, cell_prev, hid_prev, *args):
             It = self.in_gate.activation(
-                conv(Xt, self.in_gate.W_in) + conv(hid_prev, self.in_gate.W_hid) + self.in_gate.b.dimshuffle('x', 0, 'x', 'x'), **self.kwargs)
+                conv(Xt, self.in_gate.W_in) + conv(hid_prev, self.in_gate.W_hid) + self.in_gate.b.dimshuffle('x', 0,
+                                                                                                             'x', 'x'),
+                **self.kwargs)
             Ft = self.forget_gate.activation(
-                conv(Xt, self.forget_gate.W_in) + conv(hid_prev, self.forget_gate.W_hid) + self.forget_gate.b.dimshuffle('x', 0, 'x', 'x'),
+                conv(Xt, self.forget_gate.W_in) + conv(hid_prev,
+                                                       self.forget_gate.W_hid) + self.forget_gate.b.dimshuffle('x', 0,
+                                                                                                               'x',
+                                                                                                               'x'),
                 **self.kwargs)
             Ot = self.out_gate.activation(
-                conv(Xt, self.out_gate.W_in) + conv(hid_prev, self.out_gate.W_hid) + self.out_gate.b.dimshuffle('x', 0, 'x', 'x'),
+                conv(Xt, self.out_gate.W_in) + conv(hid_prev, self.out_gate.W_hid) + self.out_gate.b.dimshuffle('x', 0,
+                                                                                                                'x',
+                                                                                                                'x'),
                 **self.kwargs)
             Gt = self.cell_gate.activation(
-                conv(Xt, self.cell_gate.W_in) + conv(hid_prev, self.cell_gate.W_hid) + self.cell_gate.b.dimshuffle('x', 0, 'x', 'x'),
+                conv(Xt, self.cell_gate.W_in) + conv(hid_prev, self.cell_gate.W_hid) + self.cell_gate.b.dimshuffle('x',
+                                                                                                                   0,
+                                                                                                                   'x',
+                                                                                                                   'x'),
                 **self.kwargs)
             Ct = Ft * cell_prev + It * Gt
             Ht = Ot * self.activation(Ct)
 
             # Zt = conv(self.att_gate.activation(conv(Xt, self.att_gate.W_in) + conv(hid_prev, self.att_gate.W_hid)
             #                                    + self.att_gate.b.dimshuffle('x', 0, 'x', 'x'), **self.kwargs), self.Va)
-            #Xt = T.addbroadcast(softmax(Zt), 1) * Xt
+            # Xt = T.addbroadcast(softmax(Zt), 1) * Xt
             Zt = self.att_gate.activation(conv(Xt, self.att_gate.W_in) + conv(hid_prev, self.att_gate.W_hid)
                                           + self.att_gate.b.dimshuffle('x', 0, 'x', 'x'), **self.kwargs)
             Xt = softmax(Zt) * Xt
             return Xt, Ct, Ht
 
-        non_seqs = [self.in_gate.W_in, self.in_gate.W_hid, self.in_gate.b, self.forget_gate.W_in, self.forget_gate.W_hid,
+        non_seqs = [self.in_gate.W_in, self.in_gate.W_hid, self.in_gate.b, self.forget_gate.W_in,
+                    self.forget_gate.W_hid,
                     self.forget_gate.b, self.out_gate.W_in, self.out_gate.W_hid, self.out_gate.b, self.cell_gate.W_in,
-                    self.cell_gate.W_hid, self.cell_gate.b, self.att_gate.W_in, self.att_gate.W_hid, self.att_gate.b]#, self.Va]
+                    self.cell_gate.W_hid, self.cell_gate.b, self.att_gate.W_in, self.att_gate.W_hid,
+                    self.att_gate.b]  # , self.Va]
         X, cell_out, hid_out = theano.scan(step, outputs_info=[input, cell_init, hid_init], strict=True,
-                                           truncate_gradient=self.grad_step, non_sequences=non_seqs, n_steps=self.steps)[0]
+                                           truncate_gradient=self.grad_step, non_sequences=non_seqs,
+                                           n_steps=self.steps)[0]
         return X[-1]
 
 
@@ -2059,50 +2139,53 @@ def ConvNormAct(input_shape, num_filters, filter_size, init=HeNormal(gain=1.), n
     from neuralnet.normalization import BatchNormLayer, GroupNormLayer
     block = Sequential(input_shape=input_shape, layer_name=layer_name)
     block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, init, no_bias, border_mode, stride,
-                                    dilation, layer_name+'_conv', 'linear', **kwargs))
+                                    dilation, layer_name + '_conv', 'linear', **kwargs))
     if normalization == 'bn':
-        block.append(BatchNormLayer(block.output_shape, layer_name+'/bn', epsilon, running_average_factor, axes,
+        block.append(BatchNormLayer(block.output_shape, layer_name + '/bn', epsilon, running_average_factor, axes,
                                     activation, no_scale, **kwargs))
     else:
-        block.append(GroupNormLayer(block.output_shape, layer_name+'/gn', groups, epsilon, activation, **kwargs))
+        block.append(GroupNormLayer(block.output_shape, layer_name + '/gn', groups, epsilon, activation, **kwargs))
     return block
 
 
 def StackingConv(input_shape, num_layers, num_filters, filter_size=3, batch_norm=False, layer_name='Stacking Conv',
-                 init=HeNormal(gain=1.), no_bias=True, border_mode='half', stride=1, dilation=(1, 1), activation='relu', **kwargs):
+                 init=HeNormal(gain=1.), no_bias=True, border_mode='half', stride=1, dilation=(1, 1), activation='relu',
+                 **kwargs):
     assert num_layers > 1, 'num_layers must be greater than 1, got %d' % num_layers
 
     block = Sequential(input_shape=input_shape, layer_name=layer_name)
     conv_layer = ConvNormAct if batch_norm else ConvolutionalLayer
     for num in range(num_layers - 1):
-        block.append(conv_layer(block.output_shape, num_filters, filter_size, init=init, no_bias=no_bias, border_mode=border_mode,
+        block.append(conv_layer(block.output_shape, num_filters, filter_size, init=init, no_bias=no_bias,
+                                border_mode=border_mode,
                                 stride=(1, 1), dilation=dilation, layer_name=layer_name + '/conv_%d' % (num + 1),
                                 activation=activation, **kwargs))
-    block.append(conv_layer(block.output_shape, num_filters, filter_size, init=init, no_bias=no_bias, border_mode=border_mode,
-                            dilation=dilation, stride=stride, activation=activation,
-                            layer_name=layer_name + '/conv_%d' % num_layers, **kwargs))
+    block.append(
+        conv_layer(block.output_shape, num_filters, filter_size, init=init, no_bias=no_bias, border_mode=border_mode,
+                   dilation=dilation, stride=stride, activation=activation,
+                   layer_name=layer_name + '/conv_%d' % num_layers, **kwargs))
     return block
 
 
 def NetworkInNetworkBlock(input_shape, num_filters, filter_size, num_layers=2, num_nodes=(96, 96), activation='relu',
                           layer_name='NetworkInNetwork', **kwargs):
-        assert len(
-            num_nodes) == num_layers, 'The number of element in num_nodes must be equal to num_layers, got %d and %d.' % (
-            len(num_nodes), num_layers)
+    assert len(
+        num_nodes) == num_layers, 'The number of element in num_nodes must be equal to num_layers, got %d and %d.' % (
+        len(num_nodes), num_layers)
 
-        block = Sequential(input_shape=input_shape, layer_name=layer_name)
-        block.append(ConvolutionalLayer(input_shape, num_filters, filter_size, activation=activation,
-                                        layer_name=layer_name + '/first_conv', **kwargs))
-        for i in range(num_layers):
-            block.append(ConvolutionalLayer(block.output_shape, num_nodes[i], 1, activation=activation,
-                                            layer_name=layer_name + '/conv1_%d' % (i + 1), **kwargs))
-        return block
+    block = Sequential(input_shape=input_shape, layer_name=layer_name)
+    block.append(ConvolutionalLayer(input_shape, num_filters, filter_size, activation=activation,
+                                    layer_name=layer_name + '/first_conv', **kwargs))
+    for i in range(num_layers):
+        block.append(ConvolutionalLayer(block.output_shape, num_nodes[i], 1, activation=activation,
+                                        layer_name=layer_name + '/conv1_%d' % (i + 1), **kwargs))
+    return block
 
 
 class SoftmaxLayer(FullyConnectedLayer):
     def __init__(self, input_shape, num_nodes, layer_name='Softmax'):
         super(SoftmaxLayer, self).__init__(input_shape, num_nodes, layer_name=layer_name, activation='softmax')
-        self.descriptions = '{} Softmax regression: {} x {} -> {}'\
+        self.descriptions = '{} Softmax regression: {} x {} -> {}' \
             .format(self.layer_name, self.input_shape, (self.input_shape[1], num_nodes), self.output_shape)
 
 

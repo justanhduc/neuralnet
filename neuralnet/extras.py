@@ -1,7 +1,7 @@
 import numpy as np
 import theano
-from theano import gof
 import theano.tensor as T
+from theano import gof
 
 __all__ = ['meshgrid']
 

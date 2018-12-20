@@ -17,6 +17,7 @@ class Initializer(object):
     to initialize weight parameters in a neural network layer. It should be
     subclassed when implementing new types of weight initializers.
     """
+
     def __call__(self, shape):
         """
         Makes :class:`Initializer` instances callable like a function, invoking
@@ -49,6 +50,7 @@ class Normal(Initializer):
     mean : float
         Mean of initial parameters.
     """
+
     def __init__(self, std=0.01, mean=0.0):
         self.std = std
         self.mean = mean
@@ -68,6 +70,7 @@ class TruncatedNormal(Initializer):
     mean : float
         Mean of initial parameters.
     """
+
     def __init__(self, std=0.01, mean=0.0):
         self.std = std
         self.mean = mean
@@ -93,6 +96,7 @@ class Uniform(Initializer):
     mean : float
         see std for description.
     """
+
     def __init__(self, range=0.01, std=None, mean=0.0):
         if std is not None:
             a = mean - np.sqrt(3) * std
@@ -151,6 +155,7 @@ class Glorot(Initializer):
     GlorotNormal  : Shortcut with Gaussian initializer.
     GlorotUniform : Shortcut with uniform initializer.
     """
+
     def __init__(self, initializer, gain=1.0, c01b=False):
         if gain == 'relu':
             gain = np.sqrt(2)
@@ -183,6 +188,7 @@ class GlorotNormal(Glorot):
     """Glorot with weights sampled from the Normal distribution.
     See :class:`Glorot` for a description of the parameters.
     """
+
     def __init__(self, gain=1.0, c01b=False):
         super(GlorotNormal, self).__init__(Normal, gain, c01b)
 
@@ -191,6 +197,7 @@ class GlorotUniform(Glorot):
     """Glorot with weights sampled from the Uniform distribution.
     See :class:`Glorot` for a description of the parameters.
     """
+
     def __init__(self, gain=1.0, c01b=False):
         super(GlorotUniform, self).__init__(Uniform, gain, c01b)
 
@@ -225,6 +232,7 @@ class He(Initializer):
     HeNormal  : Shortcut with Gaussian initializer.
     HeUniform : Shortcut with uniform initializer.
     """
+
     def __init__(self, initializer, gain=1.0, c01b=False):
         if gain == 'relu':
             gain = np.sqrt(2)
@@ -257,6 +265,7 @@ class HeNormal(He):
     """He initializer with weights sampled from the Normal distribution.
     See :class:`He` for a description of the parameters.
     """
+
     def __init__(self, gain=1.0, c01b=False):
         super(HeNormal, self).__init__(Normal, gain, c01b)
 
@@ -265,6 +274,7 @@ class HeUniform(He):
     """He initializer with weights sampled from the Uniform distribution.
     See :class:`He` for a description of the parameters.
     """
+
     def __init__(self, gain=1.0, c01b=False):
         super(HeUniform, self).__init__(Uniform, gain, c01b)
 
@@ -276,6 +286,7 @@ class Constant(Initializer):
      val : float
         Constant value for weights.
     """
+
     def __init__(self, val=0.0):
         self.val = val
 
@@ -293,6 +304,7 @@ class Sparse(Initializer):
     std : float
         Non-zero weights are sampled from N(0, std).
     """
+
     def __init__(self, sparsity=0.1, std=0.01):
         self.sparsity = sparsity
         self.std = std
@@ -336,6 +348,7 @@ class Orthogonal(Initializer):
            "Exact solutions to the nonlinear dynamics of learning in deep
            linear neural networks." arXiv preprint arXiv:1312.6120 (2013).
     """
+
     def __init__(self, gain=1.0):
         if gain == 'relu':
             gain = np.sqrt(2)

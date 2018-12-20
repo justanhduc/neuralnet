@@ -1,14 +1,15 @@
-import theano
-import numpy as np
-from theano import tensor as T
-from theano.tensor.nnet import conv2d as conv
-from theano.gpuarray.dnn import dnn_pool as pool
-from functools import partial
 import numbers
+from functools import partial
+
+import numpy as np
+import theano
+from theano import tensor as T
+from theano.gpuarray.dnn import dnn_pool as pool
+from theano.tensor.nnet import conv2d as conv
 
 from neuralnet import utils
-from neuralnet.layers import *
 from neuralnet.init import *
+from neuralnet.layers import *
 
 int_types = (numbers.Integral, np.integer)
 __all__ = ['PixelShuffleLayer', 'ConvMeanPoolLayer', 'MeanPoolConvLayer', 'ReshapingLayer', 'UpsamplingLayer',
@@ -86,7 +87,7 @@ class DownsamplingLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        return tuple(self.input_shape[:2]) + tuple([s//self.factor for s in self.input_shape[2:]])
+        return tuple(self.input_shape[:2]) + tuple([s // self.factor for s in self.input_shape[2:]])
 
 
 class PoolingLayer(Layer):
@@ -240,17 +241,19 @@ class UpProjectionUnit(Sequential):
 
         if learnable:
             self.append(TransposedConvolutionalLayer(self.input_shape, input_shape[1], filter_size,
-                                                     (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
+                                                     (input_shape[2] * 2, input_shape[3] * 2),
+                                                     stride=(up_ratio, up_ratio),
                                                      activation=activation, layer_name=layer_name + '/up1'))
         else:
             self.append(UpsamplingLayer(self.input_shape, up_ratio, layer_name=layer_name + '/up1'))
 
         self.append(ConvolutionalLayer(self.output_shape, input_shape[1], filter_size, stride=(up_ratio, up_ratio),
-                                       activation=activation, layer_name=layer_name+'/conv'))
+                                       activation=activation, layer_name=layer_name + '/conv'))
 
         if learnable:
             self.append(TransposedConvolutionalLayer(self.input_shape, input_shape[1], filter_size,
-                                                     (input_shape[2] * 2, input_shape[3] * 2), stride=(up_ratio, up_ratio),
+                                                     (input_shape[2] * 2, input_shape[3] * 2),
+                                                     stride=(up_ratio, up_ratio),
                                                      activation=activation, layer_name=layer_name + '/up2'))
         else:
             self.append(UpsamplingLayer(self.input_shape, up_ratio, layer_name=layer_name + '/up2'))
@@ -259,10 +262,10 @@ class UpProjectionUnit(Sequential):
                                                                                       self.output_shape, up_ratio)
 
     def get_output(self, input):
-        out1 = self[self.layer_name+'/up1'](input)
-        out2 = self[self.layer_name+'/conv'](out1)
+        out1 = self[self.layer_name + '/up1'](input)
+        out2 = self[self.layer_name + '/conv'](out1)
         res = out2 - input
-        out2 = self[self.layer_name+'/up2'](res)
+        out2 = self[self.layer_name + '/up2'](res)
         return out2 + out1
 
 
@@ -279,8 +282,8 @@ class DownProjectionUnit(Sequential):
         self.activation = activation
         self.down_ratio = down_ratio
 
-        self.append(ConvolutionalLayer(input_shape,input_shape[1], filter_size, stride=(down_ratio, down_ratio),
-                                       activation=activation, layer_name=layer_name+'/conv1'))
+        self.append(ConvolutionalLayer(input_shape, input_shape[1], filter_size, stride=(down_ratio, down_ratio),
+                                       activation=activation, layer_name=layer_name + '/conv1'))
 
         if learnable:
             self.append(TransposedConvolutionalLayer(self.output_shape, input_shape[1], filter_size,
@@ -291,16 +294,16 @@ class DownProjectionUnit(Sequential):
             self.append(UpsamplingLayer(self.output_shape, down_ratio, layer_name=layer_name + '/up'))
 
         self.append(ConvolutionalLayer(self.output_shape, input_shape[1], filter_size, stride=(down_ratio, down_ratio),
-                                       activation=activation, layer_name=layer_name+'/conv2'))
+                                       activation=activation, layer_name=layer_name + '/conv2'))
 
         self.descriptions = '{} Down Projection Unit: {} -> {} downsampling by {}'.format(layer_name, input_shape,
                                                                                           self.output_shape, down_ratio)
 
     def get_output(self, input):
-        out1 = self[self.layer_name+'/conv1'](input)
-        out2 = self[self.layer_name+'/up'](out1)
+        out1 = self[self.layer_name + '/conv1'](input)
+        out2 = self[self.layer_name + '/up'](out1)
         res = out2 - input
-        out2 = self[self.layer_name+'/conv2'](res)
+        out2 = self[self.layer_name + '/conv2'](res)
         return out2 + out1
 
 
@@ -316,7 +319,7 @@ class PixelShuffleLayer(Layer):
         self.activation = activation
         self.biases = biases
 
-        self.shape = (self.input_shape[0], self.input_shape[1], self.input_shape[2]*rate, self.input_shape[3]*rate)
+        self.shape = (self.input_shape[0], self.input_shape[1], self.input_shape[2] * rate, self.input_shape[3] * rate)
         self.conv = ConvolutionalLayer(self.shape, num_filters, filter_size, init=init, activation=self.activation,
                                        layer_name=self.layer_name, no_bias=not self.biases, **kwargs)
         self.params += self.conv.params
@@ -464,7 +467,7 @@ def ReflectPaddingConv(input_shape, num_filters, filter_size=3, stride=1, activa
                         groups=num_filters))
     else:
         block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, Normal(.02), border_mode=0,
-                                        stride=stride, activation=activation, layer_name=layer_name+'/conv'))
+                                        stride=stride, activation=activation, layer_name=layer_name + '/conv'))
     return block
 
 
@@ -484,6 +487,7 @@ class PaddingLayer(Layer):
     batch_ndim : integer
         Dimensions before the value will not be padded.
     """
+
     def __init__(self, input_shape, width, val=0, batch_ndim=2, layer_name='Padding Layer'):
         super(PaddingLayer, self).__init__(input_shape, layer_name)
         self.width = width
@@ -538,6 +542,7 @@ class MaxPoolingLayer(PoolingLayer):
     def __init__(self, input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='Max Pooling'):
         super(MaxPoolingLayer, self).__init__(input_shape, ws, ignore_border, stride, pad, 'max', layer_name)
         self.descriptions = '{} Max Pooling Layer: {} -> {}'.format(layer_name, self.input_shape, self.output_shape)
+
 
 class AveragePoolingLayer(PoolingLayer):
     def __init__(self, input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='Avg Pooling'):

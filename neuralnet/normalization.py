@@ -1,9 +1,9 @@
+import numpy as np
 import theano
 from theano import tensor as T
-import numpy as np
 
-from neuralnet.layers import *
 from neuralnet import utils
+from neuralnet.layers import *
 
 __all__ = ['BatchNormLayer', 'BatchRenormLayer', 'DecorrBatchNormLayer', 'GroupNormLayer',
            'AdaptiveInstanceNorm2DLayer', 'InstanceNormLayer', 'LayerNormLayer', 'AdaIN2DLayer',
@@ -42,7 +42,7 @@ class BatchNormLayer(Layer):
                                          name=layer_name + '/running_var', borrow=True)
 
         self.params += [self.running_mean, self.running_var, self.gamma, self.beta]
-        self.trainable += [self.beta] if self. no_scale else [self.beta, self.gamma]
+        self.trainable += [self.beta] if self.no_scale else [self.beta, self.gamma]
         self.regularizable += [self.gamma] if not self.no_scale else []
 
         if activation == 'prelu':
@@ -51,7 +51,7 @@ class BatchNormLayer(Layer):
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
-        self.descriptions = '{} Batch Norm Layer: {} -> {} running_average_factor = {:.4f} activation: {}'\
+        self.descriptions = '{} Batch Norm Layer: {} -> {} running_average_factor = {:.4f} activation: {}' \
             .format(layer_name, self.input_shape, self.output_shape, self.running_average_factor, activation)
 
     def batch_normalization_train(self, input):
@@ -94,6 +94,7 @@ class DecorrBatchNormLayer(BatchNormLayer):
     """
     From the paper "Decorrelated Batch Normalization" - Lei Huang, Dawei Yang, Bo Lang, Jia Deng
     """
+
     def __init__(self, input_shape, layer_name='DBN', epsilon=1e-4, running_average_factor=1e-1, activation='relu',
                  no_scale=False, **kwargs):
         """
@@ -124,7 +125,7 @@ class DecorrBatchNormLayer(BatchNormLayer):
         Z = T.dot(T.dot(D, T.nlinalg.diag(T.sqrt(W))), D.T)
         X = T.dot(Z, X)
         out = self.activation(self.batch_normalization_train(X.T) if self.training_flag
-                               else self.batch_normalization_test(X.T), **self.kwargs)
+                              else self.batch_normalization_test(X.T), **self.kwargs)
         out = T.reshape(out.T, (c, m, h, w))
         out = out.dimshuffle((1, 0, 2, 3))
         return out
@@ -136,6 +137,7 @@ class GroupNormLayer(Layer):
     group = 1 -> Layer Normalization
     group = input_shape[1] -> Instance Normalization
     """
+
     def __init__(self, input_shape, layer_name='GN', groups=32, epsilon=1e-4, activation='relu', **kwargs):
         assert input_shape[1] / groups == input_shape[1] // groups, 'groups must divide the number of input channels.'
 
@@ -160,7 +162,7 @@ class GroupNormLayer(Layer):
             self.trainable += [self.alpha]
             self.kwargs['alpha'] = self.alpha
 
-        self.descriptions = '{} Group Norm Layer: shape: {} -> {} activation: {}'\
+        self.descriptions = '{} Group Norm Layer: shape: {} -> {} activation: {}' \
             .format(layer_name, self.input_shape, self.output_shape, activation)
 
     def get_output(self, input, *args, **kwargs):
@@ -291,12 +293,12 @@ AdaIN2DLayer = AdaptiveInstanceNorm2DLayer
 class InstanceNormLayer(GroupNormLayer):
     def __init__(self, input_shape, layer_name='IN', epsilon=1e-4, activation='relu', **kwargs):
         super(InstanceNormLayer, self).__init__(input_shape, layer_name, input_shape[1], epsilon, activation, **kwargs)
-        self.descriptions = '{} Instance Norm Layer: shape: {} -> {} activation: {}'\
+        self.descriptions = '{} Instance Norm Layer: shape: {} -> {} activation: {}' \
             .format(layer_name, self.input_shape, self.output_shape, activation)
 
 
 class LayerNormLayer(GroupNormLayer):
     def __init__(self, input_shape, layer_name='LN', epsilon=1e-4, activation='relu', **kwargs):
         super(LayerNormLayer, self).__init__(input_shape, layer_name, 1, epsilon, activation, **kwargs)
-        self.descriptions = '{} Layer Norm Layer: shape: {} -> {} activation: {}'\
+        self.descriptions = '{} Layer Norm Layer: shape: {} -> {} activation: {}' \
             .format(layer_name, self.input_shape, self.output_shape, activation)

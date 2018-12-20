@@ -1,5 +1,6 @@
-import theano
 import time
+
+import theano
 
 from neuralnet import ConfigParser
 

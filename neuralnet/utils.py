@@ -1,17 +1,18 @@
+import abc
 import json
+import logging
+import pickle as pkl
 import sys
 import threading
-from queue import Queue
 import time
+from functools import reduce
+from queue import Queue
+
+import cloudpickle as cpkl
 import numpy as np
 import theano
-from theano import tensor as T
 from scipy import misc
-from functools import reduce
-import cloudpickle as cpkl
-import pickle as pkl
-import logging
-import abc
+from theano import tensor as T
 
 from neuralnet import __version__
 
@@ -22,9 +23,11 @@ srng = theano.sandbox.rng_mrg.MRG_RandomStreams(np.random.RandomState(int(time.t
 
 def validate(func):
     """make sure output shape is a list of ints"""
+
     def func_wrapper(self):
         out = [int(x) if x is not None else x for x in func(self)]
         return tuple(out)
+
     return func_wrapper
 
 
@@ -40,7 +43,9 @@ def deprecated(version=None, message=None):
         def wrapper(*args, **kwargs):
             logging.warning(message)
             func(*args, **kwargs)
+
         return wrapper
+
     return deprecated_decorator
 
 
@@ -164,7 +169,8 @@ class DataManager(ConfigParser, metaclass=abc.ABCMeta):
     def get_batches(self):
         num_batches = self.data_size // self.batch_size
         cur_epoch = self.cur_epoch
-        for _, self.cur_epoch in enumerate(iter(int, 1)) if self.infinite else enumerate(range(cur_epoch, self.n_epochs)):
+        for _, self.cur_epoch in enumerate(iter(int, 1)) if self.infinite else enumerate(
+                range(cur_epoch, self.n_epochs)):
             batches = self.generator()
             if self.augmentation is not None:
                 batches = self.augment_minibatches(batches)
@@ -174,13 +180,14 @@ class DataManager(ConfigParser, metaclass=abc.ABCMeta):
                     self.update_input(batch[:len(self.placeholders)])
                     yield (self.cur_epoch * num_batches + it) if not batch[len(self.placeholders):] \
                         else (self.cur_epoch * num_batches + it,) + tuple(batch[len(self.placeholders):])
-                elif isinstance(batch, (list, tuple)) and isinstance(self.placeholders, theano.gpuarray.type.GpuArraySharedVariable):
+                elif isinstance(batch, (list, tuple)) and isinstance(self.placeholders,
+                                                                     theano.gpuarray.type.GpuArraySharedVariable):
                     self.update_input(batch[0])
                     yield (self.cur_epoch * num_batches + it,) + tuple(batch[1:])
                 else:
                     self.update_input(batch)
                     yield (self.cur_epoch * num_batches + it) if self.placeholders is not None \
-                              else ((self.cur_epoch * num_batches + it), batch)
+                        else ((self.cur_epoch * num_batches + it), batch)
 
     def generate_in_background(self, generator):
         """
@@ -215,7 +222,8 @@ class DataManager(ConfigParser, metaclass=abc.ABCMeta):
                                                             (len(data), len(self.placeholders))
                 for d, p in zip(data, self.placeholders):
                     p.set_value(d, borrow=True)
-            elif isinstance(self.placeholders, theano.gpuarray.type.GpuArraySharedVariable) and isinstance(data, np.ndarray):
+            elif isinstance(self.placeholders, theano.gpuarray.type.GpuArraySharedVariable) and isinstance(data,
+                                                                                                           np.ndarray):
                 x = data
                 shape_x = self.placeholders.get_value().shape
                 if x.shape != shape_x:
@@ -260,7 +268,7 @@ def progress(items, desc='', total=None, min_delay=0.1):
         t_now = time.time()
         if t_now - t_last > min_delay:
             print("\r%s%d/%d (%6.2f%%)" % (
-                    desc, n+1, total, n / float(total) * 100), end=" ")
+                desc, n + 1, total, n / float(total) * 100), end=" ")
             if n > 0:
                 t_done = t_now - t_start
                 t_total = t_done / n * total
@@ -477,7 +485,8 @@ def rgb2ycbcr(img):
     Y = 0. + .299 * img[:, 0] + .587 * img[:, 1] + .114 * img[:, 2]
     Cb = 128. - .169 * img[:, 0] - .331 * img[:, 1] + .5 * img[:, 2]
     Cr = 128. + .5 * img[:, 0] - .419 * img[:, 1] - .081 * img[:, 2]
-    return T.concatenate((Y.dimshuffle((0, 'x', 1, 2)), Cb.dimshuffle((0, 'x', 1, 2)), Cr.dimshuffle((0, 'x', 1, 2))), 1)
+    return T.concatenate((Y.dimshuffle((0, 'x', 1, 2)), Cb.dimshuffle((0, 'x', 1, 2)), Cr.dimshuffle((0, 'x', 1, 2))),
+                         1)
 
 
 def ycbcr2rgb(img):
@@ -514,12 +523,12 @@ def linspace(start, stop, num=50):
     start = T.cast(start, theano.config.floatX)
     stop = T.cast(stop, theano.config.floatX)
     num = T.cast(num, theano.config.floatX)
-    step = (stop-start)/(num-1)
-    return T.arange(num, dtype=theano.config.floatX)*step+start
+    step = (stop - start) / (num - 1)
+    return T.arange(num, dtype=theano.config.floatX) * step + start
 
 
 def meshgrid(x, y):
-    x_t = T.dot(T.ones((y.shape[0], 1), x.dtype), x. dimshuffle('x', 0))
+    x_t = T.dot(T.ones((y.shape[0], 1), x.dtype), x.dimshuffle('x', 0))
     y_t = T.dot(y.dimshuffle(0, 'x'), T.ones((1, x.shape[0]), y.dtype))
     return x_t, y_t
 
@@ -610,7 +619,7 @@ def interpolate_bilinear(im, x, y, out_shape=None, border_mode='nearest'):
     wc = ((1. - (x1_f - x)) * (y1_f - y)).dimshuffle((0, 'x'))
     wd = ((1. - (x1_f - x)) * (1. - (y1_f - y))).dimshuffle((0, 'x'))
 
-    output = T.sum((wa*pixel_a, wb*pixel_b, wc*pixel_c, wd*pixel_d), axis=0)
+    output = T.sum((wa * pixel_a, wb * pixel_b, wc * pixel_c, wd * pixel_d), axis=0)
     output = T.reshape(output, (n, h_out, w_out, c))
     return output.dimshuffle((0, 3, 1, 2))
 
@@ -712,9 +721,9 @@ def unroll_scan(fn, sequences, outputs_info, non_sequences, n_steps, go_backward
 
 
 def lagrange_interpolation(x, y, u, order):
-    r = range(order+1)
-    a = [y[i] / reduce(lambda c, b: c*b, [x[i] - x[j] for j in r if j != i]) for i in r]
-    out = T.sum([a[i] * reduce(lambda c, b: c*b, [u - x[j] for j in r if j != i]) for i in r], 0)
+    r = range(order + 1)
+    a = [y[i] / reduce(lambda c, b: c * b, [x[i] - x[j] for j in r if j != i]) for i in r]
+    out = T.sum([a[i] * reduce(lambda c, b: c * b, [u - x[j] for j in r if j != i]) for i in r], 0)
     return out
 
 
@@ -727,7 +736,7 @@ def point_op(image, lut, origin, increment, *args):
     index = pos.astype('int64')
     index = T.set_subtensor(index[index < 0], 0)
     index = T.set_subtensor(index[index > lutsize], lutsize)
-    res = lut[index] + (lut[index+1] - lut[index]) * (pos - index.astype(theano.config.floatX))
+    res = lut[index] + (lut[index + 1] - lut[index]) * (pos - index.astype(theano.config.floatX))
     return T.reshape(res, (h, w)).astype(theano.config.floatX)
 
 
@@ -805,7 +814,7 @@ def replication_pad(input, padding):
         return input
 
     if isinstance(padding, int):
-        padding = (padding, ) * 4
+        padding = (padding,) * 4
 
     output = input
     for axis, i in enumerate(padding):
@@ -870,15 +879,18 @@ def reflect_pad(input, padding, batch_ndim=2):
     out = T.set_subtensor(out[:, :, :widths[0], widths[1]:-widths[1]],
                           input[:, :, widths[0]:0:-1, :])  # out[:,:,:width,width:-width] = x[:,:,width:0:-1,:]
     out = T.set_subtensor(out[:, :, -widths[0]:, widths[1]:-widths[1]],
-                          input[:, :, -2:-(2 + widths[0]):-1, :])  # out[:,:,-width:,width:-width] = x[:,:,-2:-(2+width):-1,:]
+                          input[:, :, -2:-(2 + widths[0]):-1,
+                          :])  # out[:,:,-width:,width:-width] = x[:,:,-2:-(2+width):-1,:]
 
     # Place X in out
     # out = T.set_subtensor(out[tuple(indices)], x) # or, alternative, out[width:-width,width:-width] = x
-    out = T.set_subtensor(out[:, :, widths[0]:-widths[0], widths[1]:-widths[1]], input)  # out[:,:,width:-width,width:-width] = x
+    out = T.set_subtensor(out[:, :, widths[0]:-widths[0], widths[1]:-widths[1]],
+                          input)  # out[:,:,width:-width,width:-width] = x
 
     # Horizontal reflections
     out = T.set_subtensor(out[:, :, :, :widths[1]],
-                          out[:, :, :, (2 * widths[1]):widths[1]:-1])  # out[:,:,:,:width] = out[:,:,:,(2*width):width:-1]
+                          out[:, :, :,
+                          (2 * widths[1]):widths[1]:-1])  # out[:,:,:,:width] = out[:,:,:,(2*width):width:-1]
     out = T.set_subtensor(out[:, :, :, -widths[1]:], out[:, :, :, -(widths[1] + 2):-(
             2 * widths[1] + 2):-1])  # out[:,:,:,-width:] = out[:,:,:,-(width+2):-(2*width+2):-1]
     return out
@@ -918,7 +930,7 @@ def make_tensor_kernel_from_numpy(kern_shape, numpy_kernel, type='each'):
         for ii in range(kern_shape[0]):
             kern = T.set_subtensor(kern[ii, ii], numpy_kernel)
     else:
-        kern = T.tile(numpy_kernel, tuple(kern_shape)+(1, 1), 4)
+        kern = T.tile(numpy_kernel, tuple(kern_shape) + (1, 1), 4)
     return kern
 
 
@@ -949,7 +961,8 @@ def laplacian_of_gaussian_kernel(size, sigma):
     http://mathworld.wolfram.com/GaussianFunction.html
     """
     x, y = np.mgrid[-size // 2 + 1:size // 2 + 1, -size // 2 + 1:size // 2 + 1]
-    g = 1 / (2*np.pi*sigma**4) * ((x**2 + y**2 - 2*sigma**2) / sigma**2) * np.exp(-(x**2 + y**2) / (2*sigma**2))
+    g = 1 / (2 * np.pi * sigma ** 4) * ((x ** 2 + y ** 2 - 2 * sigma ** 2) / sigma ** 2) * np.exp(
+        -(x ** 2 + y ** 2) / (2 * sigma ** 2))
     return np.float32(g)
 
 
@@ -1048,7 +1061,8 @@ def numpy2shared(numpy_vars, shared_vars=None):
                                                               'tuple of numpy arrays, got %s' % type(
         numpy_vars)
     if shared_vars is not None:
-        assert isinstance(shared_vars, (list, tuple, T.sharedvar.ScalarSharedVariable, T.sharedvar.TensorSharedVariable)), \
+        assert isinstance(shared_vars,
+                          (list, tuple, T.sharedvar.ScalarSharedVariable, T.sharedvar.TensorSharedVariable)), \
             'shared_vars must be a list or tuple of numpy arrays, got %s' % type(shared_vars)
         shared_vars.set_value(numpy_vars) if isinstance(numpy_vars, np.ndarray) else [sv.set_value(nv) for sv, nv in
                                                                                       zip(shared_vars, numpy_vars)]
@@ -1104,7 +1118,8 @@ def max_singular_value(W, u=None, lp=1):
 
 
 def spectral_normalize(W, u_=None):
-    u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype(theano.config.floatX), 'u') if u_ is None else u_
+    u = theano.shared(np.random.normal(size=(1, W.get_value().shape[0])).astype(theano.config.floatX),
+                      'u') if u_ is None else u_
     sigma, _u, _ = max_singular_value(W, u)
     W /= (sigma + 1e-12)
     return (W, _u) if u_ else (W, _u, u)

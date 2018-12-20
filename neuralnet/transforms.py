@@ -2,9 +2,10 @@
 Written by Duc Nguyen. Inspired from PyTorch.
 """
 
-import numpy as np
-import numbers
 import collections
+import numbers
+
+import numpy as np
 import theano
 
 from neuralnet import utils
@@ -79,17 +80,17 @@ class Pad:
 
         if isinstance(self.padding, numbers.Number):
             padding = int(self.padding)
-            new = np.ones((n, c, h+2*padding, w+2*padding)) * fill
-            new[:, :, padding:padding+h, padding:padding+w] = batch
+            new = np.ones((n, c, h + 2 * padding, w + 2 * padding)) * fill
+            new[:, :, padding:padding + h, padding:padding + w] = batch
         else:
             if len(self.padding) == 2:
                 lr, tb = self.padding
-                new = np.ones((n, c, h+2*tb, w+2*lr)) * fill
-                new[:, :, tb:tb+h, lr:lr+w] = batch
+                new = np.ones((n, c, h + 2 * tb, w + 2 * lr)) * fill
+                new[:, :, tb:tb + h, lr:lr + w] = batch
             else:
                 le, to, ri, bo = self.padding
-                new = np.ones((n, c, h+to+bo, w+le+ri)) * fill
-                new[:, :, to:to+h, le:le+w] = batch
+                new = np.ones((n, c, h + to + bo, w + le + ri)) * fill
+                new[:, :, to:to + h, le:le + w] = batch
 
         return new.astype(theano.config.floatX)
 

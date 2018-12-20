@@ -4,11 +4,11 @@ Apr, 2016
 Updates on Feb 3, 2017
 Updates on Sep 8, 2017
 """
+import numpy as np
+
 from neuralnet import metrics
 from neuralnet import utils
 from neuralnet.optimization import *
-
-import numpy as np
 
 
 class Optimization(utils.ConfigParser):

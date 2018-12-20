@@ -1,10 +1,10 @@
-import numpy
 import abc
+import numpy
 
 import neuralnet as nn
 from neuralnet import layers
-from neuralnet.build_training import Training
 from neuralnet.build_optimization import Optimization
+from neuralnet.build_training import Training
 
 
 class Model(Optimization, Training, nn.model_zoo.Net, metaclass=abc.ABCMeta):

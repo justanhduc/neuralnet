@@ -1,11 +1,12 @@
-import numpy as np
 import warnings
+
+import numpy as np
 import theano
 from theano import tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
-from neuralnet.model_zoo import VGG16, VGG19
 from neuralnet import utils
+from neuralnet.model_zoo import VGG16, VGG19
 
 __all__ = ['manhattan_distance', 'mean_classification_error', 'mean_squared_error', 'msssim',
            'multinoulli_cross_entropy', 'root_mean_squared_error', 'psnr', 'psnr255', 'pearson_correlation',
@@ -50,7 +51,7 @@ def huber_loss(x, y, thres=1.):
         raise TypeError('y should have the same shape as y_pred', ('y', y.type, 'y_pred', x.type))
     e = T.abs_(x - y)
     larger_than_equal_to = .5 * thres ** 2 + thres * (e - thres)
-    less_than = .5 * e**2
+    less_than = .5 * e ** 2
     mask = T.cast(e >= thres, theano.config.floatX)
     return T.mean(mask * larger_than_equal_to + (1. - mask) * less_than)
 
@@ -89,8 +90,10 @@ def gradient_difference(x, y, p):
     print('Using gradient difference loss')
     if y.ndim != x.ndim:
         raise TypeError('y should have the same shape as y_pred', ('y', y.type, 'y_pred', x.type))
-    diff_v = T.mean(T.abs_(T.abs_(x[:, :, 1::2, :] - x[:, :, ::2, :]) - T.abs_(y[:, :, 1::2, :] - y[:, :, ::2, :]))**p)
-    diff_h = T.mean(T.abs_(T.abs_(x[:, :, :, 1::2] - x[:, :, :, ::2]) - T.abs_(y[:, :, :, 1::2] - y[:, :, :, ::2]))**p)
+    diff_v = T.mean(
+        T.abs_(T.abs_(x[:, :, 1::2, :] - x[:, :, ::2, :]) - T.abs_(y[:, :, 1::2, :] - y[:, :, ::2, :])) ** p)
+    diff_h = T.mean(
+        T.abs_(T.abs_(x[:, :, :, 1::2] - x[:, :, :, ::2]) - T.abs_(y[:, :, :, 1::2] - y[:, :, :, ::2])) ** p)
     return T.mean(diff_h + diff_v)
 
 
@@ -158,7 +161,7 @@ def pulling_away(x, y=None):
         eye = T.eye(x.shape[0], dtype=theano.config.floatX)
         x_hat = x / T.sqrt(T.sum(T.sqr(x), 1, keepdims=True))
         corr = T.dot(x_hat, x_hat.T) ** 2.
-        f = 1. / T.cast(4 * x.shape[0] * (x.shape[0]-1), theano.config.floatX) * T.sum(corr * (1. - eye))
+        f = 1. / T.cast(4 * x.shape[0] * (x.shape[0] - 1), theano.config.floatX) * T.sum(corr * (1. - eye))
         return f
     else:
         if x.ndim != 1:
@@ -176,12 +179,12 @@ def kld_std_gauss(mu, log_var):
     https://arxiv.org/abs/1312.6114
     KL = -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
     """
-    kld = -.5 * T.sum(log_var + 1. - mu**2. - T.exp(log_var), axis=1)
+    kld = -.5 * T.sum(log_var + 1. - mu ** 2. - T.exp(log_var), axis=1)
     return T.mean(kld)
 
 
 def neg_log_prob_gaussian(z, mu, log_var):
-    res = - .5 * log_var - ((z - mu)**2. / (2. * T.exp(log_var)))
+    res = - .5 * log_var - ((z - mu) ** 2. / (2. * T.exp(log_var)))
     return -T.mean(res - np.float32(.5 * np.log(2. * np.pi)))
 
 
@@ -227,7 +230,7 @@ def spearman(ypred, y, axis=None, eps=1e-8):
     rg_y = T.cast(T.argsort(y, axis=axis), T.config.floatX)
     n = y.shape[0]
     numerator = 6 * T.sum(T.square(rg_ypred - rg_y))
-    denominator = n * (n**2 - 1)
+    denominator = n * (n ** 2 - 1)
     return 1. - numerator / denominator
 
 
@@ -252,7 +255,7 @@ def mean_classification_error(p_y_given_x, y, binary_threshold=0.5):
 def dog_loss(x, y, size=21, sigma1=1, sigma2=1.6, p=2, **kwargs):
     print('Using Difference of Gaussians loss')
     depth = kwargs.get('depth', 3)
-    diff = utils.difference_of_gaussian(T.concatenate((x, y), 1), 2*depth, size, sigma1, sigma2)
+    diff = utils.difference_of_gaussian(T.concatenate((x, y), 1), 2 * depth, size, sigma1, sigma2)
     return norm_error(diff[:, :depth], diff[:, depth:], p)
 
 
@@ -301,7 +304,8 @@ def ssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0
     size = T.min((filter_size, height, width))
 
     # Scale down sigma if a smaller filter size is used.
-    sigma = (T.cast(size, theano.config.floatX) * filter_sigma / filter_size) if filter_size else T.as_tensor_variable(np.float32(1))
+    sigma = (T.cast(size, theano.config.floatX) * filter_sigma / filter_size) if filter_size else T.as_tensor_variable(
+        np.float32(1))
 
     if filter_size:
         window = T.cast(T.reshape(utils.fspecial_gauss(size, sigma), (1, 1, size, size)), theano.config.floatX)
@@ -373,21 +377,22 @@ def msssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2
     mssim = []
     mcs = []
     for idx in range(levels):
-        _ssim, cs = ssim(img1, img2, max_val=max_val, filter_size=filter_size, filter_sigma=filter_sigma, k1=k1, k2=k2, cs_map=True)
+        _ssim, cs = ssim(img1, img2, max_val=max_val, filter_size=filter_size, filter_sigma=filter_sigma, k1=k1, k2=k2,
+                         cs_map=True)
         mssim.append(_ssim)
         mcs.append(cs ** weights[idx])
         filtered = [T.nnet.conv2d(im, downsample_filter, border_mode='half') for im in (img1, img2)]
         img1, img2 = [x[:, :, ::2, ::2] for x in filtered]
     mssim = T.as_tensor_variable(mssim)
     mcs = T.as_tensor_variable(mcs)
-    return T.prod(mcs) * (mssim[levels-1] ** weights[levels-1])
+    return T.prod(mcs) * (mssim[levels - 1] ** weights[levels - 1])
 
 
 def psnr(x, y, mask=None):
     """PSNR for [0,1] images"""
     print('Using PSNR metric for [0, 1] images')
     mask = mask.astype(theano.config.floatX) if mask else None
-    return -10 * T.log(T.sum(T.square((y - x)*mask)) / T.sum(mask)) / T.log(10.) if mask \
+    return -10 * T.log(T.sum(T.square((y - x) * mask)) / T.sum(mask)) / T.log(10.) if mask \
         else -10 * T.log(T.mean(T.square(y - x))) / T.log(10.)
 
 

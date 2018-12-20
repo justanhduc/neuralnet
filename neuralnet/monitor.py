@@ -4,8 +4,9 @@ Collected and modified by Nguyen Anh Duc
 """
 
 from mpl_toolkits.mplot3d import Axes3D
-import numpy as np
 import matplotlib
+import numpy as np
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -130,7 +131,8 @@ class Monitor(nn.utils.ConfigParser):
 
     def dump_model(self, network):
         assert isinstance(network, (
-        nn.Layer, nn.Sequential, nn.Model)), 'network must be an instance of Model, Layer or Sequetial, got {}.'.format(
+            nn.Layer, nn.Sequential,
+            nn.Model)), 'network must be an instance of Model, Layer or Sequetial, got {}.'.format(
             type(network))
         with open('%s/network.txt' % self.current_folder, 'w') as outfile:
             outfile.write(str(network))
@@ -168,8 +170,9 @@ class Monitor(nn.utils.ConfigParser):
             y_vals = [self.__num_since_beginning[name][x] for x in x_vals]
             max_, min_, med_ = np.max(y_vals), np.min(y_vals), np.median(y_vals)
             argmax_, argmin_ = np.argmax(y_vals), np.argmin(y_vals)
-            plt.title('max: {:.4f} at iter {} \nmin: {:.4f} at iter {} \nmedian: {:.4f}'.format(max_, x_vals[argmax_], min_,
-                                                                                            x_vals[argmin_], med_))
+            plt.title(
+                'max: {:.4f} at iter {} \nmin: {:.4f} at iter {} \nmedian: {:.4f}'.format(max_, x_vals[argmax_], min_,
+                                                                                          x_vals[argmin_], med_))
             if isinstance(y_vals[0], dict):
                 keys = list(y_vals[0].keys())
                 y_vals = [tuple([y_val[k] for k in keys]) for y_val in y_vals]
