@@ -111,7 +111,7 @@ def load_dataset(path, normalize=False, new_shape=None):
     X_train = X_train.reshape(-1, 3, 32, 32)
     X_test = X_test.reshape(-1, 3, 32, 32)
 
-    if new_shape:
+    if tuple(new_shape) != (32, 32):
         X_train = reshape_cifar(X_train, new_shape)
         X_test = reshape_cifar(X_test, new_shape)
 
@@ -130,7 +130,7 @@ def load_dataset(path, normalize=False, new_shape=None):
         X_train = (X_train / 255. - mean) / std
         X_test = (X_test / 255. - mean) / std
 
-    return X_train, y_train, X_test, y_test
+    return X_train.astype('float32'), y_train, X_test.astype('float32'), y_test
 
 
 def iterate_minibatches(inputs, targets, batchsize, shuffle=False):

@@ -250,10 +250,8 @@ class Monitor(nn.utils.ConfigParser):
         for k, v in self.__dump_files_tmp.items():
             self._dump(v[0], k, v[1])
 
-        d = dict(self.__num_since_beginning)
-        d.update(self.__hist_since_beginning)
         with open(os.path.join(self.current_folder, 'log.pkl'), 'wb') as f:
-            pickle.dump(d, f, pickle.HIGHEST_PROTOCOL)
+            pickle.dump({**self.__num_since_beginning, **self.__hist_since_beginning}, f, pickle.HIGHEST_PROTOCOL)
 
         print("Elapsed time {:.2f}min \t Iteration {}\t{}".format((time.time() - self.__timer) / 60., self.__iter,
                                                                   "\t".join(prints)))

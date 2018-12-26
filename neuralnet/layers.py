@@ -385,22 +385,7 @@ class SqueezeAndExcitationBlock(Sequential):
 
 class ConvolutionalLayer(Layer):
     def __init__(self, input_shape, num_filters, filter_size, init=HeNormal(gain='relu'), no_bias=True,
-                 border_mode='half',
-                 stride=1, dilation=1, layer_name='Conv Layer', activation='relu', **kwargs):
-        """
-
-        :param input_shape:
-        :param num_filters:
-        :param filter_size:
-        :param init:
-        :param no_bias:
-        :param border_mode:
-        :param stride:
-        :param dilation:
-        :param layer_name:
-        :param activation:
-        :param kwargs:
-        """
+                 border_mode='half', stride=1, dilation=1, layer_name='Conv Layer', activation='relu', **kwargs):
         assert len(input_shape) in (4, 5), 'input_shape must have 4 or 5 elements. Received %d' % len(input_shape)
         assert isinstance(num_filters, int) and isinstance(filter_size, (int, list, tuple))
         assert isinstance(border_mode, (int, list, tuple, str)), 'border_mode should be either \'int\', ' \
@@ -413,17 +398,13 @@ class ConvolutionalLayer(Layer):
         super(ConvolutionalLayer, self).__init__(input_shape, layer_name)
         if len(input_shape) == 4:
             self.filter_shape = (num_filters, input_shape[1], filter_size[0], filter_size[1]) if isinstance(filter_size,
-                                                                                                            (
-                                                                                                                list,
-                                                                                                                tuple)) else (
+                                                                                                            (list,
+                                                                                                             tuple)) else (
             num_filters, input_shape[1], filter_size, filter_size)
         else:
             self.filter_shape = (
-                num_filters, input_shape[1], filter_size[0], filter_size[1], filter_size[2]) if isinstance(filter_size,
-                                                                                                           (
-                                                                                                               list,
-                                                                                                               tuple)) else (
-            num_filters, input_shape[1], filter_size, filter_size, filter_size)
+            num_filters, input_shape[1], filter_size[0], filter_size[1], filter_size[2]) if isinstance(filter_size, (
+            list, tuple)) else (num_filters, input_shape[1], filter_size, filter_size, filter_size)
         self.no_bias = no_bias
         self.activation = utils.function[activation] if not callable(activation) else activation
         self.border_mode = border_mode
@@ -1283,9 +1264,8 @@ class RecursiveResNetBlock(Layer):
             if unroll or isinstance(self.normalization, BatchNormLayer):
                 output = utils.unroll_scan(step, None, input, non_seqs, self.recursive - 1)
             else:
-                output = \
-                theano.scan(step, outputs_info=input, non_sequences=non_seqs, n_steps=self.recursive - 1, strict=True)[
-                    0]
+                output = theano.scan(step, outputs_info=input, non_sequences=non_seqs, n_steps=self.recursive - 1,
+                                     strict=True)[0]
             output = output[-1]
         else:
             output = input

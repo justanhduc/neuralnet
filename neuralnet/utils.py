@@ -1161,6 +1161,40 @@ def irfft2(x, norm=None, is_odd=False):
     return out
 
 
+def frac_bilinear_upsampling(x, frac_ratio):
+    if not isinstance(frac_ratio, tuple):
+        raise ValueError("frac_ratio must be a tuple")
+    else:
+        if isinstance(frac_ratio[0], tuple):
+            ratio = (frac_ratio[0][0], frac_ratio[1][0])
+            subsample = (frac_ratio[0][1], frac_ratio[1][1])
+        else:
+            ratio = (frac_ratio[0], frac_ratio[0])
+            subsample = (frac_ratio[1], frac_ratio[1])
+
+    theta = np.array([[1, 0, 0],
+                      [0, 1, 0]])[None]
+    theta = T.tile(T.constant(theta, dtype=theano.config.floatX), (x.shape[0], 1, 1))
+
+    def _dnn_spatialtf(img):
+        from theano.scalar import as_scalar
+        from theano.gpuarray.dnn import (GpuDnnTransformerGrid, GpuDnnTransformerSampler)
+        h = T.ceil(
+            img.shape[2].astype(theano.config.floatX) / subsample[0].astype(theano.config.floatX) * ratio[0].astype(
+                theano.config.floatX))
+        w = T.ceil(
+            img.shape[3].astype(theano.config.floatX) / subsample[1].astype(theano.config.floatX) * ratio[1].astype(
+                theano.config.floatX))
+        out_dims = (img.shape[0], img.shape[1], h, w)
+        out_dims = tuple([as_scalar(v).astype('int64') for v in out_dims])
+        # Setup spatial transformer
+        grid = GpuDnnTransformerGrid()(theta, out_dims)
+        sampler = GpuDnnTransformerSampler()(img, grid)
+        return sampler
+
+    return _dnn_spatialtf(x)
+
+
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
             'tanh': lambda x, **kwargs: T.tanh(x), 'lrelu': lrelu, 'softmax': lambda x, **kwargs: T.nnet.softmax(x),
             'linear': lambda x, **kwargs: x, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,

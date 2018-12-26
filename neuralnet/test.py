@@ -9,6 +9,21 @@ def assert_allclose(x, y):
     assert np.all(np.isclose(x, y))
 
 
+def test_frac_bilinear_upsampling():
+    frac_ratio = ((5, 2), (11, 5))
+
+    X = T.tensor4('input')
+    Y = nn.utils.frac_bilinear_upsampling(X, frac_ratio)
+    f = nn.function([X], Y)
+
+    from imageio import imread, imwrite
+    x = imread('test_files/lena_small.png').astype('float32') / 255.
+    x = np.transpose(x, (2, 0, 1))[None]
+    y = f(x)
+    out = np.array(np.transpose(y[0], (1, 2, 0)))
+    imwrite('test_files/lena_small_frac_bi_up.jpg', out)
+
+
 def test_meshgrid():
     height = 10.
     width = 100.
