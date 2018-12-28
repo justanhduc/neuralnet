@@ -425,7 +425,7 @@ class ReflectPaddingLayer(Layer):
         return tuple(output_shape)
 
     def get_output(self, input):
-        return utils.reflect_pad(input, self.width, self.batch_ndim)
+        return utils.reflection_pad(input, self.width, self.batch_ndim)
 
 
 def MeanPoolConvLayer(input_shape, num_filters, filter_size, activation='linear', ws=(2, 2), init=HeNormal(gain=1.),

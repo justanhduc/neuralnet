@@ -13,6 +13,7 @@ import numpy as np
 import theano
 from scipy import misc
 from theano import tensor as T
+from theano import gradient as G
 
 from neuralnet import __version__
 
@@ -820,19 +821,19 @@ def replication_pad(input, padding):
     for axis, i in enumerate(padding):
         for _ in range(i):
             if axis == 0:
-                output = T.concatenate((output[:, :, :, 0:1], output), 3)
+                output = T.concatenate((G.disconnected_grad(output[:, :, :, :1]), output), 3)
             elif axis == 1:
-                output = T.concatenate((output, output[:, :, :, -1:]), 3)
+                output = T.concatenate((output, G.disconnected_grad(output[:, :, :, -1:])), 3)
             elif axis == 2:
-                output = T.concatenate((output[:, :, 0:1], output), 2)
+                output = T.concatenate((G.disconnected_grad(output[:, :, :1]), output), 2)
             elif axis == 3:
-                output = T.concatenate((output, output[:, :, -1:]), 2)
+                output = T.concatenate((output, G.disconnected_grad(output[:, :, -1:])), 2)
             else:
                 raise ValueError('padding must have 4 elements. Received %d.' % len(padding))
     return output
 
 
-def reflect_pad(input, padding, batch_ndim=2):
+def reflection_pad(input, padding, batch_ndim=2):
     """
     Pad a tensor with a constant value.
     Parameters
@@ -848,7 +849,8 @@ def reflect_pad(input, padding, batch_ndim=2):
         Dimensions before the value will not be padded.
     """
 
-    # Idea for how to make this happen: Flip the tensor horizontally to grab horizontal values, then vertically to grab vertical values
+    # Idea for how to make this happen: Flip the tensor horizontally to grab horizontal values,
+    # then vertically to grab vertical values
     # alternatively, just slice correctly
     if np.all(np.array(padding) == 0):
         return input
@@ -876,23 +878,24 @@ def reflect_pad(input, padding, batch_ndim=2):
     out = T.zeros(output_shape)
 
     # Vertical Reflections
+    # out[:,:,:width,width:-width] = x[:,:,width:0:-1,:]
     out = T.set_subtensor(out[:, :, :widths[0], widths[1]:-widths[1]],
-                          input[:, :, widths[0]:0:-1, :])  # out[:,:,:width,width:-width] = x[:,:,width:0:-1,:]
+                          G.disconnected_grad(input[:, :, widths[0]:0:-1, :]))
+    # out[:,:,-width:,width:-width] = x[:,:,-2:-(2+width):-1,:]
     out = T.set_subtensor(out[:, :, -widths[0]:, widths[1]:-widths[1]],
-                          input[:, :, -2:-(2 + widths[0]):-1,
-                          :])  # out[:,:,-width:,width:-width] = x[:,:,-2:-(2+width):-1,:]
+                          G.disconnected_grad(input[:, :, -2:-(2 + widths[0]):-1, :]))
 
     # Place X in out
     # out = T.set_subtensor(out[tuple(indices)], x) # or, alternative, out[width:-width,width:-width] = x
-    out = T.set_subtensor(out[:, :, widths[0]:-widths[0], widths[1]:-widths[1]],
-                          input)  # out[:,:,width:-width,width:-width] = x
+    # out[:,:,width:-width,width:-width] = x
+    out = T.set_subtensor(out[:, :, widths[0]:-widths[0], widths[1]:-widths[1]], input)
 
     # Horizontal reflections
-    out = T.set_subtensor(out[:, :, :, :widths[1]],
-                          out[:, :, :,
-                          (2 * widths[1]):widths[1]:-1])  # out[:,:,:,:width] = out[:,:,:,(2*width):width:-1]
-    out = T.set_subtensor(out[:, :, :, -widths[1]:], out[:, :, :, -(widths[1] + 2):-(
-            2 * widths[1] + 2):-1])  # out[:,:,:,-width:] = out[:,:,:,-(width+2):-(2*width+2):-1]
+    # out[:,:,:,:width] = out[:,:,:,(2*width):width:-1]
+    out = T.set_subtensor(out[:, :, :, :widths[1]], G.disconnected_grad(out[:, :, :, (2 * widths[1]):widths[1]:-1]))
+    # out[:,:,:,-width:] = out[:,:,:,-(width+2):-(2*width+2):-1]
+    out = T.set_subtensor(out[:, :, :, -widths[1]:],
+                          G.disconnected_grad(out[:, :, :, -(widths[1] + 2):-(2 * widths[1] + 2):-1]))
     return out
 
 
@@ -1104,6 +1107,8 @@ def max_singular_value(W, u=None, lp=1):
     """
     Apply power iteration for the weight parameter
     """
+    assert lp > 0, 'The number of loops must be at least 1'
+
     if W.ndim > 2:
         W = W.flatten(2)
 

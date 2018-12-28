@@ -471,7 +471,7 @@ class ConvolutionalLayer(Layer):
         elif self.border_mode in ('ref', 'rep'):
             assert len(self.input_shape) == 4, '\'ref\' and \'rep\' padding modes support only 4D input'
             if self.border_mode == 'ref':
-                output = utils.reflect_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
+                output = utils.reflection_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
             else:
                 output = utils.replication_pad(input, (self.filter_shape[3] >> 1, self.filter_shape[3] >> 1,
                                                        self.filter_shape[2] >> 1, self.filter_shape[2] >> 1))

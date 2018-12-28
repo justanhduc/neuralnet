@@ -680,7 +680,7 @@ def test_reflection_padding():
     padding = 50
 
     input = T.tensor4('input')
-    out = nn.utils.reflect_pad(input, padding, 2)
+    out = nn.utils.reflection_pad(input, padding, 2)
     func = theano.function([input], out)
 
     from scipy import misc
