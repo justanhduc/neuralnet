@@ -22,8 +22,7 @@ class Net:
 
 class ResNet(nn.Sequential, Net):
     def __init__(self, input_shape, block, layers, num_filters, activation='relu', fc=True, pooling=True,
-                 num_classes=1000,
-                 main_branch=None, res_branch=None, name='ResNet', **kwargs):
+                 num_classes=1000, main_branch=None, res_branch=None, name='ResNet', **kwargs):
         super(ResNet, self).__init__(input_shape=input_shape, layer_name=name)
         self.activation = activation
         self.main_branch = main_branch

@@ -110,7 +110,7 @@ class DataManager(ConfigParser, metaclass=abc.ABCMeta):
         self.shuffle = self.config['data'].get('shuffle') if config_file else kwargs.pop('shuffle', False)
         self.num_cached = self.config['data'].get('num_cached') if config_file else kwargs.pop('num_cached', 10)
         self.augmentation = kwargs.pop('augmentation', None)
-        self.apply_to = kwargs.pop('apply_to', 0)
+        self.apply_to = kwargs.pop('apply_to', [0])
         self.cur_epoch = kwargs.pop('checkpoint', 0)
         self.infinite = kwargs.pop('infinite', False)
         self.kwargs = kwargs
@@ -121,8 +121,8 @@ class DataManager(ConfigParser, metaclass=abc.ABCMeta):
 
     @classmethod
     def load_data(self):
-        raise NotImplementedError('This method must be implemented to return a batch of data. The order of '
-                                  'the returned data must also match the order of the placeholders.')
+        raise NotImplementedError('This method must be implemented to return a batch of data. The returned '
+                                  'data must correspond to the shared variables in placeholders.')
 
     def __iter__(self):
         self.batches = self.get_batches()
@@ -144,7 +144,7 @@ class DataManager(ConfigParser, metaclass=abc.ABCMeta):
         """
         Automatically apply augmentation to objects in minibatches at positions in specified in apply_to.
         :param minibatches:
-        :return:
+        :return: a generator of minibatches
         """
         assert isinstance(self.augmentation,
                           (list, tuple)), '\'augmentation\' should be a tuple or list of functions, got %s' % type(
@@ -157,15 +157,13 @@ class DataManager(ConfigParser, metaclass=abc.ABCMeta):
                     batch = transform(batch)
                 yield batch
             else:
-                if isinstance(self.apply_to, int):
+                assert isinstance(self.apply_to, list), \
+                    'Expect a list of indices to which augmentation is applied. Got %s.' % type(self.apply_to)
+
+                for idx in self.apply_to:
                     for transform in self.augmentation:
-                        batch[self.apply_to] = transform(batch[self.apply_to])
-                    yield batch
-                else:
-                    for idx in self.apply_to:
-                        for transform in self.augmentation:
-                            batch[idx] = transform(batch[idx])
-                    yield batch
+                        batch[idx] = transform(batch[idx])
+                yield batch
 
     def get_batches(self):
         num_batches = self.data_size // self.batch_size
