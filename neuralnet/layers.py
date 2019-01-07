@@ -466,7 +466,7 @@ class ConvolutionalLayer(Layer):
             output = conv(input, self.W, border_mode=self.padding, subsample=self.subsample,
                           filter_flip=self.filter_flip,
                           filter_dilation=self.dilation)
-            output = output * self.mask_ratio
+            output *= self.mask_ratio
 
         elif self.border_mode in ('ref', 'rep'):
             assert len(self.input_shape) == 4, '\'ref\' and \'rep\' padding modes support only 4D input'

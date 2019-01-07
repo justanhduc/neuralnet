@@ -798,6 +798,21 @@ def get_kernel(factor, kernel_type, phase, kernel_width, support=None, sigma=Non
     return floatX(kernel)
 
 
+def constant_pad(input, padding, constant=0):
+    assert isinstance(padding, (int, list, tuple)), 'padding must be an int or tuple/list. Got %s.' % type(padding)
+    if isinstance(padding, (list, tuple)):
+        assert len(padding) == 2, 'padding must have 2 elements. Got %d.' % len(padding)
+
+    if isinstance(padding, int):
+        padding = (padding,) * 2
+
+    input = T.as_tensor(input)
+    n, c, h, w = input.shape
+    padded_h, padded_w = h + 2*padding[0], w + 2*padding[1]
+    padded = T.ones((n, c, padded_h, padded_w), theano.config.floatX) * floatX(constant)
+    return T.set_subtensor(padded[:, :, padding[0]:h+padding[0], padding[1]:w+padding[1]], input)
+
+
 def replication_pad(input, padding):
     """
     Mimicking torch.nn.ReplicationPad2d(padding)
@@ -815,6 +830,7 @@ def replication_pad(input, padding):
     if isinstance(padding, int):
         padding = (padding,) * 4
 
+    input = T.as_tensor(input)
     output = input
     for axis, i in enumerate(padding):
         for _ in range(i):
@@ -853,6 +869,7 @@ def reflection_pad(input, padding, batch_ndim=2):
     if np.all(np.array(padding) == 0):
         return input
 
+    input = T.as_tensor(input)
     input_shape = input.shape
     input_ndim = input.ndim
 
