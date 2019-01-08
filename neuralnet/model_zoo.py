@@ -9,14 +9,20 @@ class Net:
         np.savez(param_file, **{p.name: p.get_value() for p in self.params})
         print('Model weights dumped to %s' % param_file)
 
+    def rename(self, param_file, new_file):
+        weights = np.load(param_file)
+        np.savez(new_file, **{self.params[i].name: weights[w] for i, w in enumerate(weights)})
+
     def load_params(self, param_file=None):
         param_file = param_file if param_file else self.param_file
         weights = np.load(param_file)
+        weights_vals_tuple = []
         for p in self.params:
             try:
-                p.set_value(weights[p.name])
+                weights_vals_tuple.append((p, weights[p.name]))
             except KeyError:
-                KeyError('There is no saved weight for %s' % p.name)
+                KeyError('There is no saved weight for %s. Skipped!' % p.name)
+        nn.utils.batch_set_value(weights_vals_tuple)
         print('Model weights loaded from %s' % param_file)
 
 
@@ -43,7 +49,7 @@ class ResNet(nn.Sequential, Net):
         if fc:
             self.append(nn.GlobalAveragePoolingLayer(self.output_shape, layer_name=name + '/glb_avg_pooling'))
             self.append(nn.FullyConnectedLayer(self.output_shape, num_classes, activation='softmax',
-                                               layer_name=name + 'output'))
+                                               layer_name=name + '/output'))
 
     def _make_layer(self, block, shape, planes, blocks, stride=1, name=''):
         layers = [block(shape, planes, stride, activation=self.activation, layer_name=name + '_0',
@@ -120,7 +126,7 @@ class VGG16(nn.Sequential, Net):
         self.append(nn.Conv2DLayer(self.output_shape, 512, 3, nn.HeNormal('relu'), activation=None, no_bias=False,
                                    layer_name=name + '/conv13', border_mode=border_mode))
         self.append(nn.BatchNormLayer(self.output_shape, name + '/bn13') if bn
-                    else nn.ActivationLayer(self.output_shape, layer_name=name + '/relu3'))
+                    else nn.ActivationLayer(self.output_shape, layer_name=name + '/relu13'))
 
         if fc:
             self.append(nn.MaxPoolingLayer(self.output_shape, (2, 2), layer_name=name + '_maxpool4'))
@@ -258,31 +264,44 @@ class DenseNet(nn.Sequential, Net):
             self.append(nn.SoftmaxLayer(self.output_shape, num_classes, name + '_softmax'))
 
 
-def ResNet18(input_shape, num_filters=64, activation='relu', fc=True, pooling=True, num_classes=1000, name='ResNet18',
-             **kwargs):
-    return ResNet(input_shape, nn.ResNetBlock, (2, 2, 2, 2), num_filters, activation, fc, pooling, num_classes, name,
-                  **kwargs)
+class ResNet18(ResNet):
+    def __init__(self, input_shape, num_filters=64, activation='relu', fc=True, pooling=True, num_classes=1000,
+                 name='ResNet18', **kwargs):
+        super().__init__(input_shape, block=nn.ResNetBlock, layers=(2, 2, 2, 2), num_filters=num_filters,
+                         activation=activation, fc=fc, pooling=pooling, num_classes=num_classes, name=name, **kwargs)
 
 
-def ResNet34(input_shape, num_filters=64, activation='relu', fc=True, pooling=True, num_classes=1000, name='ResNet34',
-             **kwargs):
-    return ResNet(input_shape, nn.ResNetBlock, (3, 4, 6, 3), num_filters, activation, fc, pooling, num_classes, name,
-                  **kwargs)
+class ResNet34(ResNet):
+    def __init__(self, input_shape, num_filters=64, activation='relu', fc=True, pooling=True, num_classes=1000,
+                 name='ResNet34', **kwargs):
+        super().__init__(input_shape, block=nn.ResNetBlock, layers=(3, 4, 6, 3), num_filters=num_filters,
+                         activation=activation, fc=fc, pooling=pooling, num_classes=num_classes, name=name, **kwargs)
 
 
-def ResNet50(input_shape, num_filters=64, activation='relu', fc=True, pooling=True, num_classes=1000, name='ResNet50',
-             **kwargs):
-    return ResNet(input_shape, nn.ResNetBottleneckBlock, (3, 4, 6, 3), num_filters, activation, fc, pooling,
-                  num_classes, name, **kwargs)
+class ResNet50(ResNet):
+    def __init__(self, input_shape, num_filters=64, activation='relu', fc=True, pooling=True, num_classes=1000,
+                 name='ResNet50', **kwargs):
+        super().__init__(input_shape, nn.ResNetBottleneckBlock, (3, 4, 6, 3), num_filters, activation, fc, pooling,
+                         num_classes, name=name, **kwargs)
 
 
-def ResNet101(input_shape, num_filters=64, activation='relu', fc=True, pooling=True, num_classes=1000, name='ResNet101',
-              **kwargs):
-    return ResNet(input_shape, nn.ResNetBottleneckBlock, (3, 4, 23, 3), num_filters, activation, fc, pooling,
-                  num_classes, name, **kwargs)
+class ResNet101(ResNet):
+    def __init__(self, input_shape, num_filters=64, activation='relu', fc=True, pooling=True, num_classes=1000,
+                 name='ResNet101', **kwargs):
+        super().__init__(input_shape, nn.ResNetBottleneckBlock, (3, 4, 23, 3), num_filters, activation, fc, pooling,
+                         num_classes, name=name, **kwargs)
 
 
-def ResNet152(input_shape, num_filters=64, activation='relu', fc=True, pooling=True, num_classes=1000, name='ResNet152',
-              **kwargs):
-    return ResNet(input_shape, nn.ResNetBottleneckBlock, (3, 8, 36, 3), num_filters, activation, fc, pooling,
-                  num_classes, name, **kwargs)
+class ResNet152(ResNet):
+    def __init__(self, input_shape, num_filters=64, activation='relu', fc=True, pooling=True, num_classes=1000,
+                 name='ResNet152', **kwargs):
+        super().__init__(input_shape, nn.ResNetBottleneckBlock, (3, 8, 36, 3), num_filters, activation, fc, pooling,
+                         num_classes, name=name, **kwargs)
+
+
+if __name__ == '__main__':
+    root = 'test_files/'
+    weight_file = root + 'vgg19_from_pytorch.npz'
+    new_file = root + 'vgg19_from_pytorch_new.npz'
+    net = nn.model_zoo.VGG19((None, 3, 224, 224))
+    net.rename(weight_file, new_file)

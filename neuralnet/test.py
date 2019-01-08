@@ -9,6 +9,27 @@ def assert_allclose(x, y):
     assert np.all(np.isclose(x, y))
 
 
+def test_chamfer_distance():
+    m = 10
+    n1 = 6000
+    n2 = 5000
+    d = 3
+
+    a = T.tensor3('a')
+    b = T.tensor3('b')
+    dist = nn.chamfer_distance(a, b)
+
+    a_ = np.ones((m, n1, d), dtype=theano.config.floatX)
+    b_ = np.zeros((m, n2, d), dtype=theano.config.floatX)
+    dist.eval({a: a_, b: b_})
+
+    import time
+    start = time.time()
+    res = dist.eval({a: a_, b: b_})
+    print('Took %fs.' % (time.time() - start))
+    assert_allclose(res, 330000.)
+
+
 def test_frac_bilinear_upsampling():
     frac_ratio = ((5, 2), (11, 5))
 
@@ -321,7 +342,7 @@ def test_model_zoo_resnet18():
     net.load_params(weight_file)
 
     X = T.tensor4('input')
-    test = theano.function([X], net(X))
+    test = nn.function([X], net(X))
 
     with open(imagenet_classes_file, 'r') as f:
         classes = [s.strip() for s in f.readlines()]
@@ -360,7 +381,7 @@ def test_model_zoo_resnet34():
     net.load_params(weight_file)
 
     X = T.tensor4('input')
-    test = theano.function([X], net(X))
+    test = nn.function([X], net(X))
 
     with open(imagenet_classes_file, 'r') as f:
         classes = [s.strip() for s in f.readlines()]
@@ -399,7 +420,7 @@ def test_model_zoo_resnet50():
     net.load_params(weight_file)
 
     X = T.tensor4('input')
-    test = theano.function([X], net(X))
+    test = nn.function([X], net(X))
 
     with open(imagenet_classes_file, 'r') as f:
         classes = [s.strip() for s in f.readlines()]
@@ -438,7 +459,7 @@ def test_model_zoo_resnet101():
     net.load_params(weight_file)
 
     X = T.tensor4('input')
-    test = theano.function([X], net(X))
+    test = nn.function([X], net(X))
 
     with open(imagenet_classes_file, 'r') as f:
         classes = [s.strip() for s in f.readlines()]
@@ -477,7 +498,7 @@ def test_model_zoo_resnet152():
     net.load_params(weight_file)
 
     X = T.tensor4('input')
-    test = theano.function([X], net(X))
+    test = nn.function([X], net(X))
 
     with open(imagenet_classes_file, 'r') as f:
         classes = [s.strip() for s in f.readlines()]
@@ -531,15 +552,16 @@ def test_vertical_flipping():
 
 def test_spearman():
     size = (64,)
+    mag = 10.
 
     pred = T.vector('pred')
     gt = T.vector('gt')
-    corr = nn.spearman(pred, gt)
-    func = theano.function([pred, gt], corr)
+    corr = nn.spearmanr(pred, gt)
+    f = theano.function([pred, gt], corr)
 
-    gt = np.random.normal(size=size).astype(theano.config.floatX)
-    pred = np.random.uniform(size=size).astype(theano.config.floatX)
-    c = func(pred, gt)
+    gt = np.random.normal(size=size).astype(theano.config.floatX) * mag
+    pred = np.random.uniform(size=size).astype(theano.config.floatX) * mag
+    c = f(pred, gt)
 
     from scipy import stats
     c_ref, _ = stats.spearmanr(pred.flatten(), gt.flatten())
@@ -551,12 +573,12 @@ def test_pearsonr():
 
     pred = T.matrix('pred')
     gt = T.matrix('gt')
-    corr = nn.pearson_correlation(pred, gt)
-    func = theano.function([pred, gt], corr)
+    corr = nn.pearsonr(pred, gt)
+    f = nn.function([pred, gt], corr)
 
     gt = np.random.normal(size=size).astype(theano.config.floatX)
     pred = np.random.uniform(size=size).astype(theano.config.floatX)
-    c = func(pred, gt)
+    c = f(pred, gt)
 
     from scipy import stats
     c_ref, _ = stats.pearsonr(pred.flatten(), gt.flatten())
@@ -599,7 +621,7 @@ def test_model_zoo_vgg16():
     net.load_params(weight_file)
 
     X = T.tensor4('input')
-    test = theano.function([X], net(X))
+    test = nn.function([X], net(X))
 
     with open(imagenet_classes_file, 'r') as f:
         classes = [s.strip() for s in f.readlines()]
@@ -638,7 +660,7 @@ def test_model_zoo_vgg19():
     net.load_params(weight_file)
 
     X = T.tensor4('input')
-    test = theano.function([X], net(X))
+    test = nn.function([X], net(X))
 
     with open(imagenet_classes_file, 'r') as f:
         classes = [s.strip() for s in f.readlines()]

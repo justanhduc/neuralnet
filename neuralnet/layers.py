@@ -956,8 +956,7 @@ class ResNetBlock(Sequential):
         self.normalization = normalization
         self.simple_block = lambda name: block(input_shape=self.input_shape, num_filters=self.num_filters,
                                                stride=self.stride[0], dilation=self.dilation,
-                                               activation=self.activation,
-                                               normalization=normalization, block_name=name,
+                                               activation=self.activation, normalization=normalization, block_name=name,
                                                **self.kwargs) if block else self._build_simple_block(name)
         self.se_block = se_block
         self.kwargs = kwargs
@@ -1041,8 +1040,7 @@ class ResNetBottleneckBlock(ResNetBlock):
     upscale_factor = 4
 
     def __init__(self, input_shape, num_filters, stride=1, dilation=(1, 1), activation='relu',
-                 layer_name='Res Bottleneck Block', normalization='bn', groups=32, block=None, se_block=False,
-                 **kwargs):
+                 layer_name='Res Bottleneck Block', normalization='bn', block=None, se_block=False, **kwargs):
         """
 
         :param input_shape:
@@ -1057,10 +1055,10 @@ class ResNetBottleneckBlock(ResNetBlock):
         """
         block = block if block is not None else (
             lambda input_shape, num_filters, stride, dilation, activation, normalization,
-                   block_name: self._build_simple_block(self.upscale_factor, block_name))
+                   block_name, **kwargs: self._build_simple_block(self.upscale_factor, block_name))
 
-        super().__init__(input_shape, num_filters, stride, dilation, activation, layer_name, normalization, groups,
-                         block, se_block, **kwargs)
+        super().__init__(input_shape, num_filters, stride, dilation, activation, layer_name, normalization, block,
+                         se_block, **kwargs)
 
         self.descriptions = '{} ResNet Bottleneck {} -> {} num filters {} stride {} dilation {} {}'. \
             format(layer_name, input_shape, self.output_shape, num_filters, stride, dilation, activation)
@@ -2119,7 +2117,7 @@ def ConvNormAct(input_shape, num_filters, filter_size, init=HeNormal(gain=1.), n
     from neuralnet.normalization import BatchNormLayer, GroupNormLayer
     block = Sequential(input_shape=input_shape, layer_name=layer_name)
     block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, init, no_bias, border_mode, stride,
-                                    dilation, layer_name + '_conv', 'linear', **kwargs))
+                                    dilation, layer_name + '/conv', 'linear', **kwargs))
     if normalization == 'bn':
         block.append(BatchNormLayer(block.output_shape, layer_name + '/bn', epsilon, running_average_factor, axes,
                                     activation, no_scale, **kwargs))

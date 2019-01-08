@@ -1186,11 +1186,11 @@ def frac_bilinear_upsampling(x, frac_ratio):
         raise ValueError("frac_ratio must be a tuple")
     else:
         if isinstance(frac_ratio[0], tuple):
-            ratio = (frac_ratio[0][0], frac_ratio[1][0])
-            subsample = (frac_ratio[0][1], frac_ratio[1][1])
+            ratio = np.array((frac_ratio[0][0], frac_ratio[1][0]))
+            subsample = np.array((frac_ratio[0][1], frac_ratio[1][1]))
         else:
-            ratio = (frac_ratio[0], frac_ratio[0])
-            subsample = (frac_ratio[1], frac_ratio[1])
+            ratio = np.array((frac_ratio[0], frac_ratio[0]))
+            subsample = np.array((frac_ratio[1], frac_ratio[1]))
 
     theta = np.array([[1, 0, 0],
                       [0, 1, 0]])[None]

@@ -3,16 +3,16 @@ import warnings
 import numpy as np
 import theano
 from theano import tensor as T
-from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 from neuralnet import utils
 from neuralnet.model_zoo import VGG16, VGG19
 
 __all__ = ['manhattan_distance', 'mean_classification_error', 'mean_squared_error', 'msssim',
-           'multinoulli_cross_entropy', 'root_mean_squared_error', 'psnr', 'psnr255', 'pearson_correlation',
-           'ssim', 'spearman', 'first_derivative_error', 'huber_loss', 'binary_cross_entropy', 'norm_error',
-           'gradient_difference', 'total_variation', 'pulling_away', 'vgg16_loss', 'dog_loss',
-           'log_loss', 'gram_vgg19_loss', 'kld_std_gauss', 'neg_log_prob_gaussian', 'gan_loss', 'l1_reg', 'l2_reg']
+           'multinoulli_cross_entropy', 'root_mean_squared_error', 'psnr', 'psnr255', 'pearsonr',
+           'ssim', 'spearmanr', 'first_derivative_error', 'huber_loss', 'binary_cross_entropy', 'norm_error',
+           'gradient_difference', 'total_variation', 'pulling_away', 'vgg16_loss', 'dog_loss', 'chamfer_distance',
+           'log_loss', 'gram_vgg19_loss', 'kld_std_gauss', 'neg_log_prob_gaussian', 'gan_loss', 'l1_reg',
+           'l2_reg']
 
 
 def manhattan_distance(y_pred, y):
@@ -215,27 +215,24 @@ def l1_reg(params, mode='sum'):
         raise ValueError('mode must be \'sum\' or \'mean\'.')
 
 
-def spearman(ypred, y, axis=None, eps=1e-8):
-    print('Using SROCC metric')
-
-    rng = RandomStreams()
-    error = eps * rng.normal(size=[y.shape[0]], dtype=theano.config.floatX)
-    y += error  # to break tied rankings
-
+def spearmanr(x, y, axis=None, eps=1e-8):
+    print('Using SPEARMAN RANK correlation metric')
     if axis is None:
-        ypred = ypred.flatten()
+        x = x.flatten()
         y = y.flatten()
 
-    rg_ypred = T.cast(T.argsort(ypred, axis=axis), T.config.floatX)
-    rg_y = T.cast(T.argsort(y, axis=axis), T.config.floatX)
-    n = y.shape[0]
-    numerator = 6 * T.sum(T.square(rg_ypred - rg_y))
-    denominator = n * (n ** 2 - 1)
-    return 1. - numerator / denominator
+    n = T.cast(x.shape[0], theano.config.floatX)
+    error = eps * utils.srng.normal(size=y.shape, dtype=theano.config.floatX)
+    y += error  # to break tied rankings
+
+    rg_x = T.cast(T.argsort(x, axis=axis), T.config.floatX) + 1.
+    rg_y = T.cast(T.argsort(y, axis=axis), T.config.floatX) + 1.
+    rs = 1. - 6. * T.sum((rg_x - rg_y) ** 2., axis=axis) / (n * (n ** 2. - 1.))
+    return rs
 
 
-def pearson_correlation(x, y):
-    print('Using PLCC metric')
+def pearsonr(x, y):
+    print('Using PEARSON correlation metric')
     muy_ypred = T.mean(x)
     muy_y = T.mean(y)
     numerator = T.sum(T.mul(x - muy_ypred, y - muy_y))
@@ -267,6 +264,28 @@ def log_loss(x, y, size=9, sigma=1., p=2, **kwargs):
     d2x = T.nnet.conv2d(x, kern, border_mode='half')
     d2y = T.nnet.conv2d(y, kern, border_mode='half')
     return norm_error(d2x, d2y, p)
+
+
+def chamfer_distance(xyz1, xyz2):
+    xyz1 = T.as_tensor(xyz1)
+    xyz2 = T.as_tensor(xyz2)
+
+    def _batch_pairwise_dist(x, y):
+        xx = T.batched_dot(x, x.dimshuffle(0, 2, 1))
+        yy = T.batched_dot(y, y.dimshuffle(0, 2, 1))
+        zz = T.batched_dot(x, y.dimshuffle(0, 2, 1))
+
+        rx = T.tile(T.diagonal(xx, axis1=1, axis2=2).dimshuffle(0, 1, 'x'), (1, 1, zz.shape[2]))
+        ry = T.tile(T.diagonal(yy, axis1=1, axis2=2).dimshuffle(0, 'x', 1), (1, zz.shape[1], 1))
+        P = rx + ry - 2. * zz
+        return P
+
+    P = _batch_pairwise_dist(xyz1, xyz2)
+    mins = T.min(P, 1)
+    loss_1 = T.sum(mins)
+    mins = T.min(P, 2)
+    loss_2 = T.sum(mins)
+    return loss_1 + loss_2
 
 
 def ssim(img1, img2, max_val=1., filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03, cs_map=False):
