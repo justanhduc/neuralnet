@@ -799,27 +799,40 @@ def get_kernel(factor, kernel_type, phase, kernel_width, support=None, sigma=Non
 
 
 def constant_pad(input, padding, constant=0):
+    """
+    Padding input with constant values
+
+    :param input: a 4D tensor
+    :param padding: (int, tuple) – the size of the padding. If is int, uses the same padding in all boundaries.
+    If a 4-tuple, uses (paddingLeft, paddingRight, paddingTop, paddingBottom)
+    :param constant: padded value (Default is 0)
+    :return: The padded 4D tensor of input
+    """
     assert isinstance(padding, (int, list, tuple)), 'padding must be an int or tuple/list. Got %s.' % type(padding)
     if isinstance(padding, (list, tuple)):
-        assert len(padding) == 2, 'padding must have 2 elements. Got %d.' % len(padding)
+        assert len(padding) in (2, 4), 'padding must have 2 or 4 elements. Got %d.' % len(padding)
 
     if isinstance(padding, int):
-        padding = (padding,) * 2
+        padding = (padding,) * 4
+
+    if len(padding) == 2:
+        padding = tuple(np.repeat(padding, 2))
 
     input = T.as_tensor(input)
     n, c, h, w = input.shape
-    padded_h, padded_w = h + 2*padding[0], w + 2*padding[1]
+    padded_h, padded_w = h + padding[2] + padding[3], w + padding[0] + padding[1]
     padded = T.ones((n, c, padded_h, padded_w), theano.config.floatX) * floatX(constant)
-    return T.set_subtensor(padded[:, :, padding[0]:h+padding[0], padding[1]:w+padding[1]], input)
+    return T.set_subtensor(padded[:, :, padding[2]:h + padding[3], padding[0]:w + padding[1]], input)
 
 
 def replication_pad(input, padding):
     """
     Mimicking torch.nn.ReplicationPad2d(padding)
 
+    :param input: A 4D tensor
     :param padding: (int, tuple) – the size of the padding. If is int, uses the same padding in all boundaries.
     If a 4-tuple, uses (paddingLeft, paddingRight, paddingTop, paddingBottom)
-    :return:
+    :return: The padded 4D tensor of input
     """
     if not isinstance(padding, (int, list, tuple)):
         raise TypeError('padding must be an int, a list or a tuple. Got %s.' % type(padding))
