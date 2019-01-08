@@ -1228,6 +1228,19 @@ def frac_bilinear_upsampling(x, frac_ratio):
     return _dnn_spatialtf(x)
 
 
+def boolean_mask(tensor, mask):
+    """
+    Mimicking tensorflow boolean_mask
+
+    :param tensor: A N-D tensor
+    :param mask: A K-D boolean tensor. K <= N
+    :return: A (N-K+1)-D tensor containing values corresponding to True in mask
+    """
+    tensor = T.as_tensor(tensor)
+    mask = T.as_tensor(mask)
+    return tensor[mask]
+
+
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),
             'tanh': lambda x, **kwargs: T.tanh(x), 'lrelu': lrelu, 'softmax': lambda x, **kwargs: T.nnet.softmax(x),
             'linear': lambda x, **kwargs: x, 'elu': lambda x, **kwargs: T.nnet.elu(x), 'ramp': ramp, 'maxout': maxout,

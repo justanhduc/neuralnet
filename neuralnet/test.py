@@ -9,6 +9,24 @@ def assert_allclose(x, y):
     assert np.all(np.isclose(x, y))
 
 
+def test_boolean_mask():
+    tensor = T.constant([0, 1, 2, 3], dtype=theano.config.floatX)
+    mask = np.array([True, False, True, False])
+    masked = nn.utils.boolean_mask(tensor, mask)
+    assert_allclose(masked.eval(), (0, 2))
+
+    tensor = [[1, 2], [3, 4], [5, 6]]
+    mask = np.array([True, False, True])
+    masked = nn.utils.boolean_mask(tensor, mask)
+    assert_allclose(masked.eval(), [[1, 2], [5, 6]])
+
+    tensor_np = np.random.rand(3, 4, 2).astype(theano.config.floatX)
+    tensor = T.as_tensor(tensor_np)
+    mask = T.all(tensor > .5, 2)
+    masked = nn.utils.boolean_mask(tensor, mask)
+    assert_allclose(masked.eval(), tensor_np[np.all(tensor_np > .5, 2)])
+
+
 def test_chamfer_distance():
     m = 10
     n1 = 6000
