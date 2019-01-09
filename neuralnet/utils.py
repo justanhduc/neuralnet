@@ -1175,6 +1175,13 @@ def placeholder(shape=None, dtype=theano.config.floatX, value=None, name=None, b
 
 
 def rfft2(x, norm=None):
+    """
+    Real DFT for 2D signals of shape NCHW
+
+    :param x: a 4D tensor
+    :param norm: whether to normalize the output
+    :return: the dft spectra of the input
+    """
     assert x.ndim == 4, 'Input must be a 4D tensor'
 
     def _rfft2(y):
@@ -1185,6 +1192,14 @@ def rfft2(x, norm=None):
 
 
 def irfft2(x, norm=None, is_odd=False):
+    """
+    Real inverse DFT for signals of shape NCHW2
+
+    :param x: a 5D tensor. The last dimension must be 2
+    :param norm: whether the input is normalized
+    :param is_odd: whether the length of input is odd
+    :return: the real signal whose DFT is the input
+    """
     assert x.ndim == 5, 'Input must be a 5D tensor'
 
     def _irfft2(y):
@@ -1195,6 +1210,16 @@ def irfft2(x, norm=None, is_odd=False):
 
 
 def frac_bilinear_upsampling(x, frac_ratio):
+    """
+    This function upsamples a given image by a non-integer ratio.
+    The original Theano's function has a memory problem when the input is large.
+    This function is made to mitigate that.
+
+    :param x: a 4-D tensor of shape NCHW
+    :param frac_ratio: a tuple of two ints representing the numerator and denominator or
+    two tuples of two ints, each tuple corresponds to each dimension of the two innermost dimensions.
+    :return: a fractionally-upsampled version of the input
+    """
     if not isinstance(frac_ratio, tuple):
         raise ValueError("frac_ratio must be a tuple")
     else:
@@ -1239,6 +1264,29 @@ def boolean_mask(tensor, mask):
     tensor = T.as_tensor(tensor)
     mask = T.as_tensor(mask)
     return tensor[mask]
+
+
+def scatter_nd(indices, updates, shape):
+    """
+    This function tries to mimic Tensorflow's scatter_nd to some extent.
+    The difference is when indices.ndim == 1, the
+
+    :param indices: a tuple/list of integers/numpy arrays/Theano arrays
+    :param updates: an array containing the values used to update the output at indices
+    :param shape: a tuple representing shape of the output
+    :return: an array whose values at indices equal to updates
+    """
+    indices_th = T.as_tensor(indices)
+    updates = T.as_tensor(updates)
+    if updates.ndim == 1:
+        out = T.zeros(shape, updates.dtype)
+        out = T.set_subtensor(out[indices_th], updates)
+    else:
+        linear_indices = T.ravel_multi_index(indices, shape) if indices_th.ndim > 1 else indices_th
+        updates_cum = T.bincount(linear_indices, updates.flatten())
+        updates_cum = T.concatenate((updates_cum, T.zeros((T.prod(shape) - updates_cum.shape[0],))))
+        out = T.reshape(updates_cum, shape)
+    return out
 
 
 function = {'relu': lambda x, **kwargs: T.nnet.relu(x), 'sigmoid': lambda x, **kwargs: T.nnet.sigmoid(x),

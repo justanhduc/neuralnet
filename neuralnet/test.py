@@ -9,6 +9,24 @@ def assert_allclose(x, y):
     assert np.all(np.isclose(x, y))
 
 
+def test_scatter_nd():
+    indices = [4, 3, 1, 7]
+    updates = T.constant([9, 10, 11, 12])
+    shape = [8]
+    scatter = nn.utils.scatter_nd(indices, updates, shape)
+    assert_allclose(scatter.eval(), np.array([0, 11, 0, 10, 9, 0, 0, 12]))
+
+    indices = [0, 2]
+    updates = T.constant([[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],
+                          [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]]])
+    shape = [4, 4, 4]
+    scatter = nn.utils.scatter_nd(indices, updates, shape)
+    assert_allclose(scatter.eval(), np.array([[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],
+                                              [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]],
+                                              [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],
+                                              [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]]))
+
+
 def test_boolean_mask():
     tensor = T.constant([0, 1, 2, 3], dtype=theano.config.floatX)
     mask = np.array([True, False, True, False])
