@@ -1,12 +1,9 @@
 import numpy as np
 import theano
 from theano import tensor as T
+from theano.tests import unittest_tools as utt
 
 import neuralnet as nn
-
-
-def assert_allclose(x, y):
-    assert np.all(np.isclose(x, y))
 
 
 def test_scatter_nd():
@@ -14,35 +11,35 @@ def test_scatter_nd():
     updates = T.constant([9, 10, 11, 12])
     shape = [8]
     scatter = nn.utils.scatter_nd(indices, updates, shape)
-    assert_allclose(scatter.eval(), np.array([0, 11, 0, 10, 9, 0, 0, 12]))
+    utt.assert_allclose(scatter.eval(), np.array([0, 11, 0, 10, 9, 0, 0, 12]))
 
     indices = [0, 2]
     updates = T.constant([[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],
                           [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]]])
     shape = [4, 4, 4]
     scatter = nn.utils.scatter_nd(indices, updates, shape)
-    assert_allclose(scatter.eval(), np.array([[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],
-                                              [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]],
-                                              [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],
-                                              [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]]))
+    utt.assert_allclose(scatter.eval(), np.array([[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],
+                                                  [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]],
+                                                  [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],
+                                                  [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]]))
 
 
 def test_boolean_mask():
     tensor = T.constant([0, 1, 2, 3], dtype=theano.config.floatX)
     mask = np.array([True, False, True, False])
     masked = nn.utils.boolean_mask(tensor, mask)
-    assert_allclose(masked.eval(), (0, 2))
+    utt.assert_allclose(masked.eval(), (0, 2))
 
     tensor = [[1, 2], [3, 4], [5, 6]]
     mask = np.array([True, False, True])
     masked = nn.utils.boolean_mask(tensor, mask)
-    assert_allclose(masked.eval(), [[1, 2], [5, 6]])
+    utt.assert_allclose(masked.eval(), [[1, 2], [5, 6]])
 
     tensor_np = np.random.rand(3, 4, 2).astype(theano.config.floatX)
     tensor = T.as_tensor(tensor_np)
     mask = T.all(tensor > .5, 2)
     masked = nn.utils.boolean_mask(tensor, mask)
-    assert_allclose(masked.eval(), tensor_np[np.all(tensor_np > .5, 2)])
+    utt.assert_allclose(masked.eval(), tensor_np[np.all(tensor_np > .5, 2)])
 
 
 def test_chamfer_distance():
@@ -63,22 +60,52 @@ def test_chamfer_distance():
     start = time.time()
     res = dist.eval({a: a_, b: b_})
     print('Took %fs.' % (time.time() - start))
-    assert_allclose(res, 330000.)
+    utt.assert_allclose(res, 330000.)
 
 
 def test_frac_bilinear_upsampling():
-    frac_ratio = ((5, 2), (11, 5))
+    frac_ratio1 = ((5, 2), (11, 5))
+    frac_ratio2 = ((2, 3), (5, 13))
+    frac_ratio3 = ((2, 3), (17, 7))
 
     X = T.tensor4('input')
-    Y = nn.utils.frac_bilinear_upsampling(X, frac_ratio)
-    f = nn.function([X], Y)
+    Y1 = nn.utils.frac_bilinear_upsampling(X, frac_ratio1)
+    Y2 = nn.utils.frac_bilinear_upsampling(X, frac_ratio2)
+    Y3 = nn.utils.frac_bilinear_upsampling(X, frac_ratio3)
+    f = nn.function([X], [Y1, Y2, Y3])
 
     from imageio import imread, imwrite
     x = imread('test_files/lena_small.png').astype('float32') / 255.
     x = np.transpose(x, (2, 0, 1))[None]
-    y = f(x)
-    out = np.array(np.transpose(y[0], (1, 2, 0)))
+    y1, y2, y3 = f(x)
+
+    out = np.array(np.transpose(y1[0], (1, 2, 0)))
     imwrite('test_files/lena_small_frac_bi_up.jpg', out)
+    out = np.array(np.transpose(y2[0], (1, 2, 0)))
+    imwrite('test_files/lena_small_frac_bi_down.jpg', out)
+    out = np.array(np.transpose(y3[0], (1, 2, 0)))
+    imwrite('test_files/lena_small_frac_bi_mixed.jpg', out)
+
+    input_x = np.array([[[1, 2], [3, 4]],
+                        [[5, 6], [7, 8]],
+                        [[9, 10], [11, 12]]],
+                       ndmin=4).astype(theano.config.floatX)
+    up_x = nn.utils.frac_bilinear_upsampling(input=input_x, frac_ratio=((7, 4), (5, 3)))
+    num_up_x = np.array(
+        [[[[1., 1.2, 1.8, 2.],
+           [1.28571429, 1.48571429, 2.08571429, 2.28571429],
+           [2.42857143, 2.62857143, 3.22857143, 3.42857143],
+           [3., 3.2, 3.8, 4.]],
+          [[5., 5.2, 5.8, 6.],
+           [5.28571429, 5.48571429, 6.08571429, 6.28571429],
+           [6.42857143, 6.62857143, 7.22857143, 7.42857143],
+           [7., 7.2, 7.8, 8.]],
+          [[9., 9.2, 9.8, 10.],
+           [9.28571429, 9.48571429, 10.08571429, 10.28571429],
+           [10.42857143, 10.62857143, 11.22857143, 11.42857143],
+           [11., 11.2, 11.8, 12.]]]]
+    ).astype(theano.config.floatX)
+    utt.assert_allclose(up_x.eval(), num_up_x, rtol=1e-6)
 
 
 def test_meshgrid():
@@ -96,8 +123,8 @@ def test_meshgrid():
     x, y = np.linspace(0, width, width), np.linspace(0, height, height)
     X_np, Y_np = np.meshgrid(x, y)
 
-    assert_allclose(X_th, X_np)
-    assert_allclose(Y_th, Y_np)
+    utt.assert_allclose(X_th, X_np)
+    utt.assert_allclose(Y_th, Y_np)
 
 
 def test_rfft2():
@@ -115,8 +142,8 @@ def test_rfft2():
     x_fft_th, x_ifft_th = rfft2(x)
     x_fft_th = x_fft_th[0]
 
-    assert_allclose(np.real(x_fft_np), x_fft_th[..., 0])
-    assert_allclose(np.imag(x_fft_np), x_fft_th[..., 1])
+    utt.assert_allclose(np.real(x_fft_np), x_fft_th[..., 0])
+    utt.assert_allclose(np.imag(x_fft_np), x_fft_th[..., 1])
     np.allclose(x_ifft_th, x, 1e-4)
 
 
@@ -142,7 +169,7 @@ def test_monitor_dump():
 
     mon = nn.Monitor(current_folder='results/my_model/run1')
     loaded_a = [mon.load('foo.npy', version) for version in (6, 8, 10)]
-    assert_allclose(np.array(res)[[6, 8, 9]], loaded_a)
+    utt.assert_allclose(np.array(res)[[6, 8, 9]], loaded_a)
 
 
 def test_downsample():
@@ -210,7 +237,7 @@ def test_tracking():
 
     a_ = np.zeros(shape, 'float32')
     res_numpy = [a_ + i for i in range(trivial_loops + 1)]
-    assert np.allclose(func(a_), res_numpy[-1])
+    utt.assert_allclose(func(a_), res_numpy[-1])
 
     for i in range(trivial_loops):
         trackeds = nn.eval_tracked_vars({a: a_, b: b_.get_value()})
@@ -306,7 +333,7 @@ def test_lr_annealing():
             lr = anneal_learning_rate(lr if method in ('step', 'half-life') else base_lr, it + 1, method,
                                       num_iters=n_iters, decay=decay, step=step)
             vals_np.append(lr)
-        assert_allclose(vals_th, vals_np)
+        utt.assert_allclose(vals_th, vals_np)
 
 
 def test_data_manager():
@@ -358,7 +385,7 @@ def test_data_manager():
         for j in range(images.shape[0]):
             misc.imsave('%s/image %d at iteration %d.jpg' % (path, j, i), np.transpose(images[j], (1, 2, 0)) + .5)
 
-    assert i + 1 == num_iters
+    utt.assert_allclose(i + 1, num_iters)
 
 
 def test_model_zoo_resnet18():
@@ -374,7 +401,7 @@ def test_model_zoo_resnet18():
         'ILSVRC2012_val_00000005.JPEG'
     ]
 
-    net = nn.model_zoo.ResNet18((None, 3, 224, 224))
+    net = nn.model_zoo.ResNet18((None, 3, None, None))
     net.load_params(weight_file)
 
     X = T.tensor4('input')
@@ -413,7 +440,7 @@ def test_model_zoo_resnet34():
         'ILSVRC2012_val_00000005.JPEG'
     ]
 
-    net = nn.model_zoo.ResNet34((None, 3, 224, 224))
+    net = nn.model_zoo.ResNet34((None, 3, None, None))
     net.load_params(weight_file)
 
     X = T.tensor4('input')
@@ -452,7 +479,7 @@ def test_model_zoo_resnet50():
         'ILSVRC2012_val_00000005.JPEG'
     ]
 
-    net = nn.model_zoo.ResNet50((None, 3, 224, 224))
+    net = nn.model_zoo.ResNet50((None, 3, None, None))
     net.load_params(weight_file)
 
     X = T.tensor4('input')
@@ -491,7 +518,7 @@ def test_model_zoo_resnet101():
         'ILSVRC2012_val_00000005.JPEG'
     ]
 
-    net = nn.model_zoo.ResNet101((None, 3, 224, 224))
+    net = nn.model_zoo.ResNet101((None, 3, None, None))
     net.load_params(weight_file)
 
     X = T.tensor4('input')
@@ -530,7 +557,7 @@ def test_model_zoo_resnet152():
         'ILSVRC2012_val_00000005.JPEG'
     ]
 
-    net = nn.model_zoo.ResNet152((None, 3, 224, 224))
+    net = nn.model_zoo.ResNet152((None, 3, None, None))
     net.load_params(weight_file)
 
     X = T.tensor4('input')
@@ -601,7 +628,7 @@ def test_spearman():
 
     from scipy import stats
     c_ref, _ = stats.spearmanr(pred.flatten(), gt.flatten())
-    assert_allclose(c_ref, c)
+    utt.assert_allclose(c_ref, c)
 
 
 def test_pearsonr():
@@ -618,7 +645,7 @@ def test_pearsonr():
 
     from scipy import stats
     c_ref, _ = stats.pearsonr(pred.flatten(), gt.flatten())
-    assert_allclose(c_ref, c)
+    utt.assert_allclose(c_ref, c)
 
 
 def test_monitor_hist():
@@ -653,7 +680,7 @@ def test_model_zoo_vgg16():
         'ILSVRC2012_val_00000005.JPEG'
     ]
 
-    net = nn.model_zoo.VGG16((None, 3, 224, 224), True)
+    net = nn.model_zoo.VGG16((None, 3, 224, 224))
     net.load_params(weight_file)
 
     X = T.tensor4('input')
@@ -692,7 +719,7 @@ def test_model_zoo_vgg19():
         'ILSVRC2012_val_00000005.JPEG'
     ]
 
-    net = nn.model_zoo.VGG19((None, 3, 224, 224), True)
+    net = nn.model_zoo.VGG19((None, 3, 224, 224))
     net.load_params(weight_file)
 
     X = T.tensor4('input')

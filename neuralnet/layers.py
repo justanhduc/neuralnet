@@ -44,11 +44,28 @@ class NetMethod:
     def __call__(self, *args, **kwargs):
         return self.get_output(*args, **kwargs)
 
+    def save_params(self, param_file=None):
+        param_file = param_file if param_file else self.param_file
+        np.savez(param_file, **{p.name: p.get_value() for p in self.params})
+        print('Model weights dumped to %s' % param_file)
+
+    def load_params(self, param_file=None):
+        param_file = param_file if param_file else self.param_file
+        weights = np.load(param_file)
+        weights_vals_tuple = []
+        for p in self.params:
+            try:
+                weights_vals_tuple.append((p, weights[p.name]))
+            except KeyError:
+                KeyError('There is no saved weight for %s. Skipped!' % p.name)
+        utils.batch_set_value(weights_vals_tuple)
+        print('Model weights loaded from %s' % param_file)
+
 
 class Layer(NetMethod, metaclass=abc.ABCMeta):
     training_flag = False
 
-    def __init__(self, input_shape, layer_name=''):
+    def __init__(self, input_shape, layer_name):
         assert isinstance(input_shape, list) or isinstance(input_shape, tuple), \
             'input_shape must be list or tuple. Received %s' % type(input_shape)
         self.input_shape = tuple(input_shape)
@@ -69,26 +86,33 @@ class Sequential(OrderedDict, NetMethod):
     Mimicking Pytorch Sequential class but inheriting OrderedDict
     """
 
-    def __init__(self, layer_list=(), input_shape=None, layer_name='Sequential'):
-        assert layer_list or input_shape, 'Either layer_list or input_shape must be specified.'
-        assert isinstance(layer_list, (list, tuple, Sequential)), 'layer_list must be a list or tuple, got %s.' % type(
-            layer_list)
+    def __init__(self, layers=(), input_shape=None, layer_name='Sequential'):
+        """
+        This class defines a container of layers which can be used as a feedforward network.
+
+        :param layers: a list/tuple of layers
+        :param input_shape: a tuple of ints
+        :param layer_name: a string
+        """
+        assert layers or input_shape, 'Either layer_list or input_shape must be specified.'
+        assert isinstance(layers, (list, tuple, Sequential)), 'layer_list must be a list or tuple, got %s.' % type(
+            layers)
         assert all([isinstance(l, (Sequential, Layer)) for l in
-                    layer_list]), 'All elements of layer_list should be instances of Layer or Sequential.'
+                    layers]), 'All elements of layer_list should be instances of Layer or Sequential.'
 
         self.params, self.trainable, self.regularizable = [], [], []
         self.descriptions = ''
         self.layer_name = layer_name
-        self.input_shape = tuple(input_shape) if input_shape else layer_list[0].input_shape
-        if isinstance(layer_list, (list, tuple)):
-            name_list = [l.layer_name for l in layer_list]
+        self.input_shape = tuple(input_shape) if input_shape else layers[0].input_shape
+        if isinstance(layers, (list, tuple)):
+            name_list = [l.layer_name for l in layers]
             for i in range(len(name_list)):
                 name = name_list.pop()
                 if name in name_list:
                     raise ValueError('%s already existed in the network.' % name)
-            super(Sequential, self).__init__(zip([l.layer_name for l in layer_list], layer_list))
+            super(Sequential, self).__init__(zip([l.layer_name for l in layers], layers))
         else:
-            super(Sequential, self).__init__(layer_list)
+            super(Sequential, self).__init__(layers)
 
         self.__idx = 0
         self.__max = len(self)
@@ -137,6 +161,7 @@ class Sequential(OrderedDict, NetMethod):
         return out
 
     @property
+    @utils.validate
     def output_shape(self):
         if self:
             return self[-1].output_shape
@@ -206,6 +231,7 @@ class MergeModule(MultiInputModule):
         return [self[i](inputs[i]) for i in range(len(inputs))]
 
     @property
+    @utils.validate
     def output_shape(self):
         return [self[i].output_shape for i in range(len(self))]
 
@@ -224,6 +250,7 @@ class LambdaLayer(Layer):
         return self.function(*input, **self.kwargs)
 
     @property
+    @utils.validate
     def output_shape(self):
         output_shape = self.kwargs.get('output_shape', None)
         if output_shape:
@@ -253,6 +280,7 @@ class ActivationLayer(Layer):
         return self.activation(input, **self.kwargs)
 
     @property
+    @utils.validate
     def output_shape(self):
         return tuple(self.input_shape)
 
@@ -308,7 +336,10 @@ class FullyConnectedLayer(Layer):
         :param target:
         :param kwargs:
         """
-        in_shape = tuple(input_shape) if len(input_shape) == 2 else (input_shape[0], np.prod(input_shape[1:]))
+        try:
+            in_shape = tuple(input_shape) if len(input_shape) == 2 else (input_shape[0], np.prod(input_shape[1:]))
+        except TypeError:
+            raise ValueError('Except for batch dim, all other dims must have non-None values.')
         super(FullyConnectedLayer, self).__init__(in_shape, layer_name)
         self.num_nodes = num_nodes
         self.activation = utils.function[activation] if not callable(activation) else activation
@@ -387,6 +418,7 @@ class ConvolutionalLayer(Layer):
     def __init__(self, input_shape, num_filters, filter_size, init=HeNormal(gain='relu'), no_bias=True,
                  border_mode='half', stride=1, dilation=1, layer_name='Conv Layer', activation='relu', **kwargs):
         assert len(input_shape) in (4, 5), 'input_shape must have 4 or 5 elements. Received %d' % len(input_shape)
+        assert input_shape[1] is not None, 'Dimension 1 of input_shape cannot be None.'
         assert isinstance(num_filters, int) and isinstance(filter_size, (int, list, tuple))
         assert isinstance(border_mode, (int, list, tuple, str)), 'border_mode should be either \'int\', ' \
                                                                  '\'list\', \'tuple\' or \'str\', got {}'.format(
@@ -400,11 +432,14 @@ class ConvolutionalLayer(Layer):
             self.filter_shape = (num_filters, input_shape[1], filter_size[0], filter_size[1]) if isinstance(filter_size,
                                                                                                             (list,
                                                                                                              tuple)) else (
-            num_filters, input_shape[1], filter_size, filter_size)
+                num_filters, input_shape[1], filter_size, filter_size)
         else:
             self.filter_shape = (
-            num_filters, input_shape[1], filter_size[0], filter_size[1], filter_size[2]) if isinstance(filter_size, (
-            list, tuple)) else (num_filters, input_shape[1], filter_size, filter_size, filter_size)
+                num_filters, input_shape[1], filter_size[0], filter_size[1], filter_size[2]) if isinstance(filter_size,
+                                                                                                           (
+                                                                                                               list,
+                                                                                                               tuple)) else (
+                num_filters, input_shape[1], filter_size, filter_size, filter_size)
         self.no_bias = no_bias
         self.activation = utils.function[activation] if not callable(activation) else activation
         self.border_mode = border_mode
@@ -495,7 +530,7 @@ class ConvolutionalLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        shape = list(self.input_shape)
+        shape = [np.nan if x is None else x for x in self.input_shape]
         ks = [fs + (fs - 1) * (d - 1) for fs, d in zip(self.filter_shape[2:], self.dilation)]
         border_mode = self.padding if self.border_mode == 'partial' else self.border_mode
 
@@ -573,6 +608,7 @@ class PerturbativeLayer(Layer):
         return output if self.no_bias else output + self.b.dimshuffle('x', 0, 'x', 'x')
 
     @property
+    @utils.validate
     def output_shape(self):
         return (self.input_shape[0],) + (self.num_filters,) + self.input_shape[2:]
 
@@ -632,6 +668,7 @@ class InceptionModule1(Layer):
         return T.concatenate(output, 1)
 
     @property
+    @utils.validate
     def output_shape(self):
         depth = 0
         for block in self.module:
@@ -704,6 +741,7 @@ class InceptionModule2(Layer):
         return T.concatenate(output, 1)
 
     @property
+    @utils.validate
     def output_shape(self):
         depth = 0
         for block in self.module:
@@ -794,6 +832,7 @@ class InceptionModule3(Layer):
         return T.concatenate(output, 1)
 
     @property
+    @utils.validate
     def output_shape(self):
         depth = 0
         for block in self.module:
@@ -849,7 +888,8 @@ class TransposedConvolutionalLayer(Layer):
         self.kwargs = kwargs
         self.output_shape_tmp = (input_shape[0], num_filters, output_shape[0], output_shape[1]) \
             if output_shape is not None \
-            else (input_shape[0], num_filters) + (input_shape[2] * stride[0], input_shape[3] * stride[1])
+            else (input_shape[0], num_filters) + (input_shape[2] * stride[0], input_shape[3] * stride[1]) \
+            if all(input_shape[2:]) else (input_shape[0], num_filters) + (None, None)
 
         self.W_values = init(self.filter_shape)
         self.b_values = np.zeros((self.filter_shape[1],), dtype=theano.config.floatX)
@@ -910,12 +950,13 @@ class TransposedConvolutionalLayer(Layer):
             else:
                 raise NotImplementedError
 
-            in_shape = self.input_shape
+            in_shape = [np.nan if x is None else x for x in self.input_shape]
             h = ((in_shape[2] - 1) * self.stride[0]) + self.filter_shape[2] + \
                 np.mod(in_shape[2] + 2 * p[0] - self.filter_shape[2], self.stride[0]) - 2 * p[0]
             w = ((in_shape[3] - 1) * self.stride[1]) + self.filter_shape[3] + \
                 np.mod(in_shape[3] + 2 * p[1] - self.filter_shape[3], self.stride[1]) - 2 * p[1]
             self.output_shape_tmp = [self.output_shape_tmp[0], self.filter_shape[1], h, w]
+
         return tuple(self.output_shape_tmp)
 
     def reset(self):
@@ -1270,6 +1311,7 @@ class RecursiveResNetBlock(Layer):
         return utils.function[self.activation](output, **self.kwargs)
 
     @property
+    @utils.validate
     def output_shape(self):
         return self.block.output_shape
 
@@ -1406,8 +1448,9 @@ class SpatialTransformerLayer(Layer):
         self.descriptions = '%s Transformer layer.' % layer_name
 
     @property
+    @utils.validate
     def output_shape(self):
-        shape = self.input_shape
+        shape = [np.nan if x is None else x for x in self.input_shape]
         factors = self.downsample_factor
         return tuple(list(shape[:2]) + [None if s is None else int(s // f) for s, f in zip(shape[2:], factors)])
 
@@ -1459,7 +1502,7 @@ class WarpingLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        return self.input_shape
+        return tuple(self.input_shape)
 
 
 class IdentityLayer(Layer):
@@ -1468,6 +1511,7 @@ class IdentityLayer(Layer):
         self.descriptions = '%s Identity layer.' % layer_name
 
     @property
+    @utils.validate
     def output_shape(self):
         return tuple(self.input_shape)
 
@@ -1536,9 +1580,11 @@ class ConcatLayer(Layer):
         return T.concatenate(input, self.axis)
 
     @property
+    @utils.validate
     def output_shape(self):
-        depth = sum([self.input_shape[i][self.axis] for i in range(len(self.input_shape))])
-        shape = list(self.input_shape[0])
+        shape_nan = [np.nan if x is None else x for x in self.input_shape]
+        depth = sum([shape_nan[i][self.axis] for i in range(len(self.input_shape))])
+        shape = list(shape_nan[0])
         shape[self.axis] = depth
         return tuple(shape)
 
@@ -1554,8 +1600,9 @@ class SumLayer(Layer):
         return sum(input) * np.float32(self.weight)
 
     @property
+    @utils.validate
     def output_shape(self):
-        return self.input_shape
+        return tuple(self.input_shape)
 
 
 class TransposingLayer(Layer):
@@ -1570,7 +1617,7 @@ class TransposingLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        return tuple([self.input_shape[i] if isinstance(i, int) else 1 for i in self.transpose])
+        return tuple([self.input_shape[i] for i in self.transpose])
 
 
 class ScalingLayer(Layer):
@@ -1793,6 +1840,7 @@ class LSTMCell(Layer):
         return hid_out
 
     @property
+    @utils.validate
     def output_shape(self):
         return self.input_shape[0], self.input_shape[1], self.num_units
 
@@ -1841,6 +1889,7 @@ class RNNBlockDNN(Layer):
         return self.rnn.apply(self.W, input, *self.init) if return_hid else self.rnn.apply(self.W, input, *self.init)[0]
 
     @property
+    @utils.validate
     def output_shape(self):
         return tuple([self.input_shape[0], self.num_units])
 
@@ -1919,6 +1968,7 @@ class GRUCell(Layer):
         return hid_out
 
     @property
+    @utils.validate
     def output_shape(self):
         return self.input_shape[0], self.input_shape[1], self.num_units
 
@@ -1959,6 +2009,7 @@ class ConvLSTMCell(Layer):
                                                                                          filter_shape)
 
     @property
+    @utils.validate
     def output_shape(self):
         return tuple([self.input_shape[0], self.input_shape[1], self.filter_shape[0]] + list(self.input_shape[3:]))
 
@@ -2040,6 +2091,7 @@ class AttConvLSTMCell(Layer):
                                                                                             filter_shape)
 
     @property
+    @utils.validate
     def output_shape(self):
         return tuple([self.input_shape[0], self.filter_shape[0]] + list(self.input_shape[2:]))
 
@@ -2109,55 +2161,63 @@ def set_training_status(training):
     Layer.set_training_status(training)
 
 
-def ConvNormAct(input_shape, num_filters, filter_size, init=HeNormal(gain=1.), no_bias=True, border_mode='half',
-                stride=(1, 1), layer_name='Conv Norm Act', activation='relu', dilation=(1, 1), epsilon=1e-4,
-                running_average_factor=1e-1, axes='spatial', no_scale=False, normalization='bn', groups=32, **kwargs):
-    assert normalization in ('bn', 'gn'), 'normalization can be either \'bn\' or \'gn\', got %s' % normalization
+class ConvNormAct(Sequential):
+    def __init__(self, input_shape, num_filters, filter_size, init=HeNormal(gain=1.), no_bias=True, border_mode='half',
+                 stride=(1, 1), layer_name='Conv Norm Act', activation='relu', dilation=(1, 1), epsilon=1e-4,
+                 running_average_factor=1e-1, axes='spatial', no_scale=False, normalization='bn', groups=32, **kwargs):
+        assert normalization in ('bn', 'gn'), 'normalization can be either \'bn\' or \'gn\', got %s' % normalization
+        super().__init__(input_shape=input_shape, layer_name=layer_name)
 
-    from neuralnet.normalization import BatchNormLayer, GroupNormLayer
-    block = Sequential(input_shape=input_shape, layer_name=layer_name)
-    block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, init, no_bias, border_mode, stride,
-                                    dilation, layer_name + '/conv', 'linear', **kwargs))
-    if normalization == 'bn':
-        block.append(BatchNormLayer(block.output_shape, layer_name + '/bn', epsilon, running_average_factor, axes,
-                                    activation, no_scale, **kwargs))
-    else:
-        block.append(GroupNormLayer(block.output_shape, layer_name + '/gn', groups, epsilon, activation, **kwargs))
-    return block
-
-
-def StackingConv(input_shape, num_layers, num_filters, filter_size=3, batch_norm=False, layer_name='Stacking Conv',
-                 init=HeNormal(gain=1.), no_bias=True, border_mode='half', stride=1, dilation=(1, 1), activation='relu',
-                 **kwargs):
-    assert num_layers > 1, 'num_layers must be greater than 1, got %d' % num_layers
-
-    block = Sequential(input_shape=input_shape, layer_name=layer_name)
-    conv_layer = ConvNormAct if batch_norm else ConvolutionalLayer
-    for num in range(num_layers - 1):
-        block.append(conv_layer(block.output_shape, num_filters, filter_size, init=init, no_bias=no_bias,
-                                border_mode=border_mode,
-                                stride=(1, 1), dilation=dilation, layer_name=layer_name + '/conv_%d' % (num + 1),
-                                activation=activation, **kwargs))
-    block.append(
-        conv_layer(block.output_shape, num_filters, filter_size, init=init, no_bias=no_bias, border_mode=border_mode,
-                   dilation=dilation, stride=stride, activation=activation,
-                   layer_name=layer_name + '/conv_%d' % num_layers, **kwargs))
-    return block
+        from neuralnet.normalization import BatchNormLayer, GroupNormLayer
+        self.append(ConvolutionalLayer(self.output_shape, num_filters, filter_size, init, no_bias, border_mode, stride,
+                                       dilation, layer_name + '/conv', 'linear', **kwargs))
+        if normalization == 'bn':
+            self.append(BatchNormLayer(self.output_shape, layer_name + '/bn', epsilon, running_average_factor, axes,
+                                       activation, no_scale, **kwargs))
+        else:
+            self.append(GroupNormLayer(self.output_shape, layer_name + '/gn', groups, epsilon, activation, **kwargs))
+        self.descriptions = '{} Conv Norm Act: {} -> {} num filters {} filter size {} activation {} normalization {}'.format(
+            layer_name, input_shape, self.output_shape, num_filters, filter_size, activation, normalization)
 
 
-def NetworkInNetworkBlock(input_shape, num_filters, filter_size, num_layers=2, num_nodes=(96, 96), activation='relu',
-                          layer_name='NetworkInNetwork', **kwargs):
-    assert len(
-        num_nodes) == num_layers, 'The number of element in num_nodes must be equal to num_layers, got %d and %d.' % (
-        len(num_nodes), num_layers)
+class StackingConv(Sequential):
+    def __init__(self, input_shape, num_layers, num_filters, filter_size=3, batch_norm=False,
+                 layer_name='Stacking Conv', init=HeNormal(gain=1.), no_bias=True, border_mode='half', stride=1,
+                 dilation=(1, 1), activation='relu', **kwargs):
+        assert num_layers > 1, 'num_layers must be greater than 1, got %d' % num_layers
+        super().__init__(input_shape=input_shape, layer_name=layer_name)
 
-    block = Sequential(input_shape=input_shape, layer_name=layer_name)
-    block.append(ConvolutionalLayer(input_shape, num_filters, filter_size, activation=activation,
-                                    layer_name=layer_name + '/first_conv', **kwargs))
-    for i in range(num_layers):
-        block.append(ConvolutionalLayer(block.output_shape, num_nodes[i], 1, activation=activation,
-                                        layer_name=layer_name + '/conv1_%d' % (i + 1), **kwargs))
-    return block
+        conv_layer = ConvNormAct if batch_norm else ConvolutionalLayer
+        for num in range(num_layers - 1):
+            self.append(conv_layer(self.output_shape, num_filters, filter_size, init=init, no_bias=no_bias,
+                                   border_mode=border_mode, stride=(1, 1), dilation=dilation,
+                                   layer_name=layer_name + '/conv_%d' % (num + 1), activation=activation, **kwargs))
+        self.append(
+            conv_layer(self.output_shape, num_filters, filter_size, init=init, no_bias=no_bias, border_mode=border_mode,
+                       dilation=dilation, stride=stride, activation=activation,
+                       layer_name=layer_name + '/conv_%d' % num_layers, **kwargs))
+        self.descriptions = '{} Stacking layers: {} -> {} num layers {} num filters {} filter size {} batchnorm {}'.format(
+            layer_name, input_shape, self.output_shape, num_layers, num_filters, filter_size, batch_norm)
+
+
+class NetworkInNetworkBlock(Sequential):
+    def __init__(self, input_shape, num_filters, filter_size, num_layers=2, num_nodes=(96, 96), activation='relu',
+                 layer_name='NetworkInNetwork', **kwargs):
+        assert len(
+            num_nodes) == num_layers, 'The number of element in num_nodes must be equal to num_layers, got %d and %d.' % (
+            len(num_nodes), num_layers)
+        super().__init__(input_shape=input_shape, layer_name=layer_name)
+
+        self.append(ConvolutionalLayer(input_shape, num_filters, filter_size, activation=activation,
+                                       layer_name=layer_name + '/first_conv', **kwargs))
+        for i in range(num_layers):
+            self.append(ConvolutionalLayer(self.output_shape, num_nodes[i], 1, activation=activation,
+                                           layer_name=layer_name + '/conv1_%d' % (i + 1), **kwargs))
+        self.descriptions = '{} Network in Network module: {} -> {} num filters {} filter size {}'.format(layer_name,
+                                                                                                          input_shape,
+                                                                                                          self.output_shape,
+                                                                                                          num_filters,
+                                                                                                          filter_size)
 
 
 class SoftmaxLayer(FullyConnectedLayer):

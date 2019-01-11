@@ -7,7 +7,7 @@ from neuralnet.build_optimization import Optimization
 from neuralnet.build_training import Training
 
 
-class Model(Optimization, Training, nn.model_zoo.Net, metaclass=abc.ABCMeta):
+class Model(Optimization, Training, layers.NetMethod, metaclass=abc.ABCMeta):
     def __init__(self, config_file, **kwargs):
         super(Model, self).__init__(config_file, **kwargs)
         self.input_shape = (None,) + tuple(self.config['model']['input_shape'])

@@ -14,8 +14,7 @@ from neuralnet.layers import *
 int_types = (numbers.Integral, np.integer)
 __all__ = ['PixelShuffleLayer', 'ConvMeanPoolLayer', 'MeanPoolConvLayer', 'ReshapingLayer', 'UpsamplingLayer',
            'PoolingLayer', 'DownsamplingLayer', 'DetailPreservingPoolingLayer', 'GlobalAveragePoolingLayer',
-           'MaxPoolingLayer', 'AveragePoolingLayer', 'UpProjectionUnit', 'DownProjectionUnit',
-           'ReflectPaddingConv', 'ReflectPaddingLayer']
+           'MaxPoolingLayer', 'AveragePoolingLayer', 'UpProjectionUnit', 'DownProjectionUnit']
 
 
 class DownsamplingLayer(Layer):
@@ -87,7 +86,8 @@ class DownsamplingLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        return tuple(self.input_shape[:2]) + tuple([s // self.factor for s in self.input_shape[2:]])
+        shape = [np.nan if x is None else x for x in self.input_shape]
+        return tuple(self.input_shape[:2]) + tuple([s // self.factor for s in shape[2:]])
 
 
 class PoolingLayer(Layer):
@@ -146,17 +146,17 @@ class PoolingLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        size = list(self.input_shape)
-        size[2] = (size[2] + 2 * self.pad[0] - self.ws[0]) // self.stride[0] + 1
-        size[3] = (size[3] + 2 * self.pad[1] - self.ws[1]) // self.stride[1] + 1
+        shape = [np.nan if x is None else x for x in self.input_shape]
+        shape[2] = (shape[2] + 2 * self.pad[0] - self.ws[0]) // self.stride[0] + 1
+        shape[3] = (shape[3] + 2 * self.pad[1] - self.ws[1]) // self.stride[1] + 1
 
-        if np.mod(self.input_shape[2], self.stride[0]):
+        if np.mod(shape[2], self.stride[0]):
             if not self.ignore_border:
-                size[2] += np.mod(self.input_shape[2], self.stride[0])
-        if np.mod(self.input_shape[3], self.stride[1]):
+                shape[2] += np.mod(shape[2], self.stride[0])
+        if np.mod(shape[3], self.stride[1]):
             if not self.ignore_border:
-                size[3] += np.mod(self.input_shape[3], self.stride[1])
-        return tuple(size)
+                shape[3] += np.mod(shape[3], self.stride[1])
+        return tuple(shape)
 
 
 class DetailPreservingPoolingLayer(Layer):
@@ -219,7 +219,8 @@ class DetailPreservingPoolingLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        return self.input_shape[:2] + (self.input_shape[2] // self.ws[0], self.input_shape[3] // self.ws[1])
+        shape = [np.nan if x is None else x for x in self.input_shape]
+        return self.input_shape[:2] + (shape[2] // self.ws[0], shape[3] // self.ws[1])
 
     def reset(self):
         if self.learn_filter:
@@ -334,6 +335,7 @@ class PixelShuffleLayer(Layer):
         return self.conv(output)
 
     @property
+    @utils.validate
     def output_shape(self):
         return (self.shape[0], self.num_filters, self.shape[2], self.shape[3])
 
@@ -367,8 +369,8 @@ class UpsamplingLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        return self.input_shape[0], self.input_shape[1], self.input_shape[2] * self.ratio, self.input_shape[
-            3] * self.ratio
+        shape = [np.nan if x is None else x for x in self.input_shape]
+        return self.input_shape[0], self.input_shape[1], shape[2] * self.ratio, shape[3] * self.ratio
 
 
 class ReshapingLayer(Layer):
@@ -389,86 +391,51 @@ class ReshapingLayer(Layer):
                 output[0] = None
                 return tuple(output)
             else:
-                prod_shape = np.prod(self.input_shape[1:])
+                shape = [np.nan if x is None else x for x in self.input_shape]
+                prod_shape = np.prod(shape)
                 prod_new_shape = np.prod(self.new_shape) * -1
-                shape = [x if x != -1 else prod_shape // prod_new_shape for x in self.input_shape]
+                shape = [x if x != -1 else prod_shape / prod_new_shape for x in shape]
                 return tuple(shape)
         else:
             return tuple(self.new_shape)
 
 
-class ReflectPaddingLayer(Layer):
-    def __init__(self, input_shape, width, batch_ndim=2, layer_name='Reflect Padding Layer'):
-        super(ReflectPaddingLayer, self).__init__(input_shape, layer_name)
-        self.width = width
-        self.batch_ndim = batch_ndim
-        self.descriptions = '{} Reflect layer: width {} no padding before {}'.format(layer_name, width, batch_ndim)
+class MeanPoolConvLayer(Sequential):
+    def __init__(self, input_shape, num_filters, filter_size, activation='linear', ws=(2, 2), init=HeNormal(gain=1.),
+                 no_bias=False, layer_name='MeanPool Conv', **kwargs):
+        assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[
+            3] // 2, 'Input must have even shape.'
+        super().__init__(input_shape=input_shape, layer_name=layer_name)
 
-    @property
-    def output_shape(self):
-        output_shape = list(self.input_shape)
-
-        if isinstance(self.width, int):
-            widths = [self.width] * (len(self.input_shape) - self.batch_ndim)
-        else:
-            widths = self.width
-
-        for k, w in enumerate(widths):
-            if output_shape[k + self.batch_ndim] is None:
-                continue
-            else:
-                try:
-                    l, r = w
-                except TypeError:
-                    l = r = w
-                output_shape[k + self.batch_ndim] += l + r
-        return tuple(output_shape)
-
-    def get_output(self, input):
-        return utils.reflection_pad(input, self.width, self.batch_ndim)
+        self.append(PoolingLayer(input_shape, ws, stride=ws, ignore_border=True, mode='average_exc_pad',
+                                 layer_name=layer_name + '/meanpool'))
+        self.append(ConvolutionalLayer(self.output_shape, num_filters, filter_size, init, no_bias,
+                                       layer_name=layer_name + '/conv', activation=activation, **kwargs))
+        self.descriptions = '{} MeanPool Conv layer: {} -> {} num filters {} filter size {} ws {}'.format(layer_name,
+                                                                                                          input_shape,
+                                                                                                          self.output_shape,
+                                                                                                          num_filters,
+                                                                                                          filter_size,
+                                                                                                          ws)
 
 
-def MeanPoolConvLayer(input_shape, num_filters, filter_size, activation='linear', ws=(2, 2), init=HeNormal(gain=1.),
-                      no_bias=False, layer_name='Mean Pool Conv', **kwargs):
-    assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[
-        3] // 2, 'Input must have even shape.'
+class ConvMeanPoolLayer(Sequential):
+    def __init__(self, input_shape, num_filters, filter_size, activation='linear', ws=(2, 2), init=HeNormal(gain=1.),
+                 no_bias=False, layer_name='Conv MeanPool', **kwargs):
+        assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[
+            3] // 2, 'Input must have even shape.'
+        super().__init__(input_shape=input_shape, layer_name=layer_name)
 
-    block = Sequential(input_shape=input_shape, layer_name=layer_name)
-    block.append(PoolingLayer(input_shape, ws, stride=ws, ignore_border=True, mode='average_exc_pad',
-                              layer_name=layer_name + '/meanpool'))
-    block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, init, no_bias,
-                                    layer_name=layer_name + '/conv', activation=activation, **kwargs))
-    return block
-
-
-def ConvMeanPoolLayer(input_shape, num_filters, filter_size, activation='linear', ws=(2, 2), init=HeNormal(gain=1.),
-                      no_bias=False, layer_name='Conv Mean Pool', **kwargs):
-    assert input_shape[2] / 2 == input_shape[2] // 2 and input_shape[3] / 2 == input_shape[
-        3] // 2, 'Input must have even shape.'
-
-    block = Sequential(input_shape=input_shape, layer_name=layer_name)
-    block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, init, no_bias,
-                                    layer_name=layer_name + '/conv', activation=activation, **kwargs))
-    block.append(PoolingLayer(block.output_shape, ws, stride=ws, ignore_border=True, mode='average_exc_pad',
-                              layer_name=layer_name + '/meanpool'))
-    return block
-
-
-def ReflectPaddingConv(input_shape, num_filters, filter_size=3, stride=1, activation='relu', use_batchnorm=True,
-                       layer_name='Reflect Padding Conv', **kwargs):
-    assert filter_size % 2 == 1
-    pad_size = filter_size >> 1
-    block = Sequential(input_shape=input_shape, layer_name=layer_name)
-    block.append(ReflectPaddingLayer(block.output_shape, pad_size, layer_name=layer_name + '/Reflect'))
-    if use_batchnorm:
-        block.append(
-            ConvNormAct(block.output_shape, num_filters, filter_size, Normal(.02), border_mode=0, stride=stride,
-                        activation=activation, layer_name=layer_name + '/conv_bn_act', normalization='gn',
-                        groups=num_filters))
-    else:
-        block.append(ConvolutionalLayer(block.output_shape, num_filters, filter_size, Normal(.02), border_mode=0,
-                                        stride=stride, activation=activation, layer_name=layer_name + '/conv'))
-    return block
+        self.append(ConvolutionalLayer(self.output_shape, num_filters, filter_size, init, no_bias,
+                                       layer_name=layer_name + '/conv', activation=activation, **kwargs))
+        self.append(PoolingLayer(self.output_shape, ws, stride=ws, ignore_border=True, mode='average_exc_pad',
+                                 layer_name=layer_name + '/meanpool'))
+        self.descriptions = '{} Conv MeanPool layer: {} -> {} num filters {} filter size {} ws {}'.format(layer_name,
+                                                                                                          input_shape,
+                                                                                                          self.output_shape,
+                                                                                                          num_filters,
+                                                                                                          filter_size,
+                                                                                                          ws)
 
 
 class PaddingLayer(Layer):
@@ -524,7 +491,7 @@ class PaddingLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        shape = list(self.input_shape)
+        shape = [np.nan if x is None else x for x in self.input_shape]
         for i in range(self.batch_ndim, len(self.input_shape)):
             shape[i] += self.width * 2
         return tuple(shape)
@@ -536,6 +503,17 @@ class GlobalAveragePoolingLayer(PoolingLayer):
                                                         'average_exc_pad', layer_name)
         self.descriptions = '{} Global Average Pooling Layer: {} -> {}'.format(layer_name, self.input_shape,
                                                                                self.output_shape)
+
+    @property
+    @utils.validate
+    def output_shape(self):
+        return self.input_shape[:2] + (1, 1)
+
+    def get_output(self, input):
+        if all(self.input_shape[2:]):
+            return super().get_output(input)
+        else:
+            return T.mean(input, (2, 3), keepdims=True)
 
 
 class MaxPoolingLayer(PoolingLayer):

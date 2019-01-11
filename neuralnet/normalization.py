@@ -190,6 +190,7 @@ class GroupNormLayer(Layer):
         return self.activation(output, **self.kwargs)
 
     @property
+    @utils.validate
     def output_shape(self):
         return tuple(self.input_shape)
 
@@ -261,6 +262,7 @@ class AdaptiveInstanceNorm2DLayer(Layer):
         return output
 
     @property
+    @utils.validate
     def output_shape(self):
         return self.input_shape
 

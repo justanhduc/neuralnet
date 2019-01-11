@@ -1,32 +1,7 @@
-import numpy as np
-
 import neuralnet as nn
 
 
-class Net:
-    def save_params(self, param_file=None):
-        param_file = param_file if param_file else self.param_file
-        np.savez(param_file, **{p.name: p.get_value() for p in self.params})
-        print('Model weights dumped to %s' % param_file)
-
-    def rename(self, param_file, new_file):
-        weights = np.load(param_file)
-        np.savez(new_file, **{self.params[i].name: weights[w] for i, w in enumerate(weights)})
-
-    def load_params(self, param_file=None):
-        param_file = param_file if param_file else self.param_file
-        weights = np.load(param_file)
-        weights_vals_tuple = []
-        for p in self.params:
-            try:
-                weights_vals_tuple.append((p, weights[p.name]))
-            except KeyError:
-                KeyError('There is no saved weight for %s. Skipped!' % p.name)
-        nn.utils.batch_set_value(weights_vals_tuple)
-        print('Model weights loaded from %s' % param_file)
-
-
-class ResNet(nn.Sequential, Net):
+class ResNet(nn.Sequential):
     def __init__(self, input_shape, block, layers, num_filters, activation='relu', fc=True, pooling=True,
                  num_classes=1000, main_branch=None, res_branch=None, name='ResNet', **kwargs):
         super(ResNet, self).__init__(input_shape=input_shape, layer_name=name)
@@ -62,7 +37,7 @@ class ResNet(nn.Sequential, Net):
         return nn.Sequential(layers, layer_name=name)
 
 
-class VGG16(nn.Sequential, Net):
+class VGG16(nn.Sequential):
     def __init__(self, input_shape, fc=True, bn=False, dropout=True, border_mode='half', num_classes=1000,
                  name='vgg16'):
         super(VGG16, self).__init__(input_shape=input_shape, layer_name=name)
@@ -139,7 +114,7 @@ class VGG16(nn.Sequential, Net):
             self.append(nn.SoftmaxLayer(self.output_shape, num_classes, name + '_softmax'))
 
 
-class VGG19(nn.Sequential, Net):
+class VGG19(nn.Sequential):
     def __init__(self, input_shape, fc=True, bn=False, dropout=True, border_mode='half', num_classes=1000,
                  name='vgg19'):
         super(VGG19, self).__init__(input_shape=input_shape, layer_name=name)
@@ -244,7 +219,7 @@ class VGG19(nn.Sequential, Net):
             self.append(nn.SoftmaxLayer(self.output_shape, num_classes, name + '_softmax'))
 
 
-class DenseNet(nn.Sequential, Net):
+class DenseNet(nn.Sequential):
     def __init__(self, input_shape, fc=True, num_classes=1000, first_output=16, growth_rate=12, num_blocks=3, depth=40,
                  dropout=False, name='DenseNet'):
         super(DenseNet, self).__init__(input_shape=input_shape, layer_name=name)
@@ -297,11 +272,3 @@ class ResNet152(ResNet):
                  name='ResNet152', **kwargs):
         super().__init__(input_shape, nn.ResNetBottleneckBlock, (3, 8, 36, 3), num_filters, activation, fc, pooling,
                          num_classes, name=name, **kwargs)
-
-
-if __name__ == '__main__':
-    root = 'test_files/'
-    weight_file = root + 'vgg19_from_pytorch.npz'
-    new_file = root + 'vgg19_from_pytorch_new.npz'
-    net = nn.model_zoo.VGG19((None, 3, 224, 224))
-    net.rename(weight_file, new_file)

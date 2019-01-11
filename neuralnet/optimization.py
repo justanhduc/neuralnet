@@ -14,14 +14,14 @@ import numpy as np
 import theano
 from theano import tensor as T
 
-from .model_zoo import Net
+from .layers import NetMethod
 
 sys.setrecursionlimit(10000)
 __all__ = ['sgd', 'sgdmomentum', 'adadelta', 'adagrad', 'adam', 'adamax', 'nadam', 'rmsprop', 'amsgrad',
            'anneal_learning_rate', 'optimizer']
 
 
-class Optimizer(Net, metaclass=abc.ABCMeta):
+class Optimizer(NetMethod, metaclass=abc.ABCMeta):
     def __init__(self, alpha, **kwargs):
         self.alpha = T.cast(alpha, theano.config.floatX)
         self.params = []
@@ -37,7 +37,7 @@ class Optimizer(Net, metaclass=abc.ABCMeta):
     def __repr__(self):
         return self.name
 
-    def __call__(self, params, grads):
+    def get_output(self, params, grads):
         return self.get_updates(params, grads)
 
 
