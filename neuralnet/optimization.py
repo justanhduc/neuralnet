@@ -25,17 +25,11 @@ class Optimizer(NetMethod, metaclass=abc.ABCMeta):
     def __init__(self, alpha, **kwargs):
         self.alpha = T.cast(alpha, theano.config.floatX)
         self.params = []
-        self.name = None
+        self.descriptions = None
 
     @abc.abstractmethod
     def get_updates(self, params, grads):
         pass
-
-    def reset(self):
-        pass
-
-    def __repr__(self):
-        return self.name
 
     def get_output(self, params, grads):
         return self.get_updates(params, grads)
@@ -69,7 +63,7 @@ class AdaDelta(Optimizer):
         super(AdaDelta, self).__init__(0., **kwargs)
         self.rho = T.as_tensor_variable(np.cast[theano.config.floatX](rho))
         self.epsilon = T.as_tensor_variable(np.cast[theano.config.floatX](epsilon))
-        self.name = 'ADADELTA. RHO = {} EPSILON = {} '.format(self.rho, self.epsilon)
+        self.descriptions = 'ADADELTA. RHO = {} EPSILON = {} '.format(self.rho, self.epsilon)
         print('Using %s' % self)
 
     def get_updates(self, params, grads):
@@ -100,7 +94,7 @@ class SGDMomentum(Optimizer):
         super(SGDMomentum, self).__init__(lr, **kwargs)
         self.alpha = T.cast(mom, dtype=theano.config.floatX)
         self.nesterov = nesterov
-        self.name = 'STOCHASTIC GRADIENT DESCENT MOMENTUM. ETA = {} MOMENTUM = {} NESTEROV = {}'. \
+        self.descriptions = 'STOCHASTIC GRADIENT DESCENT MOMENTUM. ETA = {} MOMENTUM = {} NESTEROV = {}'. \
             format(lr, mom, nesterov)
         print('Using %s' % self)
 
@@ -221,7 +215,7 @@ class AdaGrad(Optimizer):
     def __init__(self, alpha, epsilon=1e-6, **kwargs):
         super(AdaGrad, self).__init__(alpha, **kwargs)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        self.name = 'ADAGRAD. ETA = %s '.format(alpha)
+        self.descriptions = 'ADAGRAD. ETA = %s '.format(alpha)
         print('Using %s' % self)
 
     def get_updates(self, params, grads):
@@ -246,7 +240,7 @@ class RMSprop(Optimizer):
         super(RMSprop, self).__init__(alpha, **kwargs)
         self.gamma = T.cast(gamma, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        self.name = 'RMSPROP. ETA = {} GAMMA = {} '.format(alpha, gamma)
+        self.descriptions = 'RMSPROP. ETA = {} GAMMA = {} '.format(alpha, gamma)
         print('Using %s' % self)
 
     def get_updates(self, params, grads):
@@ -272,7 +266,7 @@ class Adam(Optimizer):
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = epsilon
-        self.name = 'ADAM. ETA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
+        self.descriptions = 'ADAM. ETA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
         print('Using %s' % self)
 
     def get_updates(self, params, grads):
@@ -313,7 +307,7 @@ class AdaMax(Optimizer):
         self.beta1 = T.cast(beta1, theano.config.floatX)
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
-        self.name = 'ADAMAX. ETA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
+        self.descriptions = 'ADAMAX. ETA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
         print('Using %s' % self)
 
     def get_updates(self, params, grads):
@@ -355,7 +349,7 @@ class NAdam(Optimizer):
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
         self.decay = decay
-        self.name = 'NESTEROV ADAM. ETA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
+        self.descriptions = 'NESTEROV ADAM. ETA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
         print('Using %s' % self)
 
     def get_updates(self, params, grads):
@@ -404,7 +398,7 @@ class AMSGrad(Optimizer):
         self.beta2 = T.cast(beta2, theano.config.floatX)
         self.epsilon = T.cast(epsilon, theano.config.floatX)
         self.decay = decay
-        self.name = 'AMSGRAD. ALPHA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
+        self.descriptions = 'AMSGRAD. ALPHA = {} BETA1 = {} BETA2 = {}'.format(alpha, beta1, beta2)
         print('Using %s' % self)
 
     def get_updates(self, params, grads):

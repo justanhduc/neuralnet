@@ -257,7 +257,7 @@ class LambdaLayer(Layer):
             return output_shape
         else:
             input_shape = (0 if s is None else s for s in self.input_shape)
-            X = theano.tensor.alloc(np.float32(0), *input_shape)
+            X = T.alloc(np.float32(0), *input_shape)
             output_shape = self.function(X, **self.kwargs).shape.eval()
             output_shape = tuple(s if s else None for s in output_shape)
             return output_shape
@@ -503,13 +503,18 @@ class ConvolutionalLayer(Layer):
                           filter_dilation=self.dilation)
             output *= self.mask_ratio
 
-        elif self.border_mode in ('ref', 'rep'):
+        elif self.border_mode in ('ref', 'rep', 'mean-int', 'mean-ref'):
             assert len(self.input_shape) == 4, '\'ref\' and \'rep\' padding modes support only 4D input'
             if self.border_mode == 'ref':
                 output = utils.reflection_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
-            else:
+            elif self.border_mode == 'rep':
                 output = utils.replication_pad(input, (self.filter_shape[3] >> 1, self.filter_shape[3] >> 1,
                                                        self.filter_shape[2] >> 1, self.filter_shape[2] >> 1))
+            elif self.border_mode == 'mean-int':
+                output = utils.mean_interp_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
+            else:
+                output = utils.mean_ref_pad(input, (self.filter_shape[2] >> 1, self.filter_shape[3] >> 1))
+
             output = conv(input=output, filters=self.W, border_mode='valid', subsample=self.subsample,
                           filter_flip=self.filter_flip, filter_shape=self.filter_shape)
 
@@ -535,7 +540,7 @@ class ConvolutionalLayer(Layer):
         border_mode = self.padding if self.border_mode == 'partial' else self.border_mode
 
         if isinstance(border_mode, str):
-            if border_mode in ('half', 'ref', 'rep'):
+            if border_mode in ('half', 'ref', 'rep', 'mean-int', 'mean-ref'):
                 p = [k >> 1 for k in ks]
             elif border_mode == 'valid':
                 p = [0] * len(ks)
@@ -1582,7 +1587,7 @@ class ConcatLayer(Layer):
     @property
     @utils.validate
     def output_shape(self):
-        shape_nan = [np.nan if x is None else x for x in self.input_shape]
+        shape_nan = [[np.nan if x is None else x for x in self.input_shape[i]] for i in range(len(self.input_shape))]
         depth = sum([shape_nan[i][self.axis] for i in range(len(self.input_shape))])
         shape = list(shape_nan[0])
         shape[self.axis] = depth

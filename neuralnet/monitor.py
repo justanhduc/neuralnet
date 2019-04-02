@@ -71,6 +71,7 @@ class Monitor(nn.utils.ConfigParser):
         self.__img_since_last_flush = collections.defaultdict(lambda: {})
         self.__hist_since_beginning = collections.defaultdict(lambda: {})
         self.__hist_since_last_flush = collections.defaultdict(lambda: {})
+        self.__pointcloud_since_last_flush = collections.defaultdict(lambda: {})
         self.__options = collections.defaultdict(lambda: {})
         self.__ = collections.defaultdict(lambda: {})
         self.__dump_files = collections.OrderedDict()
@@ -142,6 +143,9 @@ class Monitor(nn.utils.ConfigParser):
 
     def plot(self, name, value):
         self.__num_since_last_flush[name][self.__iter] = value
+
+    def scatter(self, name, value):
+        self.__pointcloud_since_last_flush[name][self.__iter] = value
 
     def save_image(self, name, value, callback=lambda x: x):
         self.__img_since_last_flush[name][self.__iter] = callback(value)
@@ -245,6 +249,23 @@ class Monitor(nn.utils.ConfigParser):
             fig.savefig(os.path.join(self.current_folder, name.replace(' ', '_') + '_hist.jpg'))
             plt.close(fig)
         self.__hist_since_last_flush.clear()
+
+        for name, vals in list(self.__pointcloud_since_last_flush.items()):
+            vals = list(vals.values())[-1]
+            if len(vals.shape) == 2:
+                fig = plt.figure()
+                ax = fig.add_subplot(111, projection='3d')
+                ax.scatter(*[vals[:, i] for i in range(vals.shape[-1])])
+                plt.savefig(os.path.join(self.current_folder, name + '.jpg'))
+                plt.close()
+            elif len(vals.shape) == 3:
+                for ii in range(vals.shape[0]):
+                    fig = plt.figure()
+                    ax = fig.add_subplot(111, projection='3d')
+                    ax.scatter(*[vals[ii, :, i] for i in range(vals.shape[-1])])
+                    plt.savefig(os.path.join(self.current_folder, name + '_%d.jpg' % (ii + 1)))
+                    plt.close()
+        self.__pointcloud_since_last_flush.clear()
 
         # dump recorded objects
         for k, v in self.__dump_files_tmp.items():

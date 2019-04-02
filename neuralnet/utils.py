@@ -14,6 +14,7 @@ import theano
 from scipy import misc
 from theano import tensor as T
 from theano import gradient as G
+from theano.gpuarray.dnn import dnn_pool as pool
 
 from neuralnet import __version__
 
@@ -926,6 +927,29 @@ def reflection_pad(input, padding, batch_ndim=2):
     out = T.set_subtensor(out[:, :, :, -widths[1]:],
                           G.disconnected_grad(out[:, :, :, -(widths[1] + 2):-(2 * widths[1] + 2):-1]))
     return out
+
+
+def mean_interp_pad(x, padding):
+    padding = (padding, padding) if isinstance(padding, int) else tuple(padding)
+    size = tuple(np.array(padding) * 2 + 1)
+    resize = ((x.shape[2] + 2 * padding[0], x.shape[2] - 2 * padding[0]),
+              (x.shape[3] + 2 * padding[1], x.shape[3] - 2 * padding[1]))
+    y = pool(x, size, (1, 1), mode='average_exc_pad')
+    z = G.disconnected_grad(frac_bilinear_upsampling(y, resize))
+    _, _, h, w = z.shape
+    return T.set_subtensor(z[:, :, padding[0]:h - padding[0], padding[1]:w - padding[1]], x)
+
+
+def mean_ref_pad(x, padding):
+    padding = (padding, padding) if isinstance(padding, int) else tuple(padding)
+    size = tuple(np.array(padding) * 2 + 1)
+    resize = ((x.shape[2], x.shape[2] - 2 * padding[0]),
+              (x.shape[3], x.shape[3] - 2 * padding[1]))
+    y = pool(x, size, (1, 1), mode='average_exc_pad')
+    z = frac_bilinear_upsampling(y, resize)
+    z = G.disconnected_grad(reflection_pad(z, padding))
+    _, _, h, w = z.shape
+    return T.set_subtensor(z[:, :, padding[0]:h - padding[0], padding[1]:w - padding[1]], x)
 
 
 def unpool(input, shape):
