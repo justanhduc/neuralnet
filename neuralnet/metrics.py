@@ -267,16 +267,26 @@ def log_loss(x, y, size=9, sigma=1., p=2, **kwargs):
 
 
 def chamfer_distance(xyz1, xyz2):
+    print('Using Chamfer distance loss')
     xyz1 = T.as_tensor(xyz1)
     xyz2 = T.as_tensor(xyz2)
 
     def _batch_pairwise_dist(x, y):
-        xx = T.batched_dot(x, x.dimshuffle(0, 2, 1))
-        yy = T.batched_dot(y, y.dimshuffle(0, 2, 1))
-        zz = T.batched_dot(x, y.dimshuffle(0, 2, 1))
+        if x.ndim == 3 and y.ndim == 3:
+            xx = T.batched_dot(x, x.dimshuffle(0, 2, 1))
+            yy = T.batched_dot(y, y.dimshuffle(0, 2, 1))
+            zz = T.batched_dot(x, y.dimshuffle(0, 2, 1))
+        elif x.ndim == 2 and y.ndim == 2:
+            xx = T.shape_padleft(T.dot(x, x.T))
+            yy = T.shape_padleft(T.dot(y, y.T))
+            zz = T.shape_padleft(T.dot(x, y.T))
+        else:
+            raise NotImplementedError
 
-        rx = T.tile(T.diagonal(xx, axis1=1, axis2=2).dimshuffle(0, 1, 'x'), (1, 1, zz.shape[2]))
-        ry = T.tile(T.diagonal(yy, axis1=1, axis2=2).dimshuffle(0, 'x', 1), (1, zz.shape[1], 1))
+        indices_x = T.arange(0, xx.shape[1], dtype='int64')
+        indices_y = T.arange(0, yy.shape[1], dtype='int64')
+        rx = T.tile(xx[:, indices_x, indices_x].dimshuffle(0, 1, 'x'), (1, 1, zz.shape[2]))
+        ry = T.tile(yy[:, indices_y, indices_y].dimshuffle(0, 'x', 1), (1, zz.shape[1], 1))
         P = rx + ry - 2. * zz
         return P
 

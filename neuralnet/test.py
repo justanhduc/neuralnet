@@ -50,17 +50,20 @@ def test_chamfer_distance():
 
     a = T.tensor3('a')
     b = T.tensor3('b')
-    dist = nn.chamfer_distance(a, b)
+    dist1 = nn.chamfer_distance(a, b)
+    dist2 = nn.chamfer_distance(a[0], b[0])
 
     a_ = np.ones((m, n1, d), dtype=theano.config.floatX)
     b_ = np.zeros((m, n2, d), dtype=theano.config.floatX)
-    dist.eval({a: a_, b: b_})
+    dist1.eval({a: a_, b: b_})
 
     import time
     start = time.time()
-    res = dist.eval({a: a_, b: b_})
+    res1 = dist1.eval({a: a_, b: b_})
     print('Took %fs.' % (time.time() - start))
-    utt.assert_allclose(res, 330000.)
+    utt.assert_allclose(res1, 330000.)
+    res2 = dist2.eval({a: a_, b: b_})
+    utt.assert_allclose(res2, 33000.)
 
 
 def test_frac_bilinear_upsampling():

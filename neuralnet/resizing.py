@@ -74,7 +74,7 @@ class DownsamplingLayer(Layer):
                 pad = int((kernel_width - factor) / 2.)
             self.pad = partial(utils.replication_pad, padding=pad)
 
-    def get_output(self, input):
+    def get_output(self, input, *args, **kwargs):
         if self.preserve_size:
             x = self.pad(input)
         else:
@@ -139,7 +139,7 @@ class PoolingLayer(Layer):
         self.descriptions = ''.join(('{} {} PoolingLayer: size: {}'.format(layer_name, mode, window_size),
                                      ' stride: {}'.format(stride), ' {} -> {}'.format(input_shape, self.output_shape)))
 
-    def get_output(self, input):
+    def get_output(self, input, *args, **kwargs):
         return pool(input, self.ws, self.stride, self.mode, self.pad) if self.ignore_border else T.signal.pool.pool_2d(
             input, self.ws, self.ignore_border, self.stride, self.pad, self.mode)
 
@@ -205,7 +205,7 @@ class DetailPreservingPoolingLayer(Layer):
         else:
             return T.exp(lam / 2. * T.log(T.maximum(0., x) ** 2. + self.epsilon_sqr))
 
-    def get_output(self, input):
+    def get_output(self, input, *args, **kwargs):
         alpha = T.exp(self.alpha_).dimshuffle('x', 0, 'x', 'x')
         lam = T.exp(self.lambda_).dimshuffle('x', 0, 'x', 'x')
 
@@ -262,7 +262,7 @@ class UpProjectionUnit(Sequential):
         self.descriptions = '{} Up Projection Unit: {} -> {} upsampling by {}'.format(layer_name, input_shape,
                                                                                       self.output_shape, up_ratio)
 
-    def get_output(self, input):
+    def get_output(self, input, *args, **kwargs):
         out1 = self[self.layer_name + '/up1'](input)
         out2 = self[self.layer_name + '/conv'](out1)
         res = out2 - input
@@ -300,7 +300,7 @@ class DownProjectionUnit(Sequential):
         self.descriptions = '{} Down Projection Unit: {} -> {} downsampling by {}'.format(layer_name, input_shape,
                                                                                           self.output_shape, down_ratio)
 
-    def get_output(self, input):
+    def get_output(self, input, *args, **kwargs):
         out1 = self[self.layer_name + '/conv1'](input)
         out2 = self[self.layer_name + '/up'](out1)
         res = out2 - input
@@ -328,7 +328,7 @@ class PixelShuffleLayer(Layer):
         self.regularizable += self.conv.regularizable
         self.descriptions = '{} Upsample Conv: {} -> {}'.format(layer_name, self.input_shape, self.output_shape)
 
-    def get_output(self, input):
+    def get_output(self, input, *args, **kwargs):
         output = input
         output = T.concatenate([output for _ in range(self.rate ** 2)], 1)
         output = utils.depth_to_space(output, self.rate)
@@ -359,7 +359,7 @@ class UpsamplingLayer(Layer):
         self.descriptions = '{} x{} Resizing Layer {} -> {}'.format(layer_name, self.ratio, self.input_shape,
                                                                     self.output_shape)
 
-    def get_output(self, input):
+    def get_output(self, input, *args, **kwargs):
         if self.method == 'bilinear':
             return T.nnet.abstract_conv.bilinear_upsampling(input, ratio=self.ratio) if self.ratio \
                 else T.nnet.abstract_conv.bilinear_upsampling(input, frac_ratio=self.frac_ratio)
@@ -379,7 +379,7 @@ class ReshapingLayer(Layer):
         self.new_shape = tuple(new_shape)
         self.descriptions = 'Reshaping Layer: {} -> {}'.format(self.input_shape, self.output_shape)
 
-    def get_output(self, input):
+    def get_output(self, input, *args, **kwargs):
         return T.reshape(input, self.new_shape)
 
     @property
@@ -462,7 +462,7 @@ class PaddingLayer(Layer):
         self.batch_ndim = batch_ndim
         self.descriptions = '{} Padding Layer: from dim {} width {} value {}'.format(layer_name, batch_ndim, width, val)
 
-    def get_output(self, input):
+    def get_output(self, input, *args, **kwargs):
         input_shape = input.shape
         input_ndim = input.ndim
 
@@ -509,7 +509,7 @@ class GlobalAveragePoolingLayer(PoolingLayer):
     def output_shape(self):
         return self.input_shape[:2] + (1, 1)
 
-    def get_output(self, input):
+    def get_output(self, input, *args, **kwargs):
         if all(self.input_shape[2:]):
             return super().get_output(input)
         else:
@@ -519,11 +519,13 @@ class GlobalAveragePoolingLayer(PoolingLayer):
 class MaxPoolingLayer(PoolingLayer):
     def __init__(self, input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='Max Pooling'):
         super(MaxPoolingLayer, self).__init__(input_shape, ws, ignore_border, stride, pad, 'max', layer_name)
-        self.descriptions = '{} Max Pooling Layer: {} -> {}'.format(layer_name, self.input_shape, self.output_shape)
+        self.descriptions = '{} Max Pooling Layer: size {} stride {} {} -> {}'.format(ws, stride, layer_name,
+                                                                                      self.input_shape, self.output_shape)
 
 
 class AveragePoolingLayer(PoolingLayer):
     def __init__(self, input_shape, ws, ignore_border=True, stride=None, pad='valid', layer_name='Avg Pooling'):
         super(AveragePoolingLayer, self).__init__(input_shape, ws, ignore_border, stride, pad, 'average_exc_pad',
                                                   layer_name)
-        self.descriptions = '{} Average Pooling Layer: {} -> {}'.format(layer_name, self.input_shape, self.output_shape)
+        self.descriptions = '{} Average Pooling Layer: size {} stride {} {} -> {}'.format(ws, stride, layer_name,
+                                                                                          self.input_shape, self.output_shape)
