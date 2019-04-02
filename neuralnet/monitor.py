@@ -20,6 +20,7 @@ import time
 import theano
 from theano.compile import function_module as fm
 from theano import tensor as T
+import atexit
 
 import neuralnet as nn
 
@@ -116,11 +117,16 @@ class Monitor(nn.utils.ConfigParser):
             self.vis.close()
             print('You can navigate to \'%s:%d\' for visualization' % (server, port))
 
+        atexit.register(self._atexit)
         self.kwargs = kwargs
         print('Result folder: %s' % self.current_folder)
 
     def __enter__(self):
         pass
+
+    def _atexit(self):
+        self.flush()
+        plt.close()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.__iter % self.print_freq == 0:
