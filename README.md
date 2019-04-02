@@ -2,6 +2,15 @@
 
 A high level framework for general purpose neural networks written in Theano.
 
+__THIS IS MY LAST COMMIT!__
+
+Recently, I haved decided to depart from Theano in favor of Pytorch. 
+I am working in a project similar to this [here](). 
+Please check it out.
+
+Thank you Theano!!
+It's been a hell of a ride.
+
 ## Requirements
 
 [Theano](http://deeplearning.net/software/theano/)
